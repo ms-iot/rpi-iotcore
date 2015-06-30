@@ -1,1 +1,3 @@
-# bsp-pi
+# bsp
+
+Iot BSP component
