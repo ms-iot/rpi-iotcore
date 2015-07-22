@@ -1,0 +1,15 @@
+//
+// Copyright(c) Microsoft Corporation
+//
+
+#include <windows.h>
+
+#include <ntverp.h>
+
+#define	VER_FILETYPE	VFT_DRV
+#define	VER_FILESUBTYPE	VFT2_DRV_SYSTEM
+#define VER_FILEDESCRIPTION_STR     "Broadcom SPI Controller Driver"
+#define VER_INTERNALNAME_STR        "bcmspi.sys"
+#define VER_ORIGINALFILENAME_STR    "bcmspi.sys"
+
+#include "common.ver"

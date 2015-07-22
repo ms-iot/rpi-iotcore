@@ -1,0 +1,15 @@
+//
+// Copyright(c) Microsoft Corporation
+//
+
+#include <windows.h>
+
+#include <ntverp.h>
+
+#define	VER_FILETYPE	VFT_DRV
+#define	VER_FILESUBTYPE	VFT2_DRV_SYSTEM
+#define VER_FILEDESCRIPTION_STR     "BCM I2C Controller Driver"
+#define VER_INTERNALNAME_STR        "bcmi2c.sys"
+#define VER_ORIGINALFILENAME_STR    "bcmi2c.sys"
+
+#include "common.ver"

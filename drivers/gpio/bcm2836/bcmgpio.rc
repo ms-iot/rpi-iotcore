@@ -1,0 +1,16 @@
+//
+// Copyright(c) Microsoft Corporation
+//
+
+#include <windows.h>
+
+#include <ntverp.h>
+
+#define	VER_FILETYPE	VFT_DRV
+#define	VER_FILESUBTYPE	VFT2_UNKNOWN
+#define VER_FILEDESCRIPTION_STR     "BCM2836 GPIO Controller Driver"
+#define VER_INTERNALNAME_STR        "bcmgpio.sys"
+#define VER_ORIGINALFILENAME_STR    "bcmgpio.sys"
+
+#include "common.ver"
+
