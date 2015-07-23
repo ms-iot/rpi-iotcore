@@ -1,0 +1,20 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="14.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <TARGETNAME Condition="'$(OVERRIDE_TARGETNAME)'!='true'">bcmspi</TARGETNAME>
+    <TARGETTYPE Condition="'$(OVERRIDE_TARGETTYPE)'!='true'">DRIVER</TARGETTYPE>
+    <INF_NAME Condition="'$(OVERRIDE_INF_NAME)'!='true'">$(TARGETNAME)</INF_NAME>
+    <KMDF_VERSION_MAJOR Condition="'$(OVERRIDE_KMDF_VERSION_MAJOR)'!='true'">1</KMDF_VERSION_MAJOR>
+    <MSC_WARNING_LEVEL Condition="'$(OVERRIDE_MSC_WARNING_LEVEL)'!='true'">/W4 /WX</MSC_WARNING_LEVEL>
+    <INCLUDES Condition="'$(OVERRIDE_INCLUDES)'!='true'">$(INCLUDES);           $(SPB_INC_PATH)\$(SPB_VERSION_MAJOR).$(SPB_VERSION_MINOR);</INCLUDES>
+    <TARGETLIBS Condition="'$(OVERRIDE_TARGETLIBS)'!='true'">$(TARGETLIBS)                $(SPB_LIB_PATH)\$(SPB_VERSION_MAJOR).$(SPB_VERSION_MINOR)\SpbCxStubs.lib             $(DDK_LIB_PATH)\ntstrsafe.lib</TARGETLIBS>
+    <SOURCES Condition="'$(OVERRIDE_SOURCES)'!='true'">driver.cpp                  device.cpp                  controller.cpp              resource.rc</SOURCES>
+    <RUN_WPP Condition="'$(OVERRIDE_RUN_WPP)'!='true'">$(SOURCES) -km                        -scan:spitrace.h                      -func:Trace(LEVEL,FLAGS,MSG,...)</RUN_WPP>
+    <TARGET_DESTINATION Condition="'$(OVERRIDE_TARGET_DESTINATION)'!='true'">retail</TARGET_DESTINATION>
+    <DRIVER_INFS Condition="'$(OVERRIDE_DRIVER_INFS)'!='true'">$(INF_NAME).inf</DRIVER_INFS>
+    <MUI_VERIFY_NO_LOC_RESOURCE Condition="'$(OVERRIDE_MUI_VERIFY_NO_LOC_RESOURCE)'!='true'">1</MUI_VERIFY_NO_LOC_RESOURCE>
+  </PropertyGroup>
+  <PropertyGroup>
+    <RUN_WPP Condition="'$(OVERRIDE_RUN_WPP)'!='true'" />
+  </PropertyGroup>
+</Project>
