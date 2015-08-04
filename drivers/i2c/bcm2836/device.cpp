@@ -2,13 +2,13 @@
 
 Copyright (c) Microsoft Corporation.  All rights reserved.
 
-Module Name: 
+Module Name:
 
     device.cpp
 
 Abstract:
 
-    This module contains WDF device initialization 
+    This module contains WDF device initialization
     and SPB callback functions for the controller driver.
 
 Environment:
@@ -19,2252 +19,1620 @@ Revision History:
 
 --*/
 
-#include "internal.h"
+#include "precomp.h"
+
+#include "i2ctrace.h"
+#include "bcmi2c.h"
+#include "driver.h"
 #include "device.h"
-#include "controller.h"
 
 #include "device.tmh"
 
+#ifdef DBG
+#define LOG_ISR_TIME 1
+#endif // DBG
 
-/////////////////////////////////////////////////
+BCM_I2C_NONPAGED_SEGMENT_BEGIN; //=============================================
+
 //
-// WDF and SPB DDI callbacks.
+// Returns when the transfer becomes active, aborts due to an error,
+// or times out.
 //
-/////////////////////////////////////////////////
-
-_Use_decl_annotations_
-NTSTATUS
-OnPrepareHardware(
-    WDFDEVICE    FxDevice,
-    WDFCMRESLIST FxResourcesRaw,
-    WDFCMRESLIST FxResourcesTranslated
-    )
-/*++
- 
-  Routine Description:
-
-    This routine maps the hardware resources to the SPB
-    controller register structure.
-
-  Arguments:
-
-    FxDevice - a handle to the framework device object
-    FxResourcesRaw - list of translated hardware resources that 
-        the PnP manager has assigned to the device
-    FxResourcesTranslated - list of raw hardware resources that 
-        the PnP manager has assigned to the device
-
-  Return Value:
-
-    Status
-
---*/
+// Returns:
+//
+//    STATUS_SUCCESS - The TA bit was set before the timeout.
+//    STATUS_IO_TIMEOUT - A clock stretch timeout occurred.
+//    STATUS_NO_SUCH_DEVICE - The slave address was not acknowledged.
+//    STATUS_IO_DEVICE_ERROR - An unexpected hardware error occurred.
+//
+NTSTATUS WaitForTransferActive ( BCM_I2C_REGISTERS* RegistersPtr )
 {
-    FuncEntry(TRACE_FLAG_WDFLOADING);
-
-    PPBC_DEVICE pDevice = GetDeviceContext(FxDevice);
-    NT_ASSERT(pDevice != NULL);
-    
-    ULONG irqCount = 0;
-    NTSTATUS status = STATUS_SUCCESS; 
-
-    UNREFERENCED_PARAMETER(FxResourcesRaw);
-    
-    //
-    // Get the register base for the I2C controller.
-    //
-
-    {
-        ULONG resourceCount = WdfCmResourceListGetCount(FxResourcesTranslated);
-
-        for(ULONG i = 0; i < resourceCount; i++)
-        {
-            PCM_PARTIAL_RESOURCE_DESCRIPTOR res;
-           
-            res = WdfCmResourceListGetDescriptor(FxResourcesTranslated, i);
-
-            if (res->Type == CmResourceTypeMemory)
-            {
-                if (pDevice->pRegisters != NULL)
-                {
-                    status = STATUS_DEVICE_CONFIGURATION_ERROR;
-                    Trace(
-                        TRACE_LEVEL_ERROR,
-                        TRACE_FLAG_WDFLOADING,
-                        "Error multiple memory regions assigned (PA:%I64x, length:%d) for WDFDEVICE %p - %!STATUS!",
-                        res->u.Memory.Start.QuadPart,
-                        res->u.Memory.Length,
-                        pDevice->FxDevice,
-                        status);
-                    goto exit;
-                }
-
-                if (res->u.Memory.Length < sizeof(BCMI2C_REGISTERS))
-                {
-                    status = STATUS_DEVICE_CONFIGURATION_ERROR;
-
-                    Trace(
-                        TRACE_LEVEL_ERROR,
-                        TRACE_FLAG_WDFLOADING,
-                        "Error memory region too small (PA:%I64x, length:%d) for WDFDEVICE %p - %!STATUS!",
-                        res->u.Memory.Start.QuadPart,
-                        res->u.Memory.Length,
-                        pDevice->FxDevice,
-                        status);
-                    goto exit;
-                }
-
-                pDevice->pRegisters = (PBCM_I2C_REGISTERS)
-#if (NTDDI_VERSION > NTDDI_WINBLUE)
-                    MmMapIoSpaceEx(
-                    res->u.Memory.Start,
-                    res->u.Memory.Length,
-                    PAGE_READWRITE | PAGE_NOCACHE);
-#else
-                    MmMapIoSpace(
-                    res->u.Memory.Start,
-                    res->u.Memory.Length,
-                    MmNonCached);
-#endif
-
-                if (pDevice->pRegisters == NULL)
-                {
-                    status = STATUS_INSUFFICIENT_RESOURCES;
-
-                    Trace(
-                        TRACE_LEVEL_ERROR,
-                        TRACE_FLAG_WDFLOADING,
-                        "Error mapping controller registers (PA:%I64x, length:%d) for WDFDEVICE %p - %!STATUS!",
-                        res->u.Memory.Start.QuadPart,
-                        res->u.Memory.Length,
-                        pDevice->FxDevice,
-                        status);
-                    
-                    goto exit;
-                }
-
-                pDevice->RegistersCb = res->u.Memory.Length;
-                pDevice->pRegistersPhysicalAddress = res->u.Memory.Start;
-
-                Trace(
-                    TRACE_LEVEL_INFORMATION, 
-                    TRACE_FLAG_WDFLOADING, 
-                    "I2C controller @ paddr %I64x vaddr @ %p for WDFDEVICE %p", 
-                    pDevice->pRegistersPhysicalAddress.QuadPart,
-                    pDevice->pRegisters,
-                    pDevice->FxDevice);
-            }
-            else if (res->Type == CmResourceTypeInterrupt)
-            {
-                irqCount++;
-            }
+    ULONG count = 10000;  // maximum spin count
+    do {
+        ULONG statusReg = READ_REGISTER_NOFENCE_ULONG(&RegistersPtr->Status);
+        if (statusReg & BCM_I2C_REG_STATUS_TA) {
+            return STATUS_SUCCESS;
+        } else if (statusReg & BCM_I2C_REG_STATUS_CLKT) {
+            BSC_LOG_ERROR(
+                L"CLKT was asserted while waiting for transfer to become active. (statusReg = 0x%lx)",
+                statusReg);
+            return STATUS_IO_TIMEOUT;
+        } else if (statusReg & BCM_I2C_REG_STATUS_ERR) {
+            BSC_LOG_ERROR(
+                L"ERR was asserted while waiting for transfer to become active. (statusReg = 0x%lx)",
+                statusReg);
+            return STATUS_NO_SUCH_DEVICE;
         }
+    } while (--count);
+
+    BSC_LOG_ERROR(L"Maximum spin count reached waiting for transfer to become active.");
+    return STATUS_IO_TIMEOUT;
+}
+
+void InitializeTransfer (
+    BCM_I2C_REGISTERS* RegistersPtr,
+    const BCM_I2C_TARGET_CONTEXT* TargetPtr,
+    ULONG DataLength
+    )
+{
+    WRITE_REGISTER_NOFENCE_ULONG(
+        &RegistersPtr->Control,
+        BCM_I2C_REG_CONTROL_CLEAR);
+
+    // Clear error and done
+    WRITE_REGISTER_NOFENCE_ULONG(
+        &RegistersPtr->Status,
+        BCM_I2C_REG_STATUS_CLKT |
+        BCM_I2C_REG_STATUS_ERR |
+        BCM_I2C_REG_STATUS_DONE);
+
+    // program clock speed
+    NT_ASSERT(
+        (TargetPtr->ConnectionSpeed >= BCM_I2C_MIN_CONNECTION_SPEED) &&
+        (TargetPtr->ConnectionSpeed <= BCM_I2C_MAX_CONNECTION_SPEED));
+    ULONG clockDivider =
+        (BCM_I2C_CORE_CLOCK / TargetPtr->ConnectionSpeed) &
+         BCM_I2C_REG_CDIV_MASK;
+    WRITE_REGISTER_NOFENCE_ULONG(&RegistersPtr->ClockDivider, clockDivider);
+
+    //
+    // The rising edge data delay sets how long the controller waits after
+    // a rising edge before sampling the incoming data. With the default value
+    // of 0x30, corruption was seen in the first bit of received data with
+    // a device that does clock stretching. Increasing REDL gives the slave
+    // device more time to pull the line low or let it rise high. Increasing
+    // REDL solved the corruption. REDL must be less than CDIV / 2.
+    // 50 is a safety margin to ensure REDL is less than CDIV / 2.
+    //
+    NT_ASSERT((clockDivider / 2) > 50);
+    WRITE_REGISTER_NOFENCE_ULONG(
+        &RegistersPtr->DataDelay,
+        (BCM_I2C_REG_DEL_FEDL << 16) | (clockDivider / 2 - 50));
+
+    // program slave address
+    NT_ASSERT(TargetPtr->Address <= I2C_MAX_ADDRESS);
+    WRITE_REGISTER_NOFENCE_ULONG(
+        &RegistersPtr->SlaveAddress,
+        TargetPtr->Address & BCM_I2C_REG_ADDRESS_MASK);
+
+    // Program data length
+    NT_ASSERT(DataLength <= BCM_I2C_MAX_TRANSFER_LENGTH);
+    WRITE_REGISTER_NOFENCE_ULONG(
+        &RegistersPtr->DataLength,
+        DataLength & BCM_I2C_REG_DLEN_MASK);
+}
+
+//
+// Reads up to the specified number of bytes from the data FIFO. Returns when
+// either all available bytes have been read or all requested bytes have
+// been read. Returns the number of bytes read.
+//
+ULONG ReadFifo (
+    BCM_I2C_REGISTERS* RegistersPtr,
+    _Out_writes_to_(BufferSize, return) BYTE* BufferPtr,
+    ULONG BufferSize
+    )
+{
+    BYTE* dataPtr = BufferPtr;
+    while (dataPtr != (BufferPtr + BufferSize)) {
+        ULONG statusReg = READ_REGISTER_NOFENCE_ULONG(&RegistersPtr->Status);
+        if (!(statusReg & BCM_I2C_REG_STATUS_RXD)) {
+            break;
+        }
+
+        *dataPtr++ = static_cast<BYTE>(
+            READ_REGISTER_NOFENCE_ULONG(&RegistersPtr->DataFIFO));
     }
 
-    if (irqCount != 1)
-    {
-        status = STATUS_DEVICE_CONFIGURATION_ERROR;
-        Trace(
-            TRACE_LEVEL_ERROR,
-            TRACE_FLAG_WDFLOADING,
-            "Error number of assigned interrupts incorrect (%d instead of 1) for WDFDEVICE %p - %!STATUS!",
-            irqCount,
-            pDevice->FxDevice,
-            status);
-        goto exit;
+    ULONG bytesRead = dataPtr - BufferPtr;
+    BSC_LOG_TRACE(
+        "Read %d of %d bytes from RX FIFO",
+        bytesRead,
+        BufferSize);
+
+    return bytesRead;
+}
+
+ULONG ReadFifoMdl (BCM_I2C_REGISTERS* RegistersPtr, PMDL Mdl, ULONG Offset)
+{
+    NT_ASSERT(Offset <= MmGetMdlByteCount(Mdl));
+    NT_ASSERT(
+        Mdl->MdlFlags &
+       (MDL_MAPPED_TO_SYSTEM_VA | MDL_SOURCE_IS_NONPAGED_POOL));
+
+    return ReadFifo(
+        RegistersPtr,
+        static_cast<BYTE*>(Mdl->MappedSystemVa) + Offset,
+        MmGetMdlByteCount(Mdl) - Offset);
+}
+
+//
+// Writes up to the specified number of bytes to the data FIFO. Returns when
+// either the FIFO is full or the entire buffer has been written. Returns
+// the number of bytes written to the FIFO.
+//
+ULONG WriteFifo (
+    BCM_I2C_REGISTERS* RegistersPtr,
+    _In_reads_(BufferSize) const BYTE* BufferPtr,
+    ULONG BufferSize
+    )
+{
+    const BYTE* dataPtr = BufferPtr;
+    while (dataPtr != (BufferPtr + BufferSize)) {
+        ULONG statusReg = READ_REGISTER_NOFENCE_ULONG(&RegistersPtr->Status);
+        if (!(statusReg & BCM_I2C_REG_STATUS_TXD)) {
+            break;
+        }
+
+        WRITE_REGISTER_NOFENCE_ULONG(&RegistersPtr->DataFIFO, *dataPtr++);
     }
 
-    if (pDevice->pRegisters == NULL)
-    {
-        status = STATUS_DEVICE_CONFIGURATION_ERROR;
-        Trace(
-            TRACE_LEVEL_ERROR,
-            TRACE_FLAG_WDFLOADING,
-            "Error memory region missing for WDFDEVICE %p - %!STATUS!",
-            pDevice->FxDevice,
-            status);
-        goto exit;
-    }
+    ULONG bytesWritten = dataPtr - BufferPtr;
+    BSC_LOG_TRACE(
+        "Wrote %d of %d bytes to TX FIFO",
+        bytesWritten,
+        BufferSize);
 
-exit:
-    
-    if (!NT_SUCCESS(status))
-    {
-        // make sure memory is unmapped in case of failure
-        OnReleaseHardware(FxDevice, FxResourcesTranslated);
-    }
-
-    FuncExit(TRACE_FLAG_WDFLOADING);
-
-    return status;
+    return bytesWritten;
 }
 
 _Use_decl_annotations_
-NTSTATUS
-OnReleaseHardware(
-    WDFDEVICE    FxDevice,
-    WDFCMRESLIST FxResourcesTranslated
+VOID OnRead (
+    WDFDEVICE WdfDevice,
+    SPBTARGET SpbTarget,
+    SPBREQUEST SpbRequest,
+    size_t Length
     )
-/*++
- 
-  Routine Description:
-
-    This routine unmaps the SPB controller register structure.
-
-  Arguments:
-
-    FxDevice - a handle to the framework device object
-    FxResourcesRaw - list of translated hardware resources that 
-        the PnP manager has assigned to the device
-    FxResourcesTranslated - list of raw hardware resources that 
-        the PnP manager has assigned to the device
-
-  Return Value:
-
-    Status
-
---*/
 {
-    FuncEntry(TRACE_FLAG_WDFLOADING);
+    BCM_I2C_ASSERT_MAX_IRQL(DISPATCH_LEVEL);
 
-    PPBC_DEVICE pDevice = GetDeviceContext(FxDevice);
-    NT_ASSERT(pDevice != NULL);
-    
-    NTSTATUS status = STATUS_SUCCESS;
-    
-    UNREFERENCED_PARAMETER(FxResourcesTranslated);
-    
-    if (pDevice->pRegisters != NULL)
-    {
-        MmUnmapIoSpace(pDevice->pRegisters, pDevice->RegistersCb);
-        
-        pDevice->pRegisters = NULL;
-        pDevice->RegistersCb = 0;
-    }
-
-    FuncExit(TRACE_FLAG_WDFLOADING);
-
-    return status;
-}
-
-_Use_decl_annotations_
-NTSTATUS
-OnD0Entry(
-    WDFDEVICE              FxDevice,
-    WDF_POWER_DEVICE_STATE FxPreviousState
-    )
-/*++
- 
-  Routine Description:
-
-    This routine allocates objects needed by the driver 
-    and initializes the controller hardware.
-
-  Arguments:
-
-    FxDevice - a handle to the framework device object
-    FxPreviousState - previous power state
-
-  Return Value:
-
-    Status
-
---*/
-{
-    FuncEntry(TRACE_FLAG_WDFLOADING);
-    
-    PPBC_DEVICE pDevice = GetDeviceContext(FxDevice);
-    NT_ASSERT(pDevice != NULL);
-    
-    UNREFERENCED_PARAMETER(FxPreviousState);
-
-    //
-    // Initialize controller.
-    //
-
-    pDevice->pCurrentTarget = NULL;
-
-    ControllerInitialize(pDevice);
-    
-    FuncExit(TRACE_FLAG_WDFLOADING);
-
-    return STATUS_SUCCESS;
-}
-
-_Use_decl_annotations_
-NTSTATUS
-OnD0Exit(
-    WDFDEVICE              FxDevice,
-    WDF_POWER_DEVICE_STATE FxPreviousState
-    )
-/*++
- 
-  Routine Description:
-
-    This routine destroys objects needed by the driver 
-    and uninitializes the controller hardware.
-
-  Arguments:
-
-    FxDevice - a handle to the framework device object
-    FxPreviousState - previous power state
-
-  Return Value:
-
-    Status
-
---*/
-{
-    FuncEntry(TRACE_FLAG_WDFLOADING);
-
-    PPBC_DEVICE pDevice = GetDeviceContext(FxDevice);
-    NT_ASSERT(pDevice != NULL);
-    
-    NTSTATUS status = STATUS_SUCCESS;
-    
-    UNREFERENCED_PARAMETER(FxPreviousState);
-
-    //
-    // Uninitialize controller.
-    //
-
-    ControllerUninitialize(pDevice);
-
-    pDevice->pCurrentTarget = NULL;
-
-    FuncExit(TRACE_FLAG_WDFLOADING);
-
-    return status;
-}
-
-_Use_decl_annotations_
-NTSTATUS
-OnSelfManagedIoInit(
-    WDFDEVICE  FxDevice
-    )
-/*++
- 
-  Routine Description:
-
-    Initializes and starts the device's self-managed I/O operations.
-
-  Arguments:
-  
-    FxDevice - a handle to the framework device object
-
-  Return Value:
-
-    None
-
---*/
-{
-    FuncEntry(TRACE_FLAG_WDFLOADING);
-
-    PPBC_DEVICE pDevice = GetDeviceContext(FxDevice);
     NTSTATUS status;
 
-    // 
-    // Register for monitor power setting callback. This will be
-    // used to dynamically set the idle timeout delay according
-    // to the monitor power state.
-    // 
-
-    NT_ASSERT(pDevice->pMonitorPowerSettingHandle == NULL);
-    
-    status = PoRegisterPowerSettingCallback(
-        WdfDeviceWdmGetDeviceObject(pDevice->FxDevice), 
-        &GUID_MONITOR_POWER_ON,
-        OnMonitorPowerSettingCallback, 
-        pDevice->FxDevice, 
-        &pDevice->pMonitorPowerSettingHandle);
-
-    if (!NT_SUCCESS(status))
+    BYTE* readBufferPtr;
+    ULONG bytesToRead;
     {
-        Trace(
-            TRACE_LEVEL_ERROR,
-            TRACE_FLAG_WDFLOADING,
-            "Failed to register monitor power setting callback - %!STATUS!",
-            status);
-                
-        goto exit;
-    }
-
-exit:
-
-    FuncExit(TRACE_FLAG_WDFLOADING);
-
-    return status;
-}
-
-_Use_decl_annotations_
-VOID
-OnSelfManagedIoCleanup(
-    WDFDEVICE  FxDevice
-    )
-/*++
- 
-  Routine Description:
-
-    Cleanup for the device's self-managed I/O operations.
-
-  Arguments:
-  
-    FxDevice - a handle to the framework device object
-
-  Return Value:
-
-    None
-
---*/
-{
-    FuncEntry(TRACE_FLAG_WDFLOADING);
-
-    PPBC_DEVICE pDevice = GetDeviceContext(FxDevice);
-
-    //
-    // Unregister for monitor power setting callback.
-    //
-
-    if (pDevice->pMonitorPowerSettingHandle != NULL)
-    {
-        PoUnregisterPowerSettingCallback(pDevice->pMonitorPowerSettingHandle);
-        pDevice->pMonitorPowerSettingHandle = NULL;
-    }
-
-    FuncExit(TRACE_FLAG_WDFLOADING);
-}
-
-_Use_decl_annotations_
-NTSTATUS
-OnMonitorPowerSettingCallback(
-    LPCGUID SettingGuid,
-    PVOID   Value,
-    ULONG   ValueLength,
-    PVOID   Context
-   )
-/*++
- 
-  Routine Description:
-
-    This routine updates the idle timeout delay according 
-    to the current monitor power setting.
-
-  Arguments:
-
-    SettingGuid - the setting GUID
-    Value - pointer to the new value of the power setting that changed
-    ValueLength - value of type ULONG that specifies the size, in bytes, 
-                  of the new power setting value 
-    Context - the WDFDEVICE pointer context
-
-  Return Value:
-
-    Status
-
---*/
-{
-    FuncEntry(TRACE_FLAG_WDFLOADING);
-
-    UNREFERENCED_PARAMETER(ValueLength);
-
-    WDFDEVICE Device;
-    WDF_DEVICE_POWER_POLICY_IDLE_SETTINGS idleSettings;
-    BOOLEAN isMonitorOff;
-    NTSTATUS status = STATUS_SUCCESS;
-
-    if (Context == NULL)
-    {
-        status = STATUS_INVALID_PARAMETER;
-
-        Trace(
-            TRACE_LEVEL_ERROR,
-            TRACE_FLAG_WDFLOADING,
-            "%!FUNC! parameter Context is NULL - %!STATUS!",
-            status);
-
-        goto exit;
-    }
-
-    Device = (WDFDEVICE)Context;
-
-    //
-    // We only expect GUID_MONITOR_POWER_ON notifications
-    // in this callback, but let's check just to be sure.
-    //
-
-    if (IsEqualGUID(*SettingGuid, GUID_MONITOR_POWER_ON))
-    {
-        NT_ASSERT(Value != NULL);
-        NT_ASSERT(ValueLength == sizeof(ULONG));
-
-        //
-        // Determine power setting.
-        //
-
-        isMonitorOff = ((*(PULONG)Value) == MONITOR_POWER_OFF);
-
-        //
-        // Update the idle timeout delay.
-        //
-
-        WDF_DEVICE_POWER_POLICY_IDLE_SETTINGS_INIT(
-            &idleSettings, 
-            IdleCannotWakeFromS0);
-
-        idleSettings.IdleTimeoutType = SystemManagedIdleTimeoutWithHint;
-
-        if (isMonitorOff)
-        { 
-            idleSettings.IdleTimeout = IDLE_TIMEOUT_MONITOR_OFF;
-        }
-        else
-        {
-            idleSettings.IdleTimeout = IDLE_TIMEOUT_MONITOR_ON;
- 
-        }
-
-        status = WdfDeviceAssignS0IdleSettings(
-            Device, 
-            &idleSettings);
-
-        if (!NT_SUCCESS(status))
-        {
-            Trace(
-                TRACE_LEVEL_ERROR,
-                TRACE_FLAG_WDFLOADING,
-                "Failed to assign S0 idle settings - %!STATUS!",
+        PVOID outputBufferPtr;
+        size_t outputBufferLength;
+        status = WdfRequestRetrieveOutputBuffer(
+                    SpbRequest,
+                    1,          // MinimumRequiredSize
+                    &outputBufferPtr,
+                    &outputBufferLength);
+        if (!NT_SUCCESS(status)) {
+            BSC_LOG_ERROR(
+                "Failed to retreive output buffer from request. (SpbRequest = %p, status = %!STATUS!)",
+                SpbRequest,
                 status);
-                
-            goto exit;
+            SpbRequestComplete(SpbRequest, status);
+            return;
         }
+
+        UNREFERENCED_PARAMETER(Length);
+        NT_ASSERT(outputBufferLength == Length);
+        if (outputBufferLength > BCM_I2C_MAX_TRANSFER_LENGTH) {
+            BSC_LOG_ERROR(
+                "Output buffer is too large for DataLength register. (SpbRequest = %p, outputBufferLength = %lu, BCM_I2C_MAX_TRANSFER_LENGTH = %lu)",
+                SpbRequest,
+                outputBufferLength,
+                BCM_I2C_MAX_TRANSFER_LENGTH);
+            SpbRequestComplete(SpbRequest, STATUS_NOT_SUPPORTED);
+            return;
+        }
+
+        readBufferPtr = static_cast<BYTE*>(outputBufferPtr);
+        bytesToRead = static_cast<ULONG>(outputBufferLength);
     }
 
-exit:
-    
-    FuncExit(TRACE_FLAG_WDFLOADING);
- 
-    return status;
-}
+    BCM_I2C_DEVICE_CONTEXT* devicePtr = GetDeviceContext(WdfDevice);
+    BCM_I2C_REGISTERS* registersPtr = devicePtr->RegistersPtr;
 
-_Use_decl_annotations_
-NTSTATUS
-OnTargetConnect(
-    WDFDEVICE  SpbController,
-    SPBTARGET  SpbTarget
-    )
-/*++
- 
-  Routine Description:
+    // get connection settings
+    const BCM_I2C_TARGET_CONTEXT* targetPtr = GetTargetContext(SpbTarget);
 
-    This routine is invoked whenever a peripheral driver opens
-    a target.  It retrieves target-specific settings from the
-    Resource Hub and saves them in the target's context.
+    BSC_LOG_TRACE(
+        "Setting up Read request. (targetPtr->Address = 0x%lx, targetPtr->ConnectionSpeed = %lu, readBufferPtr = %p, bytesToRead = %lu)",
+        targetPtr->Address,
+        targetPtr->ConnectionSpeed,
+        readBufferPtr,
+        bytesToRead);
 
-  Arguments:
+    InitializeTransfer(registersPtr, targetPtr, bytesToRead);
 
-    SpbController - a handle to the framework device object
-        representing an SPB controller
-    SpbTarget - a handle to the SPBTARGET object
+    // Start transfer
+    WRITE_REGISTER_NOFENCE_ULONG(
+        &registersPtr->Control,
+        BCM_I2C_REG_CONTROL_I2CEN |
+        BCM_I2C_REG_CONTROL_ST |
+        BCM_I2C_REG_CONTROL_CLEAR |
+        BCM_I2C_REG_CONTROL_READ);
 
-  Return Value:
-
-    Status
-
---*/
-{
-    FuncEntry(TRACE_FLAG_SPBDDI);
-
-    PPBC_DEVICE pDevice  = GetDeviceContext(SpbController);
-    PPBC_TARGET pTarget  = GetTargetContext(SpbTarget);
-    
-    NT_ASSERT(pDevice != NULL);
-    NT_ASSERT(pTarget != NULL);
-    
-    NTSTATUS status = STATUS_SUCCESS;
-
-    //
-    // Get target connection parameters.
-    //
-
-    SPB_CONNECTION_PARAMETERS params;
-    SPB_CONNECTION_PARAMETERS_INIT(&params);
-
-    SpbTargetGetConnectionParameters(SpbTarget, &params);
-
-    //
-    // Retrieve target settings.
-    //
-
-    status = PbcTargetGetSettings(pDevice,
-                                  params.ConnectionParameters,
-                                  &pTarget->Settings
-                                  );
-    
-    //
-    // fail on unsupported target settings
-    // - only 7 bit addressing supported
-    // - host initiates transaction
-    // - clock in the range 100khz..400khz
-    //
-    if ((pTarget->Settings.AddressMode != AddressMode7Bit) ||
-        (pTarget->Settings.Address > I2C_MAX_ADDRESS) ||  
-        (pTarget->Settings.GeneralFlags & I2C_SLV_BIT) != 0 ||
-        (pTarget->Settings.ConnectionSpeed > I2C_MAX_CONNECTION_SPEED) ||
-        (pTarget->Settings.ConnectionSpeed < I2C_MIN_CONNECTION_SPEED)
-        )
+    // Must set up interrupt context before marking request cancelable
+    BCM_I2C_INTERRUPT_CONTEXT* interruptContextPtr;
     {
-        status = STATUS_INVALID_PARAMETER;
+        interruptContextPtr = devicePtr->InterruptContextPtr;
+        NT_ASSERT(interruptContextPtr->RegistersPtr == registersPtr);
+
+        interruptContextPtr->SpbRequest = SpbRequest;
+        interruptContextPtr->TargetPtr = targetPtr;
+        interruptContextPtr->State = TRANSFER_STATE::RECEIVING;
+        interruptContextPtr->CapturedStatus = 0;
+        interruptContextPtr->CapturedDataLength = 0;
+
+        interruptContextPtr->ReadContext.ReadBufferPtr = readBufferPtr;
+        interruptContextPtr->ReadContext.CurrentReadBufferPtr = readBufferPtr;
+        interruptContextPtr->ReadContext.EndPtr = readBufferPtr + bytesToRead;
     }
 
-    //
-    // Initialize target context.
-    //
-
-    if (NT_SUCCESS(status))
-    {
-        pTarget->SpbTarget = SpbTarget;
-        pTarget->pCurrentRequest = NULL;
-
-        Trace(
-            TRACE_LEVEL_INFORMATION,
-            TRACE_FLAG_SPBDDI,
-            "Connected to SPBTARGET %p at address 0x%lx from WDFDEVICE %p",
-            pTarget->SpbTarget,
-            pTarget->Settings.Address,
-            pDevice->FxDevice);
-    }
-    
-    FuncExit(TRACE_FLAG_SPBDDI);
-
-    return status;
-}
-
-_Use_decl_annotations_
-VOID
-OnControllerLock(
-    WDFDEVICE   SpbController,
-    SPBTARGET   SpbTarget,
-    SPBREQUEST  SpbRequest
-    )
-/*++
- 
-  Routine Description:
-
-    This routine is invoked whenever the controller is to
-    be locked for a single target. The request is only completed
-    if there is an error configuring the transfer.
-
-  Arguments:
-
-    SpbController - a handle to the framework device object
-        representing an SPB controller
-    SpbTarget - a handle to the SPBTARGET object
-    SpbRequest - a handle to the SPBREQUEST object
-
-  Return Value:
-
-    None.  The request is completed synchronously.
-
---*/
-{
-    FuncEntry(TRACE_FLAG_SPBDDI);
-
-    PPBC_DEVICE  pDevice  = GetDeviceContext(SpbController);
-    PPBC_TARGET  pTarget  = GetTargetContext(SpbTarget);
-    
-    NT_ASSERT(pDevice  != NULL);
-    NT_ASSERT(pTarget  != NULL);
-
-    //
-    // Acquire the device lock.
-    //
-
-    WdfSpinLockAcquire(pDevice->Lock);
-
-    //
-    // Assign current target.
-    //
-
-    NT_ASSERT(pDevice->pCurrentTarget == NULL);
-
-    pDevice->pCurrentTarget = pTarget;
-
-    WdfSpinLockRelease(pDevice->Lock);
-
-    Trace(
-        TRACE_LEVEL_INFORMATION,
-        TRACE_FLAG_SPBDDI,
-        "Controller locked for SPBTARGET %p at address 0x%lx (WDFDEVICE %p)",
-        pTarget->SpbTarget,
-        pTarget->Settings.Address,
-        pDevice->FxDevice);
-
-    //
-    // Complete lock request.
-    //
-
-    SpbRequestComplete(SpbRequest, STATUS_SUCCESS);
-    
-    FuncExit(TRACE_FLAG_SPBDDI);
-}
-
-_Use_decl_annotations_
-VOID
-OnControllerUnlock(
-    WDFDEVICE   SpbController,
-    SPBTARGET   SpbTarget,
-    SPBREQUEST  SpbRequest
-    )
-/*++
- 
-  Routine Description:
-
-    This routine is invoked whenever the controller is to
-    be unlocked for a single target. The request is only completed
-    if there is an error configuring the transfer.
-
-  Arguments:
-
-    SpbController - a handle to the framework device object
-        representing an SPB controller
-    SpbTarget - a handle to the SPBTARGET object
-    SpbRequest - a handle to the SPBREQUEST object
-
-  Return Value:
-
-    None.  The request is completed asynchronously.
-
---*/
-{
-    FuncEntry(TRACE_FLAG_SPBDDI);
-
-    PPBC_DEVICE  pDevice  = GetDeviceContext(SpbController);
-    PPBC_TARGET  pTarget  = GetTargetContext(SpbTarget);
-    
-    NT_ASSERT(pDevice  != NULL);
-    NT_ASSERT(pTarget  != NULL);
-
-    //
-    // Acquire the device lock.
-    //
-
-    WdfSpinLockAcquire(pDevice->Lock);
-
-    ControllerUnlockTransfer(pDevice);
-
-    //
-    // Remove current target.
-    //
-
-    NT_ASSERT(pDevice->pCurrentTarget == pTarget);
-
-    pDevice->pCurrentTarget = NULL;
-    
-    WdfSpinLockRelease(pDevice->Lock);
-
-    Trace(
-        TRACE_LEVEL_INFORMATION,
-        TRACE_FLAG_SPBDDI,
-        "Controller unlocked for SPBTARGET %p at address 0x%lx (WDFDEVICE %p)",
-        pTarget->SpbTarget,
-        pTarget->Settings.Address,
-        pDevice->FxDevice);
-
-    //
-    // Complete lock request.
-    //
-
-    SpbRequestComplete(SpbRequest, STATUS_SUCCESS);
-    
-    FuncExit(TRACE_FLAG_SPBDDI);
-}
-
-_Use_decl_annotations_
-VOID
-OnRead(
-    WDFDEVICE   SpbController,
-    SPBTARGET   SpbTarget,
-    SPBREQUEST  SpbRequest,
-    size_t      Length
-    )
-/*++
- 
-  Routine Description:
-
-    This routine sets up a read from the target device using
-    the supplied buffers.  The request is only completed
-    if there is an error configuring the transfer.
-
-  Arguments:
-
-    SpbController - a handle to the framework device object
-        representing an SPB controller
-    SpbTarget - a handle to the SPBTARGET object
-    SpbRequest - a handle to the SPBREQUEST object
-    Length - the number of bytes to read from the target
-
-  Return Value:
-
-    None.  The request is completed asynchronously.
-
---*/
-{
-    FuncEntry(TRACE_FLAG_SPBDDI);
-
-    Trace(
-        TRACE_LEVEL_INFORMATION,
-        TRACE_FLAG_SPBDDI,
-        "Received read request %p of length %Iu for SPBTARGET %p (WDFDEVICE %p)",
-        SpbRequest,
-        Length,
-        SpbTarget,
-        SpbController);
-
-    PbcRequestConfigureForNonSequence(
-        SpbController,
-        SpbTarget,
-        SpbRequest,
-        Length);
-
-    FuncExit(TRACE_FLAG_SPBDDI);
-}
-
-_Use_decl_annotations_
-VOID
-OnWrite(
-    WDFDEVICE   SpbController,
-    SPBTARGET   SpbTarget,
-    SPBREQUEST  SpbRequest,
-    size_t      Length
-    )
-/*++
- 
-  Routine Description:
-
-    This routine sets up a write to the target device using
-    the supplied buffers.  The request is only completed
-    if there is an error configuring the transfer.
-
-  Arguments:
-
-    SpbController - a handle to the framework device object
-        representing an SPB controller
-    SpbTarget - a handle to the SPBTARGET object
-    SpbRequest - a handle to the SPBREQUEST object
-    Length - the number of bytes to write to the target
-
-  Return Value:
-
-    None.  The request is completed asynchronously.
-
---*/
-{
-    FuncEntry(TRACE_FLAG_SPBDDI);
-
-    Trace(
-        TRACE_LEVEL_INFORMATION,
-        TRACE_FLAG_SPBDDI,
-        "Received write request %p of length %Iu for SPBTARGET %p (WDFDEVICE %p)",
-        SpbRequest,
-        Length,
-        SpbTarget,
-        SpbController);
-
-    PbcRequestConfigureForNonSequence(
-        SpbController,
-        SpbTarget,
-        SpbRequest,
-        Length);
-
-    FuncExit(TRACE_FLAG_SPBDDI);
-}
-
-_Use_decl_annotations_
-VOID
-OnSequence(
-    WDFDEVICE   SpbController,
-    SPBTARGET   SpbTarget,
-    SPBREQUEST  SpbRequest,
-    ULONG       TransferCount
-    )
-/*++
- 
-  Routine Description:
-
-    This routine sets up a sequence of reads and writes.  It 
-    validates parameters as necessary.  The request is only 
-    completed if there is an error configuring the transfer.
-
-  Arguments:
-
-    SpbController - a handle to the framework device object
-        representing an SPB controller
-    SpbTarget - a handle to the SPBTARGET object
-    SpbRequest - a handle to the SPBREQUEST object
-    TransferCount - number of individual transfers in the sequence
-
-  Return Value:
-
-    None.  The request is completed asynchronously.
-
---*/
-{
-    FuncEntry(TRACE_FLAG_SPBDDI);
-
-    PPBC_DEVICE  pDevice  = GetDeviceContext(SpbController);
-    PPBC_TARGET  pTarget  = GetTargetContext(SpbTarget);
-    PPBC_REQUEST pRequest = GetRequestContext(SpbRequest);
-    
-    NT_ASSERT(pDevice  != NULL);
-    NT_ASSERT(pTarget  != NULL);
-    NT_ASSERT(pRequest != NULL);
-    
-    NTSTATUS status = STATUS_SUCCESS;
-    
-    //
-    // Get request parameters.
-    //
-
-    SPB_REQUEST_PARAMETERS params;
-    SPB_REQUEST_PARAMETERS_INIT(&params);
-    SpbRequestGetParameters(SpbRequest, &params);
-    
-    NT_ASSERT(params.Position == SpbRequestSequencePositionSingle);
-    NT_ASSERT(params.Type == SpbRequestTypeSequence);
-
-    //
-    // Initialize request context.
-    //
-    
-    pRequest->SpbRequest = SpbRequest;
-    pRequest->Type = params.Type;
-    pRequest->TotalInformation = 0;
-    pRequest->TransferCount = TransferCount;
-    pRequest->TransferIndex = 0;
-    pRequest->bIoComplete = FALSE;
-
-    Trace(
-        TRACE_LEVEL_INFORMATION,
-        TRACE_FLAG_SPBDDI,
-        "Received sequence request %p with transfer count %d for SPBTARGET %p (WDFDEVICE %p)",
-        pRequest->SpbRequest,
-        pRequest->TransferCount,
-        SpbTarget,
-        SpbController);
-
-    //
-    // Validate the request before beginning the transfer.
-    //
-    
-    status = PbcRequestValidate(pRequest);
-
-    if (!NT_SUCCESS(status))
-    {
-        goto exit;
-    }
-    
-    //
-    // Configure the request.
-    //
-
-    status = PbcRequestConfigureForIndex(pRequest, 0);
-
-    if (!NT_SUCCESS(status))
-    {
-        Trace(
-            TRACE_LEVEL_ERROR, 
-            TRACE_FLAG_SPBDDI, 
-            "Error configuring request context for SPBREQUEST %p (SPBTARGET %p) - %!STATUS!",
-            pRequest->SpbRequest,
-            SpbTarget,
+    status = WdfRequestMarkCancelableEx(SpbRequest, OnRequestCancel);
+    if (!NT_SUCCESS(status)) {
+        BSC_LOG_INFORMATION(
+            "Failed to mark request cancelable. (SpbRequest = %p, status = %!STATUS!)",
+            SpbRequest,
             status);
-
-        goto exit;
-    }
-
-    //
-    // Acquire the device lock.
-    //
-
-    WdfSpinLockAcquire(pDevice->Lock);
-
-    //
-    // Mark request cancellable (if cancellation supported).
-    //
-
-    status = WdfRequestMarkCancelableEx(
-        pRequest->SpbRequest, OnCancel);
-
-    if (!NT_SUCCESS(status))
-    {
-        //
-        // WdfRequestMarkCancelableEx should only fail if the request
-        // has already been cancelled. If it does fail the request
-        // must be completed with the corresponding status.
-        //
-
-        NT_ASSERTMSG("WdfRequestMarkCancelableEx should only fail if the request has already been cancelled",
-            status == STATUS_CANCELLED);
-
-        Trace(
-            TRACE_LEVEL_INFORMATION,
-            TRACE_FLAG_TRANSFER,
-            "Failed to mark SPBREQUEST %p cancellable - %!STATUS!",
-            pRequest->SpbRequest,
-            status);
-        
-        WdfSpinLockRelease(pDevice->Lock);
-        goto exit;
-    }
-    
-    //
-    // Update device and target contexts.
-    //
-
-    NT_ASSERT(pDevice->pCurrentTarget == NULL);
-    NT_ASSERT(pTarget->pCurrentRequest == NULL);
-    
-    pDevice->pCurrentTarget = pTarget;
-    pTarget->pCurrentRequest = pRequest;
-    
-    //
-    // Configure controller and kick-off read.
-    // Request will be completed asynchronously.
-    //
-    
-    PbcRequestDoTransfer(pDevice, pRequest);
-    
-    WdfSpinLockRelease(pDevice->Lock);
-    
-exit:
-
-    if (!NT_SUCCESS(status))
-    {
-        Trace(
-            TRACE_LEVEL_ERROR,
-            TRACE_FLAG_SPBDDI,
-            "Error configuring sequence, completing SPBREQUEST %p synchronously - %!STATUS!", 
-            pRequest->SpbRequest,
-            status);
-
+        WRITE_REGISTER_NOFENCE_ULONG(
+            &registersPtr->Control,
+            BCM_I2C_REG_CONTROL_I2CEN | BCM_I2C_REG_CONTROL_CLEAR);
         SpbRequestComplete(SpbRequest, status);
+        return;
     }
-    
-    FuncExit(TRACE_FLAG_SPBDDI);
+
+    BSC_LOG_TRACE("Finished setting up the read, enabling interrupts");
+
+    // enable interrupts
+    WRITE_REGISTER_NOFENCE_ULONG(
+        &registersPtr->Control,
+        BCM_I2C_REG_CONTROL_I2CEN |
+        BCM_I2C_REG_CONTROL_INTR |
+        BCM_I2C_REG_CONTROL_INTD |
+        BCM_I2C_REG_CONTROL_READ);
 }
 
 _Use_decl_annotations_
-VOID
-OnOtherInCallerContext(
-    WDFDEVICE   SpbController,
-    WDFREQUEST  FxRequest
+VOID OnWrite (
+    WDFDEVICE WdfDevice,
+    SPBTARGET SpbTarget,
+    SPBREQUEST SpbRequest,
+    size_t Length
     )
-/*++
- 
-  Routine Description:
-
-    This routine preprocesses custom IO requests before the framework
-    places them in an IO queue. For requests using the SPB transfer list
-    format, it calls SpbRequestCaptureIoOtherTransferList to capture the
-    client's buffers.
-
-  Arguments:
-
-    SpbController - a handle to the framework device object
-        representing an SPB controller
-    SpbRequest - a handle to the SPBREQUEST object
-
-  Return Value:
-
-    None.  The request is either completed or enqueued asynchronously.
-
---*/
 {
-    FuncEntry(TRACE_FLAG_SPBDDI);
+    BCM_I2C_ASSERT_MAX_IRQL(DISPATCH_LEVEL);
 
     NTSTATUS status;
 
-    //
-    // Check for custom IOCTLs that this driver handles. If
-    // unrecognized mark as STATUS_NOT_SUPPORTED and complete.
-    //
-
-    WDF_REQUEST_PARAMETERS fxParams;
-    WDF_REQUEST_PARAMETERS_INIT(&fxParams);
-
-    WdfRequestGetParameters(FxRequest, &fxParams);
-
-    if ((fxParams.Type != WdfRequestTypeDeviceControl) &&
-        (fxParams.Type != WdfRequestTypeDeviceControlInternal))
+    const BYTE* writeBufferPtr;
+    ULONG bytesToWrite;
     {
-        status = STATUS_NOT_SUPPORTED;
-        Trace(
-            TRACE_LEVEL_ERROR,
-            TRACE_FLAG_SPBDDI,
-            "FxRequest %p is of unsupported request type - %!STATUS!",
-            FxRequest,
-            status
-            );
-        goto exit;
+        PVOID inputBufferPtr;
+        size_t inputBufferLength;
+        status = WdfRequestRetrieveInputBuffer(
+                    SpbRequest,
+                    1,          // MinimumRequiredSize
+                    &inputBufferPtr,
+                    &inputBufferLength);
+        if (!NT_SUCCESS(status)) {
+            BSC_LOG_ERROR(
+                "Failed to retrieve input buffer from request. (SpbRequest = %p, status = %!STATUS!)",
+                SpbRequest,
+                status);
+            SpbRequestComplete(SpbRequest, status);
+            return;
+        }
+
+        UNREFERENCED_PARAMETER(Length);
+        NT_ASSERT(inputBufferLength == Length);
+        if (inputBufferLength > BCM_I2C_MAX_TRANSFER_LENGTH) {
+            BSC_LOG_ERROR(
+                "Write buffer is too large. (SpbRequest = %p, inputBufferLength = %lu, BCM_I2C_MAX_TRANSFER_LENGTH = %lu)",
+                SpbRequest,
+                inputBufferLength,
+                BCM_I2C_MAX_TRANSFER_LENGTH);
+            SpbRequestComplete(SpbRequest, STATUS_NOT_SUPPORTED);
+            return;
+        }
+
+        writeBufferPtr = static_cast<const BYTE*>(inputBufferPtr);
+        bytesToWrite = static_cast<ULONG>(inputBufferLength);
     }
 
-    //
-    // For custom IOCTLs that use the SPB transfer list format
-    // (i.e. sequence formatting), call SpbRequestCaptureIoOtherTransferList
-    // so that the driver can leverage other SPB DDIs for this request.
-    //
+    BCM_I2C_DEVICE_CONTEXT* devicePtr = GetDeviceContext(WdfDevice);
+    BCM_I2C_REGISTERS* registersPtr = devicePtr->RegistersPtr;
 
-    status = SpbRequestCaptureIoOtherTransferList((SPBREQUEST)FxRequest);
+    // get connection settings
+    const BCM_I2C_TARGET_CONTEXT* targetPtr = GetTargetContext(SpbTarget);
 
-    if (!NT_SUCCESS(status))
+    BSC_LOG_TRACE(
+        "Setting up Write request. (targetPtr->Address = 0x%lx, targetPtr->ConnectionSpeed = %lu, writeBufferPtr = %p, bytesToWrite = %lu)",
+        targetPtr->Address,
+        targetPtr->ConnectionSpeed,
+        writeBufferPtr,
+        bytesToWrite);
+
+    InitializeTransfer(registersPtr, targetPtr, bytesToWrite);
+
+    // Start transfer
+    WRITE_REGISTER_NOFENCE_ULONG(
+        &registersPtr->Control,
+        BCM_I2C_REG_CONTROL_I2CEN |
+        BCM_I2C_REG_CONTROL_ST |
+        BCM_I2C_REG_CONTROL_CLEAR);
+
+    // do initial fill of FIFO
+    ULONG bytesWritten = WriteFifo(
+                            registersPtr,
+                            writeBufferPtr,
+                            bytesToWrite);
+
+    // set up interrupt context
+    BCM_I2C_INTERRUPT_CONTEXT* interruptContextPtr;
     {
-        Trace(
-            TRACE_LEVEL_ERROR,
-            TRACE_FLAG_SPBDDI,
-            "Failed to capture transfer list for custom SpbRequest %p"
-            " - %!STATUS!",
-            FxRequest,
-            status
-            );
-        goto exit;
+        interruptContextPtr = devicePtr->InterruptContextPtr;
+        NT_ASSERT(interruptContextPtr->RegistersPtr == registersPtr);
+
+        interruptContextPtr->SpbRequest = SpbRequest;
+        interruptContextPtr->TargetPtr = targetPtr;
+        interruptContextPtr->State = TRANSFER_STATE::SENDING;
+        interruptContextPtr->CapturedStatus = 0;
+        interruptContextPtr->CapturedDataLength = 0;
+
+        interruptContextPtr->WriteContext.WriteBufferPtr = writeBufferPtr;
+        interruptContextPtr->WriteContext.CurrentWriteBufferPtr =
+            writeBufferPtr + bytesWritten;
+        interruptContextPtr->WriteContext.EndPtr =
+            writeBufferPtr + bytesToWrite;
     }
 
-    //
-    // Preprocessing has succeeded, enqueue the request.
-    //
-
-    status = WdfDeviceEnqueueRequest(SpbController, FxRequest);
-
-    if (!NT_SUCCESS(status))
-    {
-        goto exit;
-    }
-
-exit:
-
-    if (!NT_SUCCESS(status))
-    {
-        WdfRequestComplete(FxRequest, status);
-    }
-    
-    FuncExit(TRACE_FLAG_SPBDDI);
-}
-
-_Use_decl_annotations_
-VOID
-OnOther(
-    WDFDEVICE   SpbController,
-    SPBTARGET   SpbTarget,
-    SPBREQUEST  SpbRequest,
-    size_t      OutputBufferLength,
-    size_t      InputBufferLength,
-    ULONG       IoControlCode
-    )
-/*++
- 
-  Routine Description:
-
-    This routine processes custom IO requests that are not natively
-    supported by the SPB framework extension. For requests using the 
-    SPB transfer list format, SpbRequestCaptureIoOtherTransferList 
-    must have been called in the driver's OnOtherInCallerContext routine.
-
-  Arguments:
-
-    SpbController - a handle to the framework device object
-        representing an SPB controller
-    SpbTarget - a handle to the SPBTARGET object
-    SpbRequest - a handle to the SPBREQUEST object
-    OutputBufferLength - the request's output buffer length
-    InputBufferLength - the requests input buffer length
-    IoControlCode - the device IO control code
-
-  Return Value:
-
-    None.  The request is completed asynchronously.
-
---*/
-{
-    FuncEntry(TRACE_FLAG_SPBDDI);
-    
-    NTSTATUS status = STATUS_NOT_SUPPORTED;
-
-    UNREFERENCED_PARAMETER(SpbController);
-    UNREFERENCED_PARAMETER(SpbTarget);
-    UNREFERENCED_PARAMETER(OutputBufferLength);
-    UNREFERENCED_PARAMETER(InputBufferLength);
-    UNREFERENCED_PARAMETER(IoControlCode);
-
-    if (!NT_SUCCESS(status))
-    {
+    status = WdfRequestMarkCancelableEx(SpbRequest, OnRequestCancel);
+    if (!NT_SUCCESS(status)) {
+        BSC_LOG_INFORMATION(
+            "Failed to mark request cancelable. (SpbRequest = %p, status = %!STATUS!)",
+            SpbRequest,
+            status);
+        WRITE_REGISTER_NOFENCE_ULONG(
+            &registersPtr->Control,
+            BCM_I2C_REG_CONTROL_I2CEN | BCM_I2C_REG_CONTROL_CLEAR);
         SpbRequestComplete(SpbRequest, status);
+        return;
     }
-    
-    FuncExit(TRACE_FLAG_SPBDDI);
+
+    BSC_LOG_TRACE("Finished setting up the write, enabling interrupts");
+
+    // enable interrupts
+    WRITE_REGISTER_NOFENCE_ULONG(
+        &registersPtr->Control,
+        BCM_I2C_REG_CONTROL_I2CEN |
+        BCM_I2C_REG_CONTROL_INTT |
+        BCM_I2C_REG_CONTROL_INTD);
 }
 
-_Use_decl_annotations_
-VOID
-OnCancel(
-    WDFREQUEST  FxRequest
-)
-
-/*++
- 
-  Routine Description:
-
-    This routine cancels an outstanding request. It
-    must synchronize with other driver callbacks.
-
-  Arguments:
-
-    wdfRequest - a handle to the WDFREQUEST object
-
-  Return Value:
-
-    None.  The request is completed with status.
-
---*/
-{
-    FuncEntry(TRACE_FLAG_TRANSFER);
-
-    SPBREQUEST spbRequest = (SPBREQUEST) FxRequest;
-    PPBC_DEVICE pDevice;
-    PPBC_TARGET pTarget;
-    PPBC_REQUEST pRequest;
-    BOOLEAN bTransferCompleted = FALSE;
-
-    //
-    // Get the contexts.
-    //
-
-    pDevice = GetDeviceContext(SpbRequestGetController(spbRequest));
-    pTarget = GetTargetContext(SpbRequestGetTarget(spbRequest));
-    pRequest = GetRequestContext(spbRequest);
-    
-    NT_ASSERT(pDevice  != NULL);
-    NT_ASSERT(pTarget  != NULL);
-    NT_ASSERT(pRequest != NULL);
-
-    //
-    // Acquire the device lock.
-    //
-
-    WdfSpinLockAcquire(pDevice->Lock);
-
-    //
-    // Make sure the current target and request 
-    // are valid.
-    //
-    
-    if (pTarget != pDevice->pCurrentTarget)
-    {
-        Trace(
-            TRACE_LEVEL_WARNING,
-            TRACE_FLAG_TRANSFER,
-            "Cancel callback without a valid current target for WDFDEVICE %p",
-            pDevice->FxDevice
-            );
-
-        goto exit;
-    }
-
-    if (pRequest != pTarget->pCurrentRequest)
-    {
-        Trace(
-            TRACE_LEVEL_WARNING,
-            TRACE_FLAG_TRANSFER,
-            "Cancel callback without a valid current request for SPBTARGET %p",
-            pTarget->SpbTarget
-            );
-
-        goto exit;
-    }
-
-    Trace(
-        TRACE_LEVEL_INFORMATION,
-        TRACE_FLAG_TRANSFER,
-        "Cancel callback with outstanding SPBREQUEST %p, "
-        "stop IO and complete it",
-        spbRequest);
-
-    //
-    // Stop delay timer.
-    //
-
-    if(WdfTimerStop(pDevice->DelayTimer, FALSE))
-    {
-        Trace(
-            TRACE_LEVEL_INFORMATION,
-            TRACE_FLAG_TRANSFER,
-            "Delay timer previously schedule, now stopped");
-    }
-    
-    //
-    // Disable interrupts and clear saved stat for DPC. 
-    // Must synchronize with ISR.
-    //
-
-    NT_ASSERT(pDevice->InterruptObject != NULL);
-
-    WdfInterruptAcquireLock(pDevice->InterruptObject);
-
-    ControllerDisableInterrupts(pDevice);
-    pDevice->InterruptStatus = 0;
-    
-    WdfInterruptReleaseLock(pDevice->InterruptObject);
-
-    //
-    // Mark request as cancelled and complete.
-    //
-
-    pRequest->Status = STATUS_CANCELLED;
-
-    ControllerCompleteTransfer(pDevice, pRequest, TRUE);
-    NT_ASSERT(pRequest->bIoComplete == TRUE);
-    bTransferCompleted = TRUE;
-
-exit:
-
-    //
-    // Release the device lock.
-    //
-
-    WdfSpinLockRelease(pDevice->Lock);
-
-    //
-    // Complete the request. There shouldn't be more IO.
-    // This must be done outside of the locked code.
-    //
-
-    if (bTransferCompleted)
-    {
-        PbcRequestComplete(pRequest);
-    }
-
-    FuncExit(TRACE_FLAG_SPBDDI);
-}
-
-
-/////////////////////////////////////////////////
 //
-// Interrupt handling functions.
+// Does the initial write of a sequence transfer.
 //
-/////////////////////////////////////////////////
-
-_Use_decl_annotations_
-BOOLEAN
-OnInterruptIsr(
-    WDFINTERRUPT Interrupt,
-    ULONG        MessageID
-    )
-/*++
- 
-  Routine Description:
-
-    This routine responds to interrupts generated by the
-    controller. If one is recognized, it queues a DPC for 
-    processing. The interrupt is acknowledged and subsequent
-    interrupts are temporarily disabled.
-
-  Arguments:
-
-    Interrupt - a handle to a framework interrupt object
-    MessageID - message number identifying the device's
-        hardware interrupt message (if using MSI)
-
-  Return Value:
-
-    TRUE if interrupt recognized.
-
---*/
+_IRQL_requires_max_(DISPATCH_LEVEL)
+NTSTATUS StartSequenceWrite ( BCM_I2C_INTERRUPT_CONTEXT* InterruptContextPtr )
 {
-    FuncEntry(TRACE_FLAG_TRANSFER);
+    BCM_I2C_ASSERT_MAX_IRQL(DISPATCH_LEVEL);
 
-    BOOLEAN interruptRecognized = FALSE;
-    ULONG stat;
-    PPBC_DEVICE pDevice = GetDeviceContext(
-        WdfInterruptGetDevice(Interrupt));
+    NTSTATUS status;
+    BCM_I2C_INTERRUPT_CONTEXT::SEQUENCE_CONTEXT* sequenceContextPtr =
+        &InterruptContextPtr->SequenceContext;
+    BCM_I2C_REGISTERS* registersPtr = InterruptContextPtr->RegistersPtr;
+    SPBREQUEST spbRequest = InterruptContextPtr->SpbRequest;
 
-    UNREFERENCED_PARAMETER(MessageID);
+    NT_ASSERT(InterruptContextPtr->State == TRANSFER_STATE::SENDING_SEQUENCE);
+    NT_ASSERT(sequenceContextPtr->BytesToWrite != 0);
 
-    NT_ASSERT(pDevice  != NULL);
+    if (sequenceContextPtr->BytesToWrite == 1) {
+        BSC_LOG_TRACE(
+            "Transmit buffer is length 1; waiting for transfer to become active and then setting up the read. (bytesToRead = %lu)",
+            sequenceContextPtr->BytesToRead);
 
-    //
-    // Queue a DPC if the device's interrupt
-    // is enabled and active.
-    //
+        status = WaitForTransferActive(registersPtr);
+        if (!NT_SUCCESS(status)) {
+            BSC_LOG_ERROR(
+                "The transfer failed to become active. (status = %!STATUS!)",
+                status);
+            return status;
+        }
 
-    stat = ControllerGetInterruptStatus(
-        pDevice,
-        PbcDeviceGetInterruptMask(pDevice));
-
-    if (stat > 0)
-    {
-        Trace(
-            TRACE_LEVEL_VERBOSE,
-            TRACE_FLAG_TRANSFER,
-            "Interrupt with status 0x%lx for WDFDEVICE %p",
-            stat,
-            pDevice->FxDevice);
+        status = WdfRequestMarkCancelableEx(spbRequest, OnRequestCancel);
+        if (!NT_SUCCESS(status)) {
+            BSC_LOG_INFORMATION(
+                "Failed to mark request cancelable. (spbRequest = %p, status = %!STATUS!)",
+                spbRequest,
+                status);
+            return status;
+        }
 
         //
-        // Save the interrupt status and disable all other
-        // interrupts for now.  They will be re-enabled
-        // in OnInterruptDpc.  Queue the DPC.
+        // This lock prevents preemption by the ISR when queuing the first
+        // byte to the data FIFO. The control register cannot be written to
+        // again after the read is programmed, so interrupts must be enabled in
+        // the same register operation.
         //
-
-        interruptRecognized = TRUE;
-        
-        pDevice->InterruptStatus |= (stat);
-        ControllerDisableInterrupts(pDevice);
-        
-        if(!WdfInterruptQueueDpcForIsr(Interrupt))
         {
-            Trace(
-                TRACE_LEVEL_INFORMATION,
-                TRACE_FLAG_TRANSFER,
-                "Interrupt with status 0x%lx occurred with DPC already queued for WDFDEVICE %p",
-                stat,
-                pDevice->FxDevice);
+            WdfInterruptAcquireLock(InterruptContextPtr->WdfInterrupt);
+
+            WRITE_REGISTER_NOFENCE_ULONG(
+                &registersPtr->DataLength,
+                sequenceContextPtr->BytesToRead);
+            WRITE_REGISTER_NOFENCE_ULONG(
+                &registersPtr->Control,
+                BCM_I2C_REG_CONTROL_I2CEN |
+                BCM_I2C_REG_CONTROL_ST |
+                BCM_I2C_REG_CONTROL_INTR |
+                BCM_I2C_REG_CONTROL_INTD |
+                BCM_I2C_REG_CONTROL_READ);
+
+            // write first and only byte to FIFO
+            NT_ASSERT(
+                sequenceContextPtr->CurrentWriteMdl->MdlFlags &
+               (MDL_MAPPED_TO_SYSTEM_VA | MDL_SOURCE_IS_NONPAGED_POOL));
+            WRITE_REGISTER_NOFENCE_ULONG(
+                &registersPtr->DataFIFO,
+                *static_cast<const BYTE*>(
+                    sequenceContextPtr->CurrentWriteMdl->MappedSystemVa));
+            ++sequenceContextPtr->BytesWritten;
+            ++sequenceContextPtr->CurrentWriteMdlOffset;
+
+            NT_ASSERT(
+                sequenceContextPtr->BytesWritten ==
+                sequenceContextPtr->BytesToWrite);
+            NT_ASSERT(sequenceContextPtr->CurrentWriteMdlOffset == 1);
+
+            NT_ASSERT(!sequenceContextPtr->CurrentWriteMdl->Next);
+            sequenceContextPtr->CurrentWriteMdl = nullptr;
+            InterruptContextPtr->State = TRANSFER_STATE::RECEIVING_SEQUENCE;
+
+            WdfInterruptReleaseLock(InterruptContextPtr->WdfInterrupt);
         }
-    }
+    } else {
+        NT_ASSERT(sequenceContextPtr->BytesToWrite > 1);
+        BSC_LOG_TRACE("Transmit buffer is 2 or greater, writing first byte and enabling TXW interrupt.");
 
-    FuncExit(TRACE_FLAG_TRANSFER);
-    
-    return interruptRecognized;
-}
-
-_Use_decl_annotations_
-VOID
-OnInterruptDpc(
-    WDFINTERRUPT Interrupt,
-    WDFOBJECT    WdfDevice
-    )
-/*++
- 
-  Routine Description:
-
-    This routine processes interrupts from the controller.
-    When finished it reenables interrupts as appropriate.
-
-  Arguments:
-
-    Interrupt - a handle to a framework interrupt object
-    WdfDevice - a handle to the framework device object
-
-  Return Value:
-
-    None.
-
---*/
-{
-    FuncEntry(TRACE_FLAG_TRANSFER);
-
-    PPBC_DEVICE pDevice;
-    PPBC_TARGET pTarget;
-    PPBC_REQUEST pRequest = NULL;
-    ULONG stat;
-    BOOLEAN bInterruptsProcessed = FALSE;
-    BOOLEAN completeRequest = FALSE;
-
-    UNREFERENCED_PARAMETER(Interrupt);
-
-    pDevice = GetDeviceContext(WdfDevice);
-    NT_ASSERT(pDevice != NULL);
-
-    //
-    // Acquire the device lock.
-    //
-
-    WdfSpinLockAcquire(pDevice->Lock);
-
-    //
-    // Make sure the target and request are
-    // still valid.
-    //
-
-    pTarget = pDevice->pCurrentTarget;
-    
-    if (pTarget == NULL)
-    {
-        Trace(
-            TRACE_LEVEL_WARNING,
-            TRACE_FLAG_TRANSFER,
-            "DPC scheduled without a valid current target for WDFDEVICE %p",
-            pDevice->FxDevice);
-
-        goto exit;
-    }
-
-    pRequest = pTarget->pCurrentRequest;
-
-    if (pRequest == NULL)
-    {
-        Trace(
-            TRACE_LEVEL_WARNING,
-            TRACE_FLAG_TRANSFER,
-            "DPC scheduled without a valid current request for SPBTARGET %p",
-            pTarget->SpbTarget);
-
-        goto exit;
-    }
-
-    NT_ASSERT(pRequest->SpbRequest != NULL);
-
-    //
-    // Synchronize shared data buffers with ISR.
-    // Copy interrupt status and clear shared buffer.
-    // If there is a current target and request,
-    // a DPC should never occur with interrupt status 0.
-    //
-
-    WdfInterruptAcquireLock(Interrupt);
-
-    stat = pDevice->InterruptStatus;
-    pDevice->InterruptStatus = 0;
-
-    WdfInterruptReleaseLock(Interrupt);
-
-    if (stat == 0)
-    {
-        goto exit;
-    }
-
-    Trace(
-        TRACE_LEVEL_VERBOSE,
-        TRACE_FLAG_TRANSFER,
-        "DPC for interrupt with status 0x%lx for WDFDEVICE %p",
-        stat,
-        pDevice->FxDevice);
-
-    //
-    // Acknowledge and process interrupts.
-    //
-    ControllerAcknowledgeInterrupts(pDevice, pRequest->RepeatedStart ? (stat & ~BCM_I2C_REG_STATUS_DONE) : stat);
-
-    ControllerProcessInterrupts(pDevice, pRequest, stat);
-    bInterruptsProcessed = TRUE;
-    if (pRequest->bIoComplete)
-    {
-        completeRequest = TRUE;
-    }
-
-    //
-    // Re-enable interrupts if necessary. Synchronize with ISR.
-    //
-
-    WdfInterruptAcquireLock(Interrupt);
-
-    ULONG mask = PbcDeviceGetInterruptMask(pDevice);
-
-    if (mask > 0)
-    {
-        Trace(
-            TRACE_LEVEL_VERBOSE,
-            TRACE_FLAG_TRANSFER,
-            "Re-enable interrupts with mask 0x%lx for WDFDEVICE %p",
-            mask,
-            pDevice->FxDevice);
-
-        ControllerEnableInterrupts(pDevice, mask);
-    }
-
-    WdfInterruptReleaseLock(Interrupt);
-
-exit:
-
-    //
-    // Release the device lock.
-    //
-
-    WdfSpinLockRelease(pDevice->Lock);
-
-    //
-    // Complete the request if necessary.
-    // This must be done outside of the locked code.
-    //
-
-    if (bInterruptsProcessed)
-    {
-        if (completeRequest)
-        {
-            PbcRequestComplete(pRequest);
+        status = WdfRequestMarkCancelableEx(spbRequest, OnRequestCancel);
+        if (!NT_SUCCESS(status)) {
+            BSC_LOG_INFORMATION(
+                "Failed to mark request cancelable. (spbRequest = %p, status = %!STATUS!)",
+                spbRequest,
+                status);
+            return status;
         }
+
+        // write first byte to FIFO
+        WRITE_REGISTER_NOFENCE_ULONG(
+            &registersPtr->DataFIFO,
+            *static_cast<const BYTE*>(
+                sequenceContextPtr->CurrentWriteMdl->MappedSystemVa));
+        ++sequenceContextPtr->BytesWritten;
+        ++sequenceContextPtr->CurrentWriteMdlOffset;
+
+        NT_ASSERT(sequenceContextPtr->BytesWritten == 1);
+        NT_ASSERT(sequenceContextPtr->CurrentWriteMdlOffset == 1);
+
+        // enable interrupts
+        WRITE_REGISTER_NOFENCE_ULONG(
+            &registersPtr->Control,
+            BCM_I2C_REG_CONTROL_I2CEN |
+            BCM_I2C_REG_CONTROL_INTT |
+            BCM_I2C_REG_CONTROL_INTD);
     }
-
-    FuncExit(TRACE_FLAG_TRANSFER);
-}
-
-
-/////////////////////////////////////////////////
-//
-// PBC functions.
-//
-/////////////////////////////////////////////////
-
-_Use_decl_annotations_
-NTSTATUS
-PbcTargetGetSettings(
-    PPBC_DEVICE                pDevice,
-    PVOID                      ConnectionParameters,
-    PPBC_TARGET_SETTINGS       pSettings
-    )
-/*++
- 
-  Routine Description:
-
-    This routine populates the target's settings.
-
-  Arguments:
-
-    pDevice - a pointer to the PBC device context
-    ConnectionParameters - a pointer to a blob containing the 
-        connection parameters
-    Settings - a pointer the the target's settings
-
-  Return Value:
-
-    Status
-
---*/
-{
-    FuncEntry(TRACE_FLAG_PBCLOADING);
-
-    UNREFERENCED_PARAMETER(pDevice);
-
-    NT_ASSERT(ConnectionParameters != nullptr);
-    NT_ASSERT(pSettings != nullptr);
-
-    PRH_QUERY_CONNECTION_PROPERTIES_OUTPUT_BUFFER connection;
-    PPNP_SERIAL_BUS_DESCRIPTOR descriptor;
-    PPNP_I2C_SERIAL_BUS_DESCRIPTOR i2cDescriptor;
-
-    connection = (PRH_QUERY_CONNECTION_PROPERTIES_OUTPUT_BUFFER)
-        ConnectionParameters;
-
-    if (connection->PropertiesLength < sizeof(PNP_I2C_SERIAL_BUS_DESCRIPTOR))
-    {
-        Trace(
-            TRACE_LEVEL_ERROR,
-            TRACE_FLAG_PBCLOADING,
-            "Invalid connection properties (length = %lu, expected = %Iu)",
-            connection->PropertiesLength,
-            sizeof(PNP_I2C_SERIAL_BUS_DESCRIPTOR));
-
-        return STATUS_INVALID_PARAMETER;
-    }
-
-    descriptor = (PPNP_SERIAL_BUS_DESCRIPTOR)
-        connection->ConnectionProperties;
-
-    if (descriptor->SerialBusType != I2C_SERIAL_BUS_TYPE)
-    {
-        Trace(
-            TRACE_LEVEL_ERROR,
-            TRACE_FLAG_PBCLOADING,
-            "Bus type %c not supported, only I2C",
-            descriptor->SerialBusType);
-
-        return STATUS_INVALID_PARAMETER;
-    }
-
-    i2cDescriptor = (PPNP_I2C_SERIAL_BUS_DESCRIPTOR)
-        connection->ConnectionProperties;
-
-    Trace(
-        TRACE_LEVEL_INFORMATION,
-        TRACE_FLAG_PBCLOADING,
-        "I2C Connection Descriptor %p "
-        "ConnectionSpeed:%lu "
-        "Address:0x%hx",
-        i2cDescriptor,
-        i2cDescriptor->ConnectionSpeed,
-        i2cDescriptor->SlaveAddress);
-
-    // Target address
-    pSettings->Address = (ULONG)i2cDescriptor->SlaveAddress;
-
-    // Address mode
-    USHORT i2cFlags = i2cDescriptor->SerialBusDescriptor.TypeSpecificFlags;
-    pSettings->AddressMode = 
-        ((i2cFlags & I2C_SERIAL_BUS_SPECIFIC_FLAG_10BIT_ADDRESS) == 0) ? 
-            AddressMode7Bit : AddressMode10Bit;
-
-    // Clock speed
-    pSettings->ConnectionSpeed = i2cDescriptor->ConnectionSpeed;
-
-    // Serial bus specific settings
-    pSettings->GeneralFlags = descriptor->GeneralFlags;
-    pSettings->TypeSpecificFlags = descriptor->TypeSpecificFlags;
-
-    FuncExit(TRACE_FLAG_PBCLOADING);
 
     return STATUS_SUCCESS;
 }
 
+//
+// The Broadcom I2C controller does not support arbitrary restarts; it only
+// supports a single WriteRead sequence.
+//
 _Use_decl_annotations_
-NTSTATUS
-PbcRequestValidate(
-    PPBC_REQUEST               pRequest)
+VOID OnSequence (
+    WDFDEVICE WdfDevice,
+    SPBTARGET SpbTarget,
+    SPBREQUEST SpbRequest,
+    ULONG TransferCount
+    )
 {
-    FuncEntry(TRACE_FLAG_TRANSFER);
+    BCM_I2C_ASSERT_MAX_IRQL(DISPATCH_LEVEL);
 
-    SPB_TRANSFER_DESCRIPTOR descriptor;
-    NTSTATUS status = STATUS_SUCCESS;
+    if (TransferCount != 2) {
+        BSC_LOG_ERROR(
+            "Unsupported sequence attempted. Broadcom I2C controller only supports WriteRead sequences. (TransferCount = %lu)",
+            TransferCount);
+        SpbRequestComplete(SpbRequest, STATUS_NOT_SUPPORTED);
+        return;
+    }
 
-    //
-    // Validate each transfer descriptor.
-    //
-
-    for (ULONG i = 0; i < pRequest->TransferCount; i++)
+    SPB_TRANSFER_DESCRIPTOR writeDescriptor;
+    SPB_TRANSFER_DESCRIPTOR readDescriptor;
+    PMDL writeMdl;
+    ULONG bytesToWrite;
+    PMDL readMdl;
+    ULONG bytesToRead;
     {
-        //
-        // Get transfer parameters for index.
-        //
-
-        SPB_TRANSFER_DESCRIPTOR_INIT(&descriptor);
-
+        SPB_TRANSFER_DESCRIPTOR_INIT(&writeDescriptor);
         SpbRequestGetTransferParameters(
-            pRequest->SpbRequest, 
-            i, 
-            &descriptor, 
-            nullptr);
+            SpbRequest,
+            0,
+            &writeDescriptor,
+            &writeMdl);
 
-        //
-        // Validate the transfer length.
-        //
-    
-        if (descriptor.TransferLength > BCM_I2C_MAX_TRANSFER_LENGTH)
-        {
-            status = STATUS_INVALID_PARAMETER;
-
-            Trace(
-                TRACE_LEVEL_ERROR, 
-                TRACE_FLAG_TRANSFER, 
-                "Transfer length %Iu is too large for controller driver, max supported is %d (SPBREQUEST %p, index %lu) - %!STATUS!",
-                descriptor.TransferLength,
-                BCM_I2C_MAX_TRANSFER_LENGTH,
-                pRequest->SpbRequest,
-                i,
-                status);
-
-            goto exit;
+        // validate first transfer descriptor to make sure it's a write
+        if ((writeDescriptor.Direction != SpbTransferDirectionToDevice)) {
+            BSC_LOG_ERROR(
+                "Unsupported sequence attempted. The first transfer must be a write. (writeDescriptor.Direction = %d)",
+                writeDescriptor.Direction);
+            SpbRequestComplete(SpbRequest, STATUS_NOT_SUPPORTED);
+            return;
         }
+
+        if (writeDescriptor.TransferLength > BCM_I2C_MAX_TRANSFER_LENGTH) {
+            BSC_LOG_ERROR(
+                "Write buffer is too large. (SpbRequest = %p, writeDescriptor.TransferLength = %lu, BCM_I2C_MAX_TRANSFER_LENGTH = %lu)",
+                SpbRequest,
+                writeDescriptor.TransferLength,
+                BCM_I2C_MAX_TRANSFER_LENGTH);
+            SpbRequestComplete(SpbRequest, STATUS_NOT_SUPPORTED);
+            return;
+        }
+
+        if (writeDescriptor.DelayInUs != 0) {
+            BSC_LOG_ERROR(
+                "Delays are not supported. (writeDescriptor.DelayInUs = %lu)",
+                writeDescriptor.DelayInUs);
+            SpbRequestComplete(SpbRequest, STATUS_NOT_SUPPORTED);
+            return;
+        }
+
+        // validate second transfer descriptor to make sure it's a read
+        SPB_TRANSFER_DESCRIPTOR_INIT(&readDescriptor);
+        SpbRequestGetTransferParameters(
+            SpbRequest,
+            1,
+            &readDescriptor,
+            &readMdl);
+        if (readDescriptor.Direction != SpbTransferDirectionFromDevice) {
+            BSC_LOG_ERROR(
+                "Unsupported sequence attempted. The second transfer must be a read. (readDescriptor.Direction = %d)",
+                readDescriptor.Direction);
+            SpbRequestComplete(SpbRequest, STATUS_NOT_SUPPORTED);
+            return;
+        }
+
+        if (readDescriptor.TransferLength > BCM_I2C_MAX_TRANSFER_LENGTH) {
+            BSC_LOG_ERROR(
+                "Read buffer is too large for DataLength register. (SpbRequest = %p, readDescriptor.TransferLength= %lu, BCM_I2C_MAX_TRANSFER_LENGTH = %lu)",
+                SpbRequest,
+                readDescriptor.TransferLength,
+                BCM_I2C_MAX_TRANSFER_LENGTH);
+            SpbRequestComplete(SpbRequest, STATUS_NOT_SUPPORTED);
+            return;
+        }
+
+        if (readDescriptor.DelayInUs != 0) {
+            BSC_LOG_ERROR(
+                "BCM I2C controller is not capable of having a delay in a read transaction. (readDescriptor.DelayInUs = %lu)",
+                readDescriptor.DelayInUs);
+            SpbRequestComplete(SpbRequest, STATUS_NOT_SUPPORTED);
+            return;
+        }
+
+        bytesToWrite = 0;
+        for (PMDL currentMdl = writeMdl;
+             currentMdl;
+             currentMdl = currentMdl->Next) {
+
+            const PVOID ptr = MmGetSystemAddressForMdlSafe(
+                currentMdl,
+                NormalPagePriority | MdlMappingNoWrite | MdlMappingNoExecute);
+            if (!ptr) {
+                BSC_LOG_LOW_MEMORY(
+                    "MmGetSystemAddressForMdlSafe() failed. (currentMdl = %p)",
+                    currentMdl);
+                SpbRequestComplete(SpbRequest, STATUS_INSUFFICIENT_RESOURCES);
+                return;
+            }
+            NT_ASSERT(MmGetMdlByteCount(currentMdl) != 0);
+            bytesToWrite += MmGetMdlByteCount(currentMdl);
+        }
+
+        NT_ASSERT(bytesToWrite == writeDescriptor.TransferLength);
+
+        bytesToRead = 0;
+        for (PMDL currentMdl = readMdl;
+             currentMdl;
+             currentMdl = currentMdl->Next) {
+
+            PVOID ptr = MmGetSystemAddressForMdlSafe(
+                currentMdl,
+                NormalPagePriority | MdlMappingNoExecute);
+            if (!ptr) {
+                BSC_LOG_LOW_MEMORY(
+                    "MmGetSystemAddressForMdlSafe() failed. (currentMdl = %p)",
+                    currentMdl);
+                SpbRequestComplete(SpbRequest, STATUS_INSUFFICIENT_RESOURCES);
+                return;
+            }
+
+            NT_ASSERT(MmGetMdlByteCount(currentMdl) != 0);
+            bytesToRead += MmGetMdlByteCount(currentMdl);
+        }
+
+        NT_ASSERT(bytesToRead == readDescriptor.TransferLength);
     }
 
-exit:
-
-    FuncExit(TRACE_FLAG_TRANSFER);
-
-    return status;
-}
-
-_Use_decl_annotations_
-VOID
-PbcRequestConfigureForNonSequence(
-    WDFDEVICE                  SpbController,
-    SPBTARGET                  SpbTarget,
-    SPBREQUEST                 SpbRequest,
-    size_t                     Length
-    )
-/*++
- 
-  Routine Description:
-
-    This is a generic helper routine used to configure
-    the request context and controller hardware for a non-
-    sequence SPB request. It validates parameters and retrieves
-    the transfer buffer as necessary.
-
-  Arguments:
-
-    pDevice - a pointer to the PBC device context
-    pTarget - a pointer to the PBC target context
-    pRequest - a pointer to the PBC request context
-    Length - the number of bytes to read from the target
-    Direction - direction of the transfer
-
-  Return Value:
-
-    STATUS
-
---*/
-{
-    FuncEntry(TRACE_FLAG_TRANSFER);
-
-    PPBC_DEVICE  pDevice  = GetDeviceContext(SpbController);
-    PPBC_TARGET  pTarget  = GetTargetContext(SpbTarget);
-    PPBC_REQUEST pRequest = GetRequestContext(SpbRequest);
-    BOOLEAN completeRequest = FALSE;
-    
-    NT_ASSERT(pDevice  != NULL);
-    NT_ASSERT(pTarget  != NULL);
-    NT_ASSERT(pRequest != NULL);
-
-    UNREFERENCED_PARAMETER(Length);
-
-    NTSTATUS status;
-    
-    //
-    // Get the request parameters.
-    //
-
-    SPB_REQUEST_PARAMETERS params;
-    SPB_REQUEST_PARAMETERS_INIT(&params);
-    SpbRequestGetParameters(SpbRequest, &params);
-
-    //
-    // Initialize request context.
-    //
-    
-    pRequest->SpbRequest = SpbRequest;
-    pRequest->Type = params.Type;
-    pRequest->SequencePosition = params.Position;
-    pRequest->TotalInformation = 0;
-    pRequest->TransferCount = 1;
-    pRequest->TransferIndex = 0;
-    pRequest->bIoComplete = FALSE;
-
-    //
-    // Validate the request before beginning the transfer.
-    //
-    
-    status = PbcRequestValidate(pRequest);
-
-    if (!NT_SUCCESS(status))
+    BCM_I2C_DEVICE_CONTEXT* devicePtr = GetDeviceContext(WdfDevice);
+    BCM_I2C_INTERRUPT_CONTEXT* interruptContextPtr;
     {
-        goto exit;
+        interruptContextPtr = devicePtr->InterruptContextPtr;
+        interruptContextPtr->SpbRequest = SpbRequest;
+        interruptContextPtr->TargetPtr = GetTargetContext(SpbTarget);
+        interruptContextPtr->State = TRANSFER_STATE::SENDING_SEQUENCE;
+        interruptContextPtr->CapturedStatus = 0;
+        interruptContextPtr->CapturedDataLength = 0;
+
+        BCM_I2C_INTERRUPT_CONTEXT::SEQUENCE_CONTEXT* sequenceContextPtr =
+            &interruptContextPtr->SequenceContext;
+        sequenceContextPtr->CurrentWriteMdl = writeMdl;
+        sequenceContextPtr->BytesToWrite = bytesToWrite;
+        sequenceContextPtr->BytesWritten = 0;
+        sequenceContextPtr->CurrentWriteMdlOffset = 0;
+
+        sequenceContextPtr->CurrentReadMdl = readMdl;
+        sequenceContextPtr->BytesToRead = bytesToRead;
+        sequenceContextPtr->BytesRead = 0;
+        sequenceContextPtr->CurrentReadMdlOffset = 0;
     }
-    
-    //
-    // Configure the request.
-    //
 
-    status = PbcRequestConfigureForIndex(
-        pRequest, 
-        pRequest->TransferIndex);
+    BSC_LOG_TRACE(
+        "Setting up and starting Write portion of WriteRead transfer. (Address = 0x%x, ConnectionSpeed = %lu, bytesToWrite = %lu)",
+        interruptContextPtr->TargetPtr->Address,
+        interruptContextPtr->TargetPtr->ConnectionSpeed,
+        bytesToWrite);
 
-    if (!NT_SUCCESS(status))
-    {
-        Trace(
-            TRACE_LEVEL_ERROR, 
-            TRACE_FLAG_SPBDDI, 
-            "Error configuring request context for SPBREQUEST %p (SPBTARGET %p) - %!STATUS!", 
-            pRequest->SpbRequest,
-            SpbTarget,
+    BCM_I2C_REGISTERS* registersPtr = devicePtr->RegistersPtr;
+    InitializeTransfer(
+        registersPtr,
+        interruptContextPtr->TargetPtr,
+        bytesToWrite);
+
+    // start transfer
+    WRITE_REGISTER_NOFENCE_ULONG(
+        &registersPtr->Control,
+        BCM_I2C_REG_CONTROL_I2CEN |
+        BCM_I2C_REG_CONTROL_ST |
+        BCM_I2C_REG_CONTROL_CLEAR);
+
+    NTSTATUS status = StartSequenceWrite(interruptContextPtr);
+    if (!NT_SUCCESS(status)) {
+        BSC_LOG_ERROR(
+            "Failed to do initial write of the sequence transfer. (status = %!STATUS!)",
             status);
-
-        goto exit;
-    }
-
-    //
-    // Acquire the device lock.
-    //
-
-    WdfSpinLockAcquire(pDevice->Lock);
-
-    //
-    // Mark request cancellable (if cancellation supported).
-    //
-
-    status = WdfRequestMarkCancelableEx(
-        pRequest->SpbRequest, OnCancel);
-
-    if (!NT_SUCCESS(status))
-    {
-        //
-        // WdfRequestMarkCancelableEx should only fail if the request
-        // has already been cancelled. If it does fail the request
-        // must be completed with the corresponding status.
-        //
-
-        NT_ASSERTMSG("WdfRequestMarkCancelableEx should only fail if the request has already been cancelled",
-            status == STATUS_CANCELLED);
-
-        Trace(
-            TRACE_LEVEL_INFORMATION,
-            TRACE_FLAG_TRANSFER,
-            "Failed to mark SPBREQUEST %p cancellable - %!STATUS!",
-            pRequest->SpbRequest,
-            status);
-
-        WdfSpinLockRelease(pDevice->Lock);
-        goto exit;
-    }
-    
-    //
-    // If sequence position is...
-    //   - single:     ensure there is not a current target
-    //   - not single: ensure that the current target is the
-    //                 same as this target
-    //
-    
-    if (params.Position == SpbRequestSequencePositionSingle)
-    {        
-        NT_ASSERT(pDevice->pCurrentTarget == NULL);
-    }
-    else
-    {   
-        NT_ASSERT(pDevice->pCurrentTarget == pTarget);
-    }
-    
-    //
-    // Ensure there is not a current request.
-    //
-    
-    NT_ASSERT(pTarget->pCurrentRequest == NULL);
-    
-    //
-    // Update the device and target contexts.
-    //
-    
-    if (pRequest->SequencePosition == SpbRequestSequencePositionSingle)
-    {
-        pDevice->pCurrentTarget = pTarget;
-    }
-    
-    pTarget->pCurrentRequest = pRequest;
-    
-    //
-    // Configure controller and kick-off read.
-    // Request will be completed asynchronously.
-    //
-    
-    PbcRequestDoTransfer(pDevice, pRequest);
-    
-    if (pRequest->bIoComplete)
-    {
-        completeRequest = TRUE;
-    }
-
-    WdfSpinLockRelease(pDevice->Lock);
-    
-    if (completeRequest)
-    {
-        PbcRequestComplete(pRequest);
-    }
-
-exit:
-    
-    if (!NT_SUCCESS(status))
-    {
+        // abort the transfer since it has already been started
+        WRITE_REGISTER_NOFENCE_ULONG(
+            &registersPtr->Control,
+            BCM_I2C_REG_CONTROL_I2CEN | BCM_I2C_REG_CONTROL_CLEAR);
         SpbRequestComplete(SpbRequest, status);
+        return;
     }
-    
-    FuncExit(TRACE_FLAG_TRANSFER);
 }
 
 _Use_decl_annotations_
-NTSTATUS
-PbcRequestConfigureForIndex(
-    PPBC_REQUEST            pRequest,
-    ULONG                   Index
-    )
-/*++
- 
-  Routine Description:
-
-    This is a helper routine used to configure the request
-    context and controller hardware for a transfer within a 
-    sequence. It validates parameters and retrieves
-    the transfer buffer as necessary.
-
-  Arguments:
-
-    pRequest - a pointer to the PBC request context
-    Index - index of the transfer within the sequence
-
-  Return Value:
-
-    STATUS
-
---*/
+VOID OnRequestCancel ( WDFREQUEST  WdfRequest )
 {
-    FuncEntry(TRACE_FLAG_TRANSFER);
+    BCM_I2C_ASSERT_MAX_IRQL(DISPATCH_LEVEL);
 
-    NT_ASSERT(pRequest != NULL);
- 
-    NTSTATUS status = STATUS_SUCCESS;
+    BCM_I2C_DEVICE_CONTEXT* devicePtr = GetDeviceContext(WdfFileObjectGetDevice(
+        WdfRequestGetFileObject(WdfRequest)));
+    BCM_I2C_REGISTERS* registersPtr = devicePtr->RegistersPtr;
+    BCM_I2C_INTERRUPT_CONTEXT* interruptContextPtr =
+        devicePtr->InterruptContextPtr;
 
-    //
-    // Get transfer parameters for index.
-    //
+    BSC_LOG_INFORMATION(
+        "Cancellation requested. (WdfRequest = %p, interruptContextPtr = %p)",
+        WdfRequest,
+        interruptContextPtr);
 
-    SPB_TRANSFER_DESCRIPTOR descriptor;
-    PMDL pMdl;
-    
-    SPB_TRANSFER_DESCRIPTOR_INIT(&descriptor);
-
-    SpbRequestGetTransferParameters(
-        pRequest->SpbRequest, 
-        Index, 
-        &descriptor, 
-        &pMdl);
-       
-    NT_ASSERT(pMdl != NULL);
-    
-    //
-    // Configure request context.
-    //
-
-    pRequest->pMdlChain = pMdl;
-    pRequest->Length = descriptor.TransferLength;
-    pRequest->Information = 0;
-    pRequest->Direction = descriptor.Direction;
-    pRequest->DelayInUs = descriptor.DelayInUs;
-
-    //
-    // Update sequence position if request is type sequence.
-    //
-
-    if (pRequest->Type == SpbRequestTypeSequence)
+    // synchronize with ISR to ensure interrupts get disabled
     {
-        if   (pRequest->TransferCount == 1)
-        {
-            pRequest->SequencePosition = SpbRequestSequencePositionSingle;
+        WdfInterruptAcquireLock(devicePtr->WdfInterrupt);
+
+        WRITE_REGISTER_NOFENCE_ULONG(
+            &registersPtr->Control,
+            BCM_I2C_REG_CONTROL_I2CEN | BCM_I2C_REG_CONTROL_CLEAR);
+        WRITE_REGISTER_NOFENCE_ULONG(&registersPtr->DataLength, 0);
+
+        // clear DONE and ERROR bits
+        WRITE_REGISTER_NOFENCE_ULONG(
+            &registersPtr->Status,
+            BCM_I2C_REG_STATUS_ERR |
+            BCM_I2C_REG_STATUS_CLKT |
+            BCM_I2C_REG_STATUS_DONE);
+
+        WdfInterruptReleaseLock(devicePtr->WdfInterrupt);
+    }
+
+    // get the request from the interrupt context
+    SPBREQUEST currentRequest = static_cast<SPBREQUEST>(
+        InterlockedExchangePointer(
+            reinterpret_cast<PVOID *>(&interruptContextPtr->SpbRequest),
+            nullptr));
+    if (!currentRequest) {
+        BSC_LOG_TRACE("Cannot cancel request, it was already claimed by DPC.");
+        return;
+    }
+    NT_ASSERT(WdfRequest == currentRequest);
+    SpbRequestComplete(static_cast<SPBREQUEST>(WdfRequest), STATUS_CANCELLED);
+}
+
+BOOLEAN HandleInterrupt ( WDFINTERRUPT WdfInterrupt )
+{
+    BCM_I2C_INTERRUPT_CONTEXT* interruptContextPtr =
+        GetInterruptContext(WdfInterrupt);
+    BCM_I2C_REGISTERS* registersPtr = interruptContextPtr->RegistersPtr;
+
+    ULONG statusReg = READ_REGISTER_NOFENCE_ULONG(&registersPtr->Status);
+
+#ifdef DBG
+    BSC_LOG_TRACE("Interrupt occurred. (statusReg = 0x%lx)", statusReg);
+#endif // DBG
+
+    if (!(statusReg & (BCM_I2C_REG_STATUS_RXR | BCM_I2C_REG_STATUS_TXW |
+                       BCM_I2C_REG_STATUS_DONE))) {
+
+        BSC_LOG_TRACE("Interrupt bits were not set - not claiming interrupt");
+        return FALSE;
+    } else if (statusReg & (BCM_I2C_REG_STATUS_CLKT | BCM_I2C_REG_STATUS_ERR |
+                            BCM_I2C_REG_STATUS_DONE)) {
+
+        // capture data length before writing to any registers
+        ULONG dataLength =
+            READ_REGISTER_NOFENCE_ULONG(&registersPtr->DataLength);
+
+        bool queueDpc;
+        if (statusReg & (BCM_I2C_REG_STATUS_CLKT | BCM_I2C_REG_STATUS_ERR)) {
+            BSC_LOG_TRACE(
+                "One of the error bits is set. (statusReg = 0x%lx, dataLength = %lu)",
+                statusReg,
+                dataLength);
+            queueDpc = true;
+        } else {
+            NT_ASSERT(statusReg & BCM_I2C_REG_STATUS_DONE);
+
+            BSC_LOG_TRACE(
+                "DONE bit was set - acknowledging DONE bit and checking TA. (statusReg = 0x%lx, dataLength = %lu)",
+                statusReg,
+                dataLength);
+
+            WRITE_REGISTER_NOFENCE_ULONG(
+                &registersPtr->Status,
+                BCM_I2C_REG_STATUS_DONE);
+
+            //
+            // DONE sometimes gets set spuriously. Check if transfer is still
+            // active. If transfer is still active, DONE will be asserted again
+            // when the transfer completes. If transfer is not still active
+            // after acknowledging DONE bit, go to DPC.
+            //
+            queueDpc = !(READ_REGISTER_NOFENCE_ULONG(&registersPtr->Status) &
+                         BCM_I2C_REG_STATUS_TA);
         }
-        else if (Index == 0)
-        {
-            pRequest->SequencePosition = SpbRequestSequencePositionFirst;
-        }
-        else if (Index == (pRequest->TransferCount - 1))
-        {
-            pRequest->SequencePosition = SpbRequestSequencePositionLast;
-        }
-        else
-        {
-            pRequest->SequencePosition = SpbRequestSequencePositionContinue;
+
+        if (queueDpc) {
+            interruptContextPtr->CapturedStatus = statusReg;
+            interruptContextPtr->CapturedDataLength = dataLength;
+
+            BSC_LOG_TRACE(
+                "Going to DPC. (interruptContextPtr->CapturedStatus = 0x%lx, interruptContextPtr->CapturedDataLength = %lu)",
+                interruptContextPtr->CapturedStatus,
+                interruptContextPtr->CapturedDataLength);
+
+            // disable interrupts, preserving the READ flag
+            ULONG controlReg =
+                READ_REGISTER_NOFENCE_ULONG(&registersPtr->Control);
+            WRITE_REGISTER_NOFENCE_ULONG(
+                &registersPtr->Control,
+                BCM_I2C_REG_CONTROL_I2CEN |
+                (controlReg & BCM_I2C_REG_CONTROL_READ));
+            WdfInterruptQueueDpcForIsr(WdfInterrupt);
+            return TRUE;
         }
     }
 
-    PPBC_TARGET pTarget = GetTargetContext(SpbRequestGetTarget(pRequest->SpbRequest));
-    NT_ASSERT(pTarget != NULL);
+    NT_ASSERTMSG(
+        "Expecting a current request",
+        interruptContextPtr->SpbRequest);
 
-    Trace(
-        TRACE_LEVEL_INFORMATION,
-        TRACE_FLAG_TRANSFER,
-        "Request context configured for %s (index %lu) to device 0x%lx (SPBTARGET %p)",
-        pRequest->Direction == SpbTransferDirectionFromDevice ? "read" : "write",
-        Index,
-        pTarget->Settings.Address,
-        pTarget->SpbTarget);
-
-    FuncExit(TRACE_FLAG_TRANSFER);
-
-    return status;
-}
-
-_Use_decl_annotations_
-VOID
-PbcRequestDoTransfer(
-    PPBC_DEVICE             pDevice,
-    PPBC_REQUEST            pRequest
-    )
-/*++
- 
-  Routine Description:
-
-    This routine either starts the delay timer or
-    kicks off the transfer depending on the request
-    parameters.
-
-  Arguments:
-
-    pDevice - a pointer to the PBC device context
-    pRequest - a pointer to the PBC request context
-
-  Return Value:
-
-    None. The request is completed asynchronously.
-
---*/
-{
-    FuncEntry(TRACE_FLAG_TRANSFER);
-    
-    NT_ASSERT(pDevice  != NULL);
-    NT_ASSERT(pRequest != NULL);
-
-    //
-    // Start delay timer if necessary for this request,
-    // otherwise continue transfer. 
-    //
-    // NOTE: Note using a timer to implement IO delay is only 
-    //       applicable for sufficiently long delays (> 15ms).
-    //       For shorter delays, especially on the order of
-    //       microseconds, consider using a different mechanism.
-    //
-
-    if (pRequest->DelayInUs > 0)
+    switch (interruptContextPtr->State) {
+    case TRANSFER_STATE::SENDING:
     {
-        Trace(
-            TRACE_LEVEL_INFORMATION,
-            TRACE_FLAG_TRANSFER,
-            "Delaying %lu us before configuring transfer for WDFDEVICE %p",
-            pRequest->DelayInUs,
-            pDevice->FxDevice);
+        BCM_I2C_INTERRUPT_CONTEXT::WRITE_CONTEXT* writeContextPtr =
+            &interruptContextPtr->WriteContext;
 
-        BOOLEAN bTimerAlreadyStarted;
+        const BYTE* dataPtr = writeContextPtr->CurrentWriteBufferPtr;
+        const BYTE* const endPtr = writeContextPtr->EndPtr;
+        NT_ASSERTMSG(
+            "DONE interrupt should be fired after all bytes have been written",
+            dataPtr != endPtr);
+        while (dataPtr != endPtr) {
+            statusReg = READ_REGISTER_NOFENCE_ULONG(&registersPtr->Status);
+            if (!(statusReg & BCM_I2C_REG_STATUS_TXD)) {
+                break;
+            }
 
-        bTimerAlreadyStarted = WdfTimerStart(
-            pDevice->DelayTimer, 
-            WDF_REL_TIMEOUT_IN_US(pRequest->DelayInUs));
+            WRITE_REGISTER_NOFENCE_ULONG(&registersPtr->DataFIFO, *dataPtr++);
+        }
+
+        writeContextPtr->CurrentWriteBufferPtr = dataPtr;
+        return TRUE;
+    }
+    case TRANSFER_STATE::RECEIVING:
+    {
+        BCM_I2C_INTERRUPT_CONTEXT::READ_CONTEXT* readContextPtr =
+            &interruptContextPtr->ReadContext;
+
+        BYTE* dataPtr = readContextPtr->CurrentReadBufferPtr;
+        const BYTE* const endPtr = readContextPtr->EndPtr;
+        while (dataPtr != endPtr) {
+            statusReg = READ_REGISTER_NOFENCE_ULONG(&registersPtr->Status);
+            if (!(statusReg & BCM_I2C_REG_STATUS_RXD)) {
+                readContextPtr->CurrentReadBufferPtr = dataPtr;
+                return TRUE;
+            }
+
+            *dataPtr++ = static_cast<BYTE>(
+                READ_REGISTER_NOFENCE_ULONG(&registersPtr->DataFIFO));
+        }
+
+        NT_ASSERT(dataPtr == endPtr);
+
+        BSC_LOG_TRACE("Received all bytes, going to DPC");
+        readContextPtr->CurrentReadBufferPtr = dataPtr;
+        interruptContextPtr->CapturedStatus = statusReg;
+        WRITE_REGISTER_NOFENCE_ULONG(
+            &registersPtr->Control,
+            BCM_I2C_REG_CONTROL_I2CEN |
+            BCM_I2C_REG_CONTROL_READ);
+        WRITE_REGISTER_NOFENCE_ULONG(
+            &registersPtr->Status,
+            BCM_I2C_REG_STATUS_DONE);
+        WdfInterruptQueueDpcForIsr(WdfInterrupt);
+        return TRUE;
+    }
+    case TRANSFER_STATE::SENDING_SEQUENCE:
+    {
+        BCM_I2C_INTERRUPT_CONTEXT::SEQUENCE_CONTEXT* sequenceContextPtr =
+            &interruptContextPtr->SequenceContext;
+
+        NT_ASSERTMSG(
+            "CurrentWriteMdl can only be NULL after transitioning to RECEIVING_SEQUENCE state",
+            sequenceContextPtr->CurrentWriteMdl);
+
+        for (;;) {
+            const PMDL currentWriteMdl = sequenceContextPtr->CurrentWriteMdl;
+            NT_ASSERT(sequenceContextPtr->CurrentWriteMdlOffset <=
+                      MmGetMdlByteCount(currentWriteMdl));
+            const ULONG currentMdlBytesRemaining =
+                MmGetMdlByteCount(currentWriteMdl) -
+                sequenceContextPtr->CurrentWriteMdlOffset;
+
+            // if this is the last MDL, write all but the last byte
+            ULONG currentMdlBytesToWrite = currentWriteMdl->Next ?
+                currentMdlBytesRemaining : (currentMdlBytesRemaining - 1);
+            NT_ASSERT(
+                currentWriteMdl->MdlFlags &
+                (MDL_MAPPED_TO_SYSTEM_VA | MDL_SOURCE_IS_NONPAGED_POOL));
+            ULONG bytesWritten = WriteFifo(
+                registersPtr,
+                static_cast<const BYTE*>(currentWriteMdl->MappedSystemVa) +
+                    sequenceContextPtr->CurrentWriteMdlOffset,
+                currentMdlBytesToWrite);
+            sequenceContextPtr->BytesWritten += bytesWritten;
+            sequenceContextPtr->CurrentWriteMdlOffset += bytesWritten;
+
+            if (bytesWritten != currentMdlBytesToWrite) {
+                BSC_LOG_TRACE("More bytes exist in current MDL, remaining in SENDING_SEQUENCE state.");
+                NT_ASSERT(
+                    sequenceContextPtr->CurrentWriteMdlOffset <
+                    MmGetMdlByteCount(currentWriteMdl));
+                return TRUE;
+            }
+
+            // when there is exactly one byte left to write, program the read
+            if ((sequenceContextPtr->BytesWritten + 1) ==
+                 sequenceContextPtr->BytesToWrite) {
+
+                NT_ASSERT(
+                    (sequenceContextPtr->CurrentWriteMdlOffset + 1) ==
+                    MmGetMdlByteCount(currentWriteMdl));
+                NT_ASSERT(!currentWriteMdl->Next);
+                break;
+            }
+
+            BSC_LOG_TRACE(
+                "Exhausted current MDL, advancing to next MDL. (currentWriteMdl = %p, currentWriteMdl->Next = %p)",
+                currentWriteMdl,
+                currentWriteMdl->Next);
+            NT_ASSERT(
+                sequenceContextPtr->CurrentWriteMdlOffset ==
+                MmGetMdlByteCount(currentWriteMdl));
+            NT_ASSERT(currentWriteMdl->Next);
+            sequenceContextPtr->CurrentWriteMdl = currentWriteMdl->Next;
+            sequenceContextPtr->CurrentWriteMdlOffset = 0;
+        }
+
+        NT_ASSERTMSG(
+            "There should be exactly one more byte to write",
+            (sequenceContextPtr->BytesWritten + 1) ==
+             sequenceContextPtr->BytesToWrite);
+
+        BSC_LOG_TRACE("1 byte left to write, checking TXW.");
 
         //
-        // There should never be another request
-        // scheduled for delay.
+        // If TXW is not asserted, do not program the read.
+        // Programming the read before TXW is asserted messes up the
+        // controller's state machine.
         //
+        statusReg = READ_REGISTER_NOFENCE_ULONG(&registersPtr->Status);
+        if (!(statusReg & BCM_I2C_REG_STATUS_TXW)) {
+            BSC_LOG_TRACE("TXW is NOT asserted, meaining the FIFO is too full. Waiting for next interrupt.");
+            return TRUE;
+        }
 
-        if (bTimerAlreadyStarted == TRUE)
-        {
-            Trace(
-                TRACE_LEVEL_ERROR,
-                TRACE_FLAG_TRANSFER,
-                "The delay timer should not be started");
+        BSC_LOG_TRACE(
+            "TXW is asserted, programming the Read. (statusReg = 0x%lx)",
+            statusReg);
+
+        WRITE_REGISTER_NOFENCE_ULONG(
+            &registersPtr->DataLength,
+            sequenceContextPtr->BytesToRead);
+
+        WRITE_REGISTER_NOFENCE_ULONG(
+            &registersPtr->Control,
+            BCM_I2C_REG_CONTROL_I2CEN |
+            BCM_I2C_REG_CONTROL_ST |
+            BCM_I2C_REG_CONTROL_INTR |
+            BCM_I2C_REG_CONTROL_INTD |
+            BCM_I2C_REG_CONTROL_READ);
+
+        // write the last byte
+        WRITE_REGISTER_NOFENCE_ULONG(
+            &registersPtr->DataFIFO,
+            *(static_cast<const BYTE*>(
+                sequenceContextPtr->CurrentWriteMdl->MappedSystemVa) +
+            sequenceContextPtr->CurrentWriteMdlOffset));
+
+        ++sequenceContextPtr->BytesWritten;
+        ++sequenceContextPtr->CurrentWriteMdlOffset;
+
+        NT_ASSERT(
+            sequenceContextPtr->BytesWritten ==
+            sequenceContextPtr->BytesToWrite);
+        NT_ASSERT(
+            sequenceContextPtr->CurrentWriteMdlOffset ==
+            MmGetMdlByteCount(sequenceContextPtr->CurrentWriteMdl));
+
+        BSC_LOG_TRACE("Transitioning to ReceivingSequence state");
+        NT_ASSERT(!sequenceContextPtr->CurrentWriteMdl->Next);
+        sequenceContextPtr->CurrentWriteMdl = nullptr;
+        interruptContextPtr->State = TRANSFER_STATE::RECEIVING_SEQUENCE;
+        return TRUE;
+    }
+    case TRANSFER_STATE::RECEIVING_SEQUENCE:
+    {
+        BCM_I2C_INTERRUPT_CONTEXT::SEQUENCE_CONTEXT* sequenceContextPtr =
+            &interruptContextPtr->SequenceContext;
+
+        NT_ASSERT(
+            !sequenceContextPtr->CurrentWriteMdl &&
+            sequenceContextPtr->CurrentReadMdl);
+
+        do {
+            ULONG bytesRead = ReadFifoMdl(
+                registersPtr,
+                sequenceContextPtr->CurrentReadMdl,
+                sequenceContextPtr->CurrentReadMdlOffset);
+            sequenceContextPtr->BytesRead += bytesRead;
+            sequenceContextPtr->CurrentReadMdlOffset += bytesRead;
+
+            if (sequenceContextPtr->CurrentReadMdlOffset !=
+                MmGetMdlByteCount(sequenceContextPtr->CurrentReadMdl)) {
+
+                BSC_LOG_TRACE("More bytes exist in current MDL, remaining in RECEIVING_SEQUENCE state");
+                return TRUE;
+            }
+
+            BSC_LOG_TRACE(
+                "Read all bytes in current MDL, advancing to next MDL. (interruptContextPtr->CurrentReadMdl = %p, interruptContextPtr->CurrentReadMdl->Next = %p)",
+                sequenceContextPtr->CurrentReadMdl,
+                sequenceContextPtr->CurrentReadMdl->Next);
+
+            NT_ASSERT(sequenceContextPtr->CurrentReadMdlOffset ==
+                      MmGetMdlByteCount(sequenceContextPtr->CurrentReadMdl));
+            sequenceContextPtr->CurrentReadMdl =
+                sequenceContextPtr->CurrentReadMdl->Next;
+            sequenceContextPtr->CurrentReadMdlOffset = 0;
+        } while (sequenceContextPtr->CurrentReadMdl);
+
+        NT_ASSERT(
+            sequenceContextPtr->BytesRead ==
+            sequenceContextPtr->BytesToRead);
+
+        BSC_LOG_TRACE("Received entire read buffer, going to DPC.");
+        interruptContextPtr->CapturedStatus =
+            READ_REGISTER_NOFENCE_ULONG(&registersPtr->Status);
+
+        // disable further interrupts and clear DONE bit
+        WRITE_REGISTER_NOFENCE_ULONG(
+            &registersPtr->Control,
+            BCM_I2C_REG_CONTROL_I2CEN |
+            BCM_I2C_REG_CONTROL_READ);
+        WRITE_REGISTER_NOFENCE_ULONG(
+            &registersPtr->Status,
+            BCM_I2C_REG_STATUS_DONE);
+
+        NT_ASSERT(!sequenceContextPtr->CurrentReadMdl);
+        WdfInterruptQueueDpcForIsr(WdfInterrupt);
+        return TRUE;
+    }
+    default:
+        NT_ASSERT(!"Invalid TRANSFER_STATE");
+        WRITE_REGISTER_NOFENCE_ULONG(
+            &registersPtr->Control,
+            BCM_I2C_REG_CONTROL_I2CEN |
+            BCM_I2C_REG_CONTROL_CLEAR);
+        WRITE_REGISTER_NOFENCE_ULONG(
+            &registersPtr->Status,
+            BCM_I2C_REG_STATUS_ERR |
+            BCM_I2C_REG_STATUS_CLKT |
+            BCM_I2C_REG_STATUS_DONE);
+       return TRUE;
+    }
+}
+
+_Use_decl_annotations_
+BOOLEAN OnInterruptIsr (WDFINTERRUPT WdfInterrupt, ULONG /*MessageID*/)
+{
+#ifdef LOG_ISR_TIME
+    LARGE_INTEGER startQpc = KeQueryPerformanceCounter(nullptr);
+#endif // LOG_ISR_TIME
+
+    BOOLEAN claimed = HandleInterrupt(WdfInterrupt);
+
+#ifdef LOG_ISR_TIME
+    if (claimed) {
+        LARGE_INTEGER qpcFrequency;
+        LARGE_INTEGER stopQpc = KeQueryPerformanceCounter(&qpcFrequency);
+        BSC_LOG_INFORMATION(
+            "ISR Time = %lu microseconds",
+            ULONG(1000000LL * (stopQpc.QuadPart - startQpc.QuadPart) /
+                  qpcFrequency.QuadPart));
+    }
+#endif // LOG_ISR_TIME
+
+    return claimed;
+}
+
+_IRQL_requires_max_(DISPATCH_LEVEL)
+NTSTATUS ProcessRequestCompletion (
+    BCM_I2C_INTERRUPT_CONTEXT* InterruptContextPtr,
+    _Out_ ULONG* RequestInformationPtr
+    )
+{
+    BCM_I2C_ASSERT_MAX_IRQL(DISPATCH_LEVEL);
+
+    BCM_I2C_REGISTERS* registersPtr = InterruptContextPtr->RegistersPtr;
+    ULONG capturedStatus = InterruptContextPtr->CapturedStatus;
+
+    switch (InterruptContextPtr->State) {
+    case TRANSFER_STATE::SENDING: __fallthrough;
+    case TRANSFER_STATE::SENDING_SEQUENCE:
+    {
+        ULONG bytesToWrite =
+            (InterruptContextPtr->State == TRANSFER_STATE::SENDING) ?
+            (InterruptContextPtr->WriteContext.EndPtr -
+             InterruptContextPtr->WriteContext.WriteBufferPtr) :
+            InterruptContextPtr->SequenceContext.BytesToWrite;
+
+        if (InterruptContextPtr->CapturedDataLength > bytesToWrite) {
+            BSC_LOG_ERROR(
+                "Controller reported more bytes remaining than we programmed into the DataLength register. (InterruptContextPtr->CapturedDataLength = %lu, bytesToWrite = %lu)",
+                InterruptContextPtr->CapturedDataLength,
+                bytesToWrite);
+            *RequestInformationPtr = 0;
+            return STATUS_INTERNAL_ERROR;
+        }
+
+        ULONG bytesSent =
+            bytesToWrite - InterruptContextPtr->CapturedDataLength;
+
+        // CLKT is checked before ERR because ERR is also set when CLKT is set
+        if (capturedStatus & BCM_I2C_REG_STATUS_CLKT) {
+            BSC_LOG_ERROR(
+                "Clock stretch timeout bit of status register is set, completing request with STATUS_IO_TIMEOUT. (statusReg = 0x%lx)",
+                capturedStatus);
+            *RequestInformationPtr = 0;
+            return STATUS_IO_TIMEOUT;
+        } else if (capturedStatus & BCM_I2C_REG_STATUS_ERR) {
+            if (bytesSent == 0) {
+                BSC_LOG_ERROR(
+                    "Error bit of status register is set and no bytes were transferred, completing request with STATUS_NO_SUCH_DEVICE. (statusReg = 0x%lx)",
+                    capturedStatus);
+                *RequestInformationPtr = 0;
+                return STATUS_NO_SUCH_DEVICE;
+            } else {
+                BSC_LOG_ERROR("The slave NACKed the trasnfer before all bytes were sent - partial transfer.");
+                *RequestInformationPtr = bytesSent - 1;
+                NT_ASSERT(*RequestInformationPtr < bytesToWrite);
+                return STATUS_SUCCESS;
+            }
+        } else if (capturedStatus & BCM_I2C_REG_STATUS_DONE) {
+            if (bytesSent == bytesToWrite) {
+                *RequestInformationPtr = bytesSent;
+                return STATUS_SUCCESS;
+            } else {
+                BSC_LOG_ERROR(
+                    "All bytes should have been written if none of the error flags are set. (bytesSent = %lu, InterruptContextPtr->BytesToWrite = %lu)",
+                    bytesSent,
+                    bytesToWrite);
+                *RequestInformationPtr = 0;
+                return STATUS_INTERNAL_ERROR;
+            }
+        }
+
+        BSC_LOG_ERROR(
+            "None of the expected status bits were set - unknown state. (capturedStatus = 0x%lx)",
+            capturedStatus);
+
+        *RequestInformationPtr = 0;
+        return STATUS_INTERNAL_ERROR;
+    }
+    case TRANSFER_STATE::RECEIVING:
+    {
+        BCM_I2C_INTERRUPT_CONTEXT::READ_CONTEXT* readContextPtr =
+            &InterruptContextPtr->ReadContext;
+
+        if (capturedStatus & BCM_I2C_REG_STATUS_CLKT) {
+            BSC_LOG_ERROR("CLKT bit was set - clock stretch timeout occurred.");
+            *RequestInformationPtr = 0;
+            return STATUS_IO_TIMEOUT;
+        } else if (capturedStatus & BCM_I2C_REG_STATUS_ERR) {
+            //
+            // It is not possible for a slave device to NAK a read transfer
+            // part way through. ERR bit always means the slave address
+            // was not acknowledged.
+            //
+            BSC_LOG_ERROR("ERR bit was set - completing request with STATUS_NO_SUCH_DEVICE.");
+            *RequestInformationPtr = 0;
+            return STATUS_NO_SUCH_DEVICE;
+        }
+
+        readContextPtr->CurrentReadBufferPtr += ReadFifo(
+            registersPtr,
+            readContextPtr->CurrentReadBufferPtr,
+            readContextPtr->EndPtr - readContextPtr->CurrentReadBufferPtr);
+
+        *RequestInformationPtr = readContextPtr->CurrentReadBufferPtr -
+            readContextPtr->ReadBufferPtr;
+        return STATUS_SUCCESS;
+    }
+    case TRANSFER_STATE::RECEIVING_SEQUENCE:
+    {
+        BCM_I2C_INTERRUPT_CONTEXT::SEQUENCE_CONTEXT* sequenceContextPtr =
+            &InterruptContextPtr->SequenceContext;
+
+        NT_ASSERTMSG(
+            "We should only reach the RECEIVING_SEQUENCE state if the entire write buffer was queued",
+            !sequenceContextPtr->CurrentWriteMdl &&
+            (sequenceContextPtr->BytesWritten ==
+             sequenceContextPtr->BytesToWrite));
+
+        //
+        // Due to the requirement that the read must be queued before the write
+        // completes, the write FIFO could still have data in it that was never
+        // sent, and reading from the FIFO would give us back our unsent write
+        // buffer. We must check for this condition before reading from the
+        // FIFO. If one of the error bits is set, the transfer most likely
+        // failed during the write portion.
+        //
+        if (capturedStatus & BCM_I2C_REG_STATUS_CLKT) {
+            BSC_LOG_ERROR("CLKT was set - completing request with STATUS_IO_TIMEOUT.");
+            *RequestInformationPtr = 0;
+            return STATUS_IO_TIMEOUT;
+        } else if (capturedStatus & BCM_I2C_REG_STATUS_ERR) {
+            if (!(capturedStatus & BCM_I2C_REG_STATUS_DONE) ||
+                 (InterruptContextPtr->CapturedDataLength == 0)) {
+
+                //
+                // It is not possible to tell exactly how many bytes were
+                // transferred in this case because DataLength was
+                // necessarily clobberred when the read was queued.
+                // Report a partial transfer of 0 bytes.
+                //
+                BSC_LOG_ERROR("The write was NAKed before all bytes could be transmitted - partial transfer.");
+                *RequestInformationPtr = 0;
+                return STATUS_SUCCESS;
+            } else {
+                BSC_LOG_ERROR("The slave address was not acknowledged.");
+                *RequestInformationPtr = 0;
+                return STATUS_NO_SUCH_DEVICE;
+            }
+        }
+
+        while (sequenceContextPtr->CurrentReadMdl) {
+            ULONG bytesRead = ReadFifoMdl(
+                registersPtr,
+                sequenceContextPtr->CurrentReadMdl,
+                sequenceContextPtr->CurrentReadMdlOffset);
+            sequenceContextPtr->BytesRead += bytesRead;
+            sequenceContextPtr->CurrentReadMdlOffset += bytesRead;
+
+            // Only advance to next MDL if current MDL is exhausted.
+            // If the current MDL is not exhausted, it means there was a
+            // partial transfer.
+            if (sequenceContextPtr->CurrentReadMdlOffset !=
+                MmGetMdlByteCount(sequenceContextPtr->CurrentReadMdl)) {
+
+                break;
+            }
+
+            NT_ASSERT(bytesRead != 0);
+            sequenceContextPtr->CurrentReadMdl =
+                sequenceContextPtr->CurrentReadMdl->Next;
+            sequenceContextPtr->CurrentReadMdlOffset = 0;
+        }
+
+        *RequestInformationPtr = sequenceContextPtr->BytesWritten +
+            sequenceContextPtr->BytesRead;
+        return STATUS_SUCCESS;
+    }
+    default:
+        // unrecognized state
+        NT_ASSERT(!"Invalid TRANSFER_STATE value");
+        *RequestInformationPtr = 0;
+        return STATUS_INTERNAL_ERROR;
+    }
+}
+
+_Use_decl_annotations_
+VOID OnInterruptDpc (WDFINTERRUPT WdfInterrupt, WDFOBJECT /*WdfDevice*/)
+{
+    NTSTATUS status;
+    BCM_I2C_INTERRUPT_CONTEXT* interruptContextPtr =
+        GetInterruptContext(WdfInterrupt);
+    BCM_I2C_REGISTERS* registersPtr = interruptContextPtr->RegistersPtr;
+
+    BSC_LOG_TRACE(
+        "DPC occurred. (InterruptContextPtr->State = %d)",
+        int(interruptContextPtr->State));
+
+    NT_ASSERTMSG(
+        "Interrupts should be disabled when the DPC is invoked",
+        !(READ_REGISTER_NOFENCE_ULONG(&registersPtr->Control) &
+         (BCM_I2C_REG_CONTROL_INTD |
+          BCM_I2C_REG_CONTROL_INTT |
+          BCM_I2C_REG_CONTROL_INTR)));
+
+    // The cancellation callback sets SpbRequest to NULL on cancellation
+    SPBREQUEST spbRequest = static_cast<SPBREQUEST>(InterlockedExchangePointer(
+        reinterpret_cast<PVOID *>(&interruptContextPtr->SpbRequest),
+        nullptr));
+
+    if (!spbRequest) {
+        BSC_LOG_INFORMATION("DPC invoked for cancelled request.");
+        return;
+    }
+
+    {
+        status = WdfRequestUnmarkCancelable(spbRequest);
+        switch (status) {
+        case STATUS_SUCCESS:
+            break;
+        case STATUS_CANCELLED:
+            BSC_LOG_INFORMATION(
+                "Cancellation was requested but we beat the cancellation routine to the request. Canceling the request. (spbRequest = %p)",
+                spbRequest);
+            SpbRequestComplete(spbRequest, STATUS_CANCELLED);
+            return;
+        case STATUS_INVALID_PARAMETER:
+        case STATUS_INVALID_DEVICE_REQUEST:
+        default:
+            BSC_LOG_ERROR(
+                "Failed to unmark request cancelable. (spbRequest = %p, status = %!STATUS!)",
+                spbRequest,
+                status);
+            SpbRequestComplete(spbRequest, STATUS_INTERNAL_ERROR);
+            return;
         }
     }
-    else
-    {
-        ControllerConfigureForTransfer(pDevice, pRequest);
+
+    ULONG information;
+    status = ProcessRequestCompletion(interruptContextPtr, &information);
+
+    //
+    // Always clear hardware FIFOs before completing request to aid in bus
+    // error recovery and to prevent data leakage.
+    //
+    WRITE_REGISTER_NOFENCE_ULONG(
+        &registersPtr->Control,
+        BCM_I2C_REG_CONTROL_I2CEN | BCM_I2C_REG_CONTROL_CLEAR);
+
+    BSC_LOG_INFORMATION(
+        "Completing request. (spbRequest = %p, information = %lu, status = %!STATUS!)",
+        spbRequest,
+        information,
+        status);
+
+    WdfRequestSetInformation(spbRequest, information);
+    SpbRequestComplete(spbRequest, status);
+}
+
+BCM_I2C_NONPAGED_SEGMENT_END; //===============================================
+BCM_I2C_PAGED_SEGMENT_BEGIN; //================================================
+
+_Use_decl_annotations_
+NTSTATUS OnPrepareHardware (
+    WDFDEVICE WdfDevice,
+    WDFCMRESLIST /*ResourcesRaw*/,
+    WDFCMRESLIST ResourcesTranslated
+    )
+{
+    PAGED_CODE();
+    BCM_I2C_ASSERT_MAX_IRQL(PASSIVE_LEVEL);
+
+    const CM_PARTIAL_RESOURCE_DESCRIPTOR* memResourcePtr = nullptr;
+    ULONG interruptResourceCount = 0;
+
+    // Look for single memory resource and single interrupt resource
+    const ULONG resourceCount = WdfCmResourceListGetCount(ResourcesTranslated);
+    for (ULONG i = 0; i < resourceCount; ++i) {
+        const PCM_PARTIAL_RESOURCE_DESCRIPTOR resourcePtr =
+            WdfCmResourceListGetDescriptor(ResourcesTranslated, i);
+
+        switch (resourcePtr->Type) {
+        case CmResourceTypeMemory:
+            // take the first memory resource found
+            if (!memResourcePtr) {
+                memResourcePtr = resourcePtr;
+            }
+            break;
+        case CmResourceTypeInterrupt:
+            ++interruptResourceCount;
+            break;
+        }
     }
 
-    FuncExit(TRACE_FLAG_TRANSFER);
+    if (!memResourcePtr ||
+        (memResourcePtr->u.Memory.Length < sizeof(BCM_I2C_REGISTERS)) ||
+        (interruptResourceCount == 0))
+    {
+        BSC_LOG_ERROR(
+            "Did not receive required memory resource and interrupt resource. (ResourcesTranslated = %p, memResourcePtr = %p, interruptResourceCount = %lu)",
+            ResourcesTranslated,
+            memResourcePtr,
+            interruptResourceCount);
+        return STATUS_DEVICE_CONFIGURATION_ERROR;
+    }
+
+    NT_ASSERT(memResourcePtr->Type == CmResourceTypeMemory);
+    BCM_I2C_REGISTERS* registersPtr = static_cast<BCM_I2C_REGISTERS*>(
+        MmMapIoSpaceEx(
+            memResourcePtr->u.Memory.Start,
+            memResourcePtr->u.Memory.Length,
+            PAGE_READWRITE | PAGE_NOCACHE));
+
+    if (!registersPtr) {
+        BSC_LOG_LOW_MEMORY(
+            "Failed to map registers - returning STATUS_INSUFFICIENT_RESOURCES. (memResourcePtr->u.Memory.Start = %I64u, memResourcePtr->u.Memory.Length = %lu)",
+            memResourcePtr->u.Memory.Start.QuadPart,
+            memResourcePtr->u.Memory.Length);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    // Disable and acknowledge interrupts before entering D0 state to prevent
+    // spurious interrupts.
+    WRITE_REGISTER_NOFENCE_ULONG(
+        &registersPtr->Control,
+        BCM_I2C_REG_CONTROL_CLEAR);
+    WRITE_REGISTER_NOFENCE_ULONG(
+        &registersPtr->Status,
+        BCM_I2C_REG_STATUS_DONE |
+        BCM_I2C_REG_STATUS_ERR |
+        BCM_I2C_REG_STATUS_CLKT);
+
+    BCM_I2C_DEVICE_CONTEXT* devicePtr = GetDeviceContext(WdfDevice);
+    devicePtr->RegistersPtr = registersPtr;
+    devicePtr->RegistersPhysicalAddress = memResourcePtr->u.Memory.Start;
+    devicePtr->RegistersLength = memResourcePtr->u.Memory.Length;
+    devicePtr->InterruptContextPtr->RegistersPtr = registersPtr;
+
+    return STATUS_SUCCESS;
 }
 
 _Use_decl_annotations_
-VOID
-OnDelayTimerExpired(
-    WDFTIMER  Timer
+NTSTATUS OnReleaseHardware (
+    WDFDEVICE WdfDevice,
+    WDFCMRESLIST /*ResourcesTranslated*/
     )
-/*++
- 
-  Routine Description:
-
-    This routine is invoked whenever the driver's delay
-    timer expires. It kicks off the transfer for the request.
-
-  Arguments:
-
-    Timer - a handle to a framework timer object
-
-  Return Value:
-
-    None.
-
---*/
 {
-    FuncEntry(TRACE_FLAG_TRANSFER);
+    PAGED_CODE();
+    BCM_I2C_ASSERT_MAX_IRQL(PASSIVE_LEVEL);
 
-    WDFDEVICE fxDevice;
-    PPBC_DEVICE pDevice;
-    PPBC_TARGET pTarget = NULL;
-    PPBC_REQUEST pRequest = NULL;
-    //BOOLEAN completeRequest = FALSE;
-    
-    fxDevice = (WDFDEVICE) WdfTimerGetParentObject(Timer);
-    pDevice = GetDeviceContext(fxDevice);
+    BCM_I2C_DEVICE_CONTEXT* devicePtr = GetDeviceContext(WdfDevice);
+    if (devicePtr->RegistersPtr) {
+        MmUnmapIoSpace(devicePtr->RegistersPtr, devicePtr->RegistersLength);
 
-    NT_ASSERT(pDevice != NULL);
-
-    //
-    // Acquire the device lock.
-    //
-
-    WdfSpinLockAcquire(pDevice->Lock);
-
-    //
-    // Make sure the target and request are
-    // still valid.
-    //
-
-    pTarget = pDevice->pCurrentTarget;
-    
-    if (pTarget == NULL)
-    {
-        Trace(
-            TRACE_LEVEL_WARNING,
-            TRACE_FLAG_TRANSFER,
-            "Delay timer expired without a valid current target for WDFDEVICE %p",
-            pDevice->FxDevice);
-
-        goto exit;
-    }
-    
-    pRequest = pTarget->pCurrentRequest;
-
-    if (pRequest == NULL)
-    {
-        Trace(
-            TRACE_LEVEL_WARNING,
-            TRACE_FLAG_TRANSFER,
-            "Delay timer expired without a valid current request for SPBTARGET %p",
-            pTarget->SpbTarget);
-
-        goto exit;
+        devicePtr->RegistersPtr = nullptr;
+        devicePtr->RegistersLength = 0;
+        devicePtr->RegistersPhysicalAddress = PHYSICAL_ADDRESS();
+        devicePtr->InterruptContextPtr->RegistersPtr = nullptr;
     }
 
-    NT_ASSERT(pRequest->SpbRequest != NULL);
-
-    Trace(
-        TRACE_LEVEL_INFORMATION,
-        TRACE_FLAG_TRANSFER,
-        "Delay timer expired, ready to configure transfer for WDFDEVICE %p",
-        pDevice->FxDevice);
-
-    ControllerConfigureForTransfer(pDevice, pRequest);
-    
-exit:
-
-    //
-    // Release the device lock.
-    //
-
-    WdfSpinLockRelease(pDevice->Lock);
-    
-    FuncExit(TRACE_FLAG_TRANSFER);
+    return STATUS_SUCCESS;
 }
 
 _Use_decl_annotations_
-VOID
-PbcRequestComplete(
-    PPBC_REQUEST            pRequest
+NTSTATUS OnD0Entry (
+    WDFDEVICE WdfDevice,
+    WDF_POWER_DEVICE_STATE /*PreviousState*/
     )
-/*++
- 
-  Routine Description:
-
-    This routine completes the SpbRequest associated with
-    the PBC_REQUEST context.
-
-  Arguments:
-
-    pRequest - a pointer to the PBC request context
-
-  Return Value:
-
-    None. The request is completed asynchronously.
-
---*/
 {
-    FuncEntry(TRACE_FLAG_TRANSFER);
+    PAGED_CODE();
+    BCM_I2C_ASSERT_MAX_IRQL(PASSIVE_LEVEL);
 
-    NT_ASSERT(pRequest != NULL);
+    BCM_I2C_DEVICE_CONTEXT* devicePtr = GetDeviceContext(WdfDevice);
+    BCM_I2C_REGISTERS* registersPtr = devicePtr->RegistersPtr;
 
-    Trace(
-        TRACE_LEVEL_INFORMATION,
-        TRACE_FLAG_TRANSFER,
-        "Completing SPBREQUEST %p with %!STATUS!, transferred %Iu bytes",
-        pRequest->SpbRequest,
-        pRequest->Status,
-        pRequest->TotalInformation);
+    WRITE_REGISTER_NOFENCE_ULONG(
+        &registersPtr->Control,
+        BCM_I2C_REG_CONTROL_I2CEN |
+        BCM_I2C_REG_CONTROL_CLEAR);
+    WRITE_REGISTER_NOFENCE_ULONG(
+        &registersPtr->Status,
+        BCM_I2C_REG_STATUS_DONE |
+        BCM_I2C_REG_STATUS_ERR |
+        BCM_I2C_REG_STATUS_CLKT);
+    WRITE_REGISTER_NOFENCE_ULONG(
+        &registersPtr->ClockDivider,
+        BCM_I2C_REG_CDIV_DEFAULT);
+    WRITE_REGISTER_NOFENCE_ULONG(
+        &registersPtr->DataDelay,
+        BCM_I2C_REG_DEL_DEFAULT);
+    WRITE_REGISTER_NOFENCE_ULONG(
+        &registersPtr->ClockStretchTimeout,
+        BCM_I2C_REG_CLKT_TOUT);
 
-    WdfRequestSetInformation(
-        pRequest->SpbRequest,
-        pRequest->TotalInformation);
-
-    SpbRequestComplete(
-        pRequest->SpbRequest, 
-        pRequest->Status);
-
-    FuncExit(TRACE_FLAG_TRANSFER);
+    return STATUS_SUCCESS;
 }
+
+_Use_decl_annotations_
+NTSTATUS OnD0Exit (
+    WDFDEVICE WdfDevice,
+    WDF_POWER_DEVICE_STATE /*PreviousState*/
+    )
+{
+    PAGED_CODE();
+    BCM_I2C_ASSERT_MAX_IRQL(PASSIVE_LEVEL);
+
+    BCM_I2C_DEVICE_CONTEXT* devicePtr = GetDeviceContext(WdfDevice);
+    BCM_I2C_REGISTERS* registersPtr = devicePtr->RegistersPtr;
+
+    WRITE_REGISTER_NOFENCE_ULONG(
+        &registersPtr->Control,
+        BCM_I2C_REG_CONTROL_CLEAR);
+    WRITE_REGISTER_NOFENCE_ULONG(
+        &registersPtr->Status,
+        BCM_I2C_REG_STATUS_DONE |
+        BCM_I2C_REG_STATUS_ERR |
+        BCM_I2C_REG_STATUS_CLKT);
+
+    return STATUS_SUCCESS;
+}
+
+_Use_decl_annotations_
+NTSTATUS OnTargetConnect (WDFDEVICE /*WdfDevice*/, SPBTARGET SpbTarget)
+{
+    PAGED_CODE();
+    BCM_I2C_ASSERT_MAX_IRQL(PASSIVE_LEVEL);
+
+    //
+    // Get ACPI descriptor
+    //
+    const PNP_I2C_SERIAL_BUS_DESCRIPTOR* i2cDescriptorPtr;
+    {
+        SPB_CONNECTION_PARAMETERS params;
+        SPB_CONNECTION_PARAMETERS_INIT(&params);
+
+        SpbTargetGetConnectionParameters(SpbTarget, &params);
+
+        const auto rhBufferPtr =
+            static_cast<RH_QUERY_CONNECTION_PROPERTIES_OUTPUT_BUFFER*>(
+                params.ConnectionParameters);
+        if (rhBufferPtr->PropertiesLength < sizeof(*i2cDescriptorPtr)) {
+            BSC_LOG_ERROR(
+                "Connection properties is too small. (rhBufferPtr->PropertiesLength = %lu, sizeof(*i2cDescriptorPtr) = %lu)",
+                rhBufferPtr->PropertiesLength,
+                sizeof(*i2cDescriptorPtr));
+            return STATUS_INVALID_PARAMETER;
+        }
+
+        i2cDescriptorPtr = reinterpret_cast<PNP_I2C_SERIAL_BUS_DESCRIPTOR*>(
+            rhBufferPtr->ConnectionProperties);
+
+        if (i2cDescriptorPtr->SerialBusType != PNP_SERIAL_BUS_TYPE_I2C) {
+            BSC_LOG_ERROR(
+                "ACPI Connnection descriptor is not an I2C connection descriptor. (i2cDescriptorPtr->SerialBusType = 0x%lx, PNP_SERIAL_BUS_TYPE_I2C = 0x%lx)",
+                i2cDescriptorPtr->SerialBusType,
+                PNP_SERIAL_BUS_TYPE_I2C);
+            return STATUS_INVALID_PARAMETER;
+        }
+    }
+
+    if (i2cDescriptorPtr->GeneralFlags & I2C_SLV_BIT) {
+        BSC_LOG_ERROR(
+            "Slave mode is not supported. Only ControllerInitiated mode is supported. (i2cDescriptorPtr->GeneralFlags = 0x%lx)",
+            i2cDescriptorPtr->GeneralFlags);
+        return STATUS_NOT_SUPPORTED;
+    }
+
+    if (i2cDescriptorPtr->TypeSpecificFlags &
+        I2C_SERIAL_BUS_SPECIFIC_FLAG_10BIT_ADDRESS) {
+
+        BSC_LOG_ERROR(
+            "10-bit addressing is not supported. (i2cDescriptorPtr->TypeSpecificFlags = 0x%lx)",
+            i2cDescriptorPtr->TypeSpecificFlags);
+        return STATUS_NOT_SUPPORTED;
+    }
+
+    if (i2cDescriptorPtr->Address > I2C_MAX_ADDRESS) {
+        BSC_LOG_ERROR(
+            "Slave address is out of range. (i2cDescriptorPtr->Address = 0x%lx, I2C_MAX_ADDRESS = 0x%lx)",
+            i2cDescriptorPtr->Address,
+            I2C_MAX_ADDRESS);
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    if ((i2cDescriptorPtr->ConnectionSpeed < BCM_I2C_MIN_CONNECTION_SPEED) ||
+        (i2cDescriptorPtr->ConnectionSpeed > BCM_I2C_MAX_CONNECTION_SPEED)) {
+
+        BSC_LOG_ERROR(
+            "ConnectionSpeed is out of supported range. (i2cDescriptorPtr->ConnectionSpeed = %lu, BCM_I2C_MIN_CONNECTION_SPEED = %lu, BCM_I2C_MAX_CONNECTION_SPEED = %lu)",
+            i2cDescriptorPtr->ConnectionSpeed,
+            BCM_I2C_MIN_CONNECTION_SPEED,
+            BCM_I2C_MAX_CONNECTION_SPEED);
+        return STATUS_NOT_SUPPORTED;
+    }
+
+    BCM_I2C_TARGET_CONTEXT* targetPtr = GetTargetContext(SpbTarget);
+    targetPtr->Address = i2cDescriptorPtr->Address;
+    targetPtr->ConnectionSpeed = i2cDescriptorPtr->ConnectionSpeed;
+
+    BSC_LOG_TRACE(
+        "Connected to SPBTARGET. (SpbTarget = %p, targetPtr->Address = 0x%lx, targetPtr->ConnectionSpeed = %lu)",
+        SpbTarget,
+        targetPtr->Address,
+        targetPtr->ConnectionSpeed);
+
+    return STATUS_SUCCESS;
+}
+
+BCM_I2C_PAGED_SEGMENT_END; //==================================================

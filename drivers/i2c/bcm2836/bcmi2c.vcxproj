@@ -56,8 +56,9 @@
     <OtherWpp Include="resource.rc">
       <WppEnabled>true</WppEnabled>
       <WppKernelMode>true</WppKernelMode>
+      <WppAddAlternateNameToMessageGUID>bcmi2c</WppAddAlternateNameToMessageGUID>
+      <WppPreprocessorDefinitions>ENABLE_WPP_RECORDER=1;WPP_EMIT_FUNC_NAME</WppPreprocessorDefinitions>
       <WppScanConfigurationData>i2ctrace.h</WppScanConfigurationData>
-      <WppTraceFunction>Trace(LEVEL,FLAGS,MSG,...)</WppTraceFunction>
     </OtherWpp>
   </ItemGroup>
   <ItemGroup>
@@ -65,8 +66,9 @@
     <ClCompile Include="@(ClSourceFiles)" Exclude="@(ClCompile)">
       <WppEnabled>true</WppEnabled>
       <WppKernelMode>true</WppKernelMode>
+      <WppAddAlternateNameToMessageGUID>bcmi2c</WppAddAlternateNameToMessageGUID>
+      <WppPreprocessorDefinitions>ENABLE_WPP_RECORDER=1;WPP_EMIT_FUNC_NAME</WppPreprocessorDefinitions>
       <WppScanConfigurationData>i2ctrace.h</WppScanConfigurationData>
-      <WppTraceFunction>Trace(LEVEL,FLAGS,MSG,...)</WppTraceFunction>
     </ClCompile>
     <ResourceCompile Include="@(RcSourceFiles)" Exclude="@(ResourceCompile)" />
     <Midl Include="@(IdlSourceFiles)" Exclude="@(Midl)" />

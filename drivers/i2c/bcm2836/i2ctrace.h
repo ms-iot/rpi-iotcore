@@ -1,55 +1,53 @@
-/*++
-
-Copyright (c) Microsoft Corporation.  All rights reserved.
-
-Module Name: 
-
-    i2ctrace.h
-
-Abstract:
-
-    This module contains the trace definitions for 
-    the I2C controller driver.
-
-Environment:
-
-    kernel-mode only
-
-Revision History:
-
---*/
-
 #ifndef _I2CTRACE_H_
-#define _I2CTRACE_H_
+#define _I2CTRACE_H_ 1
 
-extern "C" 
-{
 //
-// Tracing Definitions:
+// Copyright (C) Microsoft. All rights reserved.
 //
-// Control GUID: 
-// {2C6CF78D-93D0-4A18-A3A5-49C67BCBF820}
 
-#define WPP_CONTROL_GUIDS                           \
-    WPP_DEFINE_CONTROL_GUID(                        \
-        PbcTraceGuid,                               \
-        (2C6CF78D,93D0,4A18,A3A5,49C67BCBF820),     \
-        WPP_DEFINE_BIT(TRACE_FLAG_WDFLOADING)       \
-        WPP_DEFINE_BIT(TRACE_FLAG_SPBDDI)           \
-        WPP_DEFINE_BIT(TRACE_FLAG_PBCLOADING)       \
-        WPP_DEFINE_BIT(TRACE_FLAG_TRANSFER)         \
-        WPP_DEFINE_BIT(TRACE_FLAG_OTHER)            \
-        )
-}
+#ifdef __cplusplus
+extern "C" {
+#endif // __cplusplus
 
-#define WPP_LEVEL_FLAGS_LOGGER(level,flags) WPP_LEVEL_LOGGER(flags)
-#define WPP_LEVEL_FLAGS_ENABLED(level, flags) (WPP_LEVEL_ENABLED(flags) && WPP_CONTROL(WPP_BIT_ ## flags).Level >= level)
+//
+// Defining control guids, including this is required to happen before
+// including the tmh file (if the WppRecorder API is used)
+//
+#include <WppRecorder.h>
+
+//
+// Tracing GUID - 2C6CF78D-93D0-4A18-A3A5-49C67BCBF820
+//
+#define WPP_CONTROL_GUIDS \
+    WPP_DEFINE_CONTROL_GUID(BCMI2C, (2C6CF78D,93D0,4A18,A3A5,49C67BCBF820), \
+        WPP_DEFINE_BIT(BSC_TRACING_DEFAULT) \
+        WPP_DEFINE_BIT(BSC_TRACING_VERBOSE) \
+        WPP_DEFINE_BIT(BSC_TRACING_DEBUG) \
+        WPP_DEFINE_BIT(BSC_TRACING_BUGCHECK) \
+    )
 
 // begin_wpp config
-// FUNC FuncEntry{LEVEL=TRACE_LEVEL_VERBOSE}(FLAGS);
-// FUNC FuncExit{LEVEL=TRACE_LEVEL_VERBOSE}(FLAGS);
-// USEPREFIX(FuncEntry, "%!STDPREFIX! [%!FUNC!] --> entry");
-// USEPREFIX(FuncExit, "%!STDPREFIX! [%!FUNC!] <--");
+//
+// FUNC BSC_LOG_ERROR{LEVEL=TRACE_LEVEL_ERROR, FLAGS=BSC_TRACING_DEFAULT}(MSG, ...);
+// USEPREFIX (BSC_LOG_ERROR, "%!STDPREFIX! [%s @ %u] ERROR :", __FILE__, __LINE__);
+//
+// FUNC BSC_LOG_LOW_MEMORY{LEVEL=TRACE_LEVEL_ERROR, FLAGS=BSC_TRACING_DEFAULT}(MSG, ...);
+// USEPREFIX (BSC_LOG_LOW_MEMORY, "%!STDPREFIX! [%s @ %u] LOW MEMORY :", __FILE__, __LINE__);
+//
+// FUNC BSC_LOG_WARNING{LEVEL=TRACE_LEVEL_WARNING, FLAGS=BSC_TRACING_DEFAULT}(MSG, ...);
+// USEPREFIX (BSC_LOG_WARNING, "%!STDPREFIX! [%s @ %u] WARNING :", __FILE__, __LINE__);
+//
+// FUNC BSC_LOG_INFORMATION{LEVEL=TRACE_LEVEL_INFORMATION, FLAGS=BSC_TRACING_DEFAULT}(MSG, ...);
+// USEPREFIX (BSC_LOG_INFORMATION, "%!STDPREFIX! [%s @ %u] INFO :", __FILE__, __LINE__);
+//
+// FUNC BSC_LOG_TRACE{LEVEL=TRACE_LEVEL_VERBOSE, FLAGS=BSC_TRACING_VERBOSE}(MSG, ...);
+// USEPREFIX (BSC_LOG_TRACE, "%!STDPREFIX! [%s @ %u] TRACE :", __FILE__, __LINE__);
+//
 // end_wpp
 
+#ifdef __cplusplus
+} // extern "C"
+#endif // __cplusplus
+
 #endif // _I2CTRACE_H_
+
