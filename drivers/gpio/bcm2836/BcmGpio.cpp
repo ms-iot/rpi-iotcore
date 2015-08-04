@@ -107,7 +107,7 @@ NTSTATUS BCM_GPIO::PreProcessControllerInterrupt (
         ++i;
     }
 
-    // move interrupts from the enabled list to disabled list
+    // move interrupts from the enabled list to the disabled list
     if (disableMask) {
         interruptContextPtr->enabledMask &= ~disableMask;
         interruptContextPtr->disabledMask |= disableMask;
@@ -639,6 +639,86 @@ NTSTATUS BCM_GPIO::QueryControllerBasicInformation (
 } // BCM_GPIO::QueryControllerBasicInformation (...)
 
 _Use_decl_annotations_
+NTSTATUS BCM_GPIO::initialize ( WDFDEVICE WdfDevice )
+{
+    PAGED_CODE();
+    BCM_ASSERT_MAX_IRQL(PASSIVE_LEVEL);
+
+    for (ULONG bankId = 0;
+         bankId < ARRAYSIZE(this->interruptContext);
+         ++bankId)
+    {
+        _INTERRUPT_CONTEXT* interruptContextPtr =
+            this->interruptContext + bankId;
+
+        // create DPC object
+        WDFDPC dpc;
+        {
+            WDF_DPC_CONFIG dpcConfig;
+            WDF_DPC_CONFIG_INIT(&dpcConfig, evtDpcFunc);
+            dpcConfig.AutomaticSerialization = FALSE;
+
+            WDF_OBJECT_ATTRIBUTES dpcAttributes;
+            WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(&dpcAttributes, DPC_CONTEXT);
+            dpcAttributes.ParentObject = WdfDevice;
+
+            NTSTATUS status = WdfDpcCreate(&dpcConfig, &dpcAttributes, &dpc);
+            switch (status) {
+            case STATUS_SUCCESS:
+                break;
+            case STATUS_INSUFFICIENT_RESOURCES:
+                return status;
+            default:
+                NT_ASSERT(!"Incorrect usage of WdfDpcCreate");
+                return STATUS_INTERNAL_ERROR;
+            }
+
+            auto dpcContextPtr = bcmGpioDpcContextFromWdfObject(dpc);
+            dpcContextPtr->interruptContextPtr = interruptContextPtr;
+            dpcContextPtr->thisPtr = this;
+        } // dpc
+
+        // create interrupt reenable timer
+        WDFTIMER timer;
+        {
+            WDF_TIMER_CONFIG timerConfig;
+            WDF_TIMER_CONFIG_INIT(&timerConfig, evtReenableInterruptTimerFunc);
+            timerConfig.Period = 0;     // not periodic
+            timerConfig.AutomaticSerialization = FALSE;
+
+            WDF_OBJECT_ATTRIBUTES wdfObjectAttributes;
+            WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(
+                &wdfObjectAttributes,
+                TIMER_CONTEXT);
+            wdfObjectAttributes.ParentObject = WdfDevice;
+            wdfObjectAttributes.ExecutionLevel = WdfExecutionLevelPassive;
+
+            NTSTATUS status = WdfTimerCreate(
+                &timerConfig,
+                &wdfObjectAttributes,
+                &timer);
+            switch (status) {
+            case STATUS_SUCCESS:
+                break;
+            case STATUS_INSUFFICIENT_RESOURCES:
+                return status;
+            default:
+                NT_ASSERT(!"Incorrect usage of WdfTimerCreate");
+                return STATUS_INTERNAL_ERROR;
+            }
+
+            auto timerContextPtr = bcmGpioTimerContextFromWdfObject(timer);
+            timerContextPtr->interruptContextPtr = interruptContextPtr;
+            timerContextPtr->thisPtr = this;
+        } // timer
+
+        interruptContextPtr->initialize(bankId, dpc, timer);
+    } // for (ULONG bankId = ...)
+
+    return STATUS_SUCCESS;
+} // BCM_GPIO::initialize ( )
+
+_Use_decl_annotations_
 NTSTATUS BCM_GPIO::PrepareController (
     WDFDEVICE WdfDevice,
     PVOID ContextPtr,
@@ -690,80 +770,13 @@ NTSTATUS BCM_GPIO::PrepareController (
     auto thisPtr = new (ContextPtr) BCM_GPIO(
         registersPtr,
         memResource->u.Memory.Length);
-    if (thisPtr->signature != _SIGNATURE::CONSTRUCTED) {
-        return STATUS_INTERNAL_ERROR;
-    }
+    NT_ASSERT(thisPtr->signature == _SIGNATURE::CONSTRUCTED);
 
-    for (ULONG bankId = 0;
-         bankId < ARRAYSIZE(thisPtr->interruptContext);
-         ++bankId)
-    {
-        _INTERRUPT_CONTEXT* interruptContextPtr =
-            thisPtr->interruptContext + bankId;
-
-        // create DPC object
-        WDFDPC dpc;
-        {
-            WDF_DPC_CONFIG dpcConfig;
-            WDF_DPC_CONFIG_INIT(&dpcConfig, evtDpcFunc);
-            dpcConfig.AutomaticSerialization = FALSE;
-
-            WDF_OBJECT_ATTRIBUTES dpcAttributes;
-            WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(&dpcAttributes, DPC_CONTEXT);
-            dpcAttributes.ParentObject = WdfDevice;
-
-            NTSTATUS status = WdfDpcCreate(&dpcConfig, &dpcAttributes, &dpc);
-            switch (status) {
-            case STATUS_SUCCESS:
-                break;
-            case STATUS_INSUFFICIENT_RESOURCES:
-                return status;
-            default:
-                NT_ASSERT(!"Incorrect usage of WdfDpcCreate");
-                return STATUS_INTERNAL_ERROR;
-            }
-
-            auto dpcContextPtr = bcmGpioDpcContextFromWdfObject(dpc);
-            dpcContextPtr->interruptContextPtr = interruptContextPtr;
-            dpcContextPtr->thisPtr = thisPtr;
-        } // dpc
-
-        // create interrupt reenable timer
-        WDFTIMER timer;
-        {
-            WDF_TIMER_CONFIG timerConfig;
-            WDF_TIMER_CONFIG_INIT(&timerConfig, evtReenableInterruptTimerFunc);
-            timerConfig.Period = 0;     // not periodic
-            timerConfig.AutomaticSerialization = FALSE;
-
-            WDF_OBJECT_ATTRIBUTES wdfObjectAttributes;
-            WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(
-                &wdfObjectAttributes,
-                TIMER_CONTEXT);
-            wdfObjectAttributes.ParentObject = WdfDevice;
-            wdfObjectAttributes.ExecutionLevel = WdfExecutionLevelPassive;
-
-            NTSTATUS status = WdfTimerCreate(
-                &timerConfig,
-                &wdfObjectAttributes,
-                &timer);
-            switch (status) {
-            case STATUS_SUCCESS:
-                break;
-            case STATUS_INSUFFICIENT_RESOURCES:
-                return status;
-            default:
-                NT_ASSERT(!"Incorrect usage of WdfTimerCreate");
-                return STATUS_INTERNAL_ERROR;
-            }
-
-            auto timerContextPtr = bcmGpioTimerContextFromWdfObject(timer);
-            timerContextPtr->interruptContextPtr = interruptContextPtr;
-            timerContextPtr->thisPtr = thisPtr;
-        } // timer
-
-        interruptContextPtr->initialize(bankId, dpc, timer);
-    } // for (ULONG bankId = ...)
+    NTSTATUS status = thisPtr->initialize(WdfDevice);
+    if (!NT_SUCCESS(status)) {
+        thisPtr->~BCM_GPIO();
+        return status;
+    } // if
 
     return STATUS_SUCCESS;
 } // BCM_GPIO::PrepareController (...)
@@ -912,10 +925,6 @@ NTSTATUS DriverEntry (
 
     WDFDRIVER wdfDriver;
     {
-        WDF_OBJECT_ATTRIBUTES wdfObjectAttributes;
-        WDF_OBJECT_ATTRIBUTES_INIT(&wdfObjectAttributes);
-        wdfObjectAttributes.ExecutionLevel = WdfExecutionLevelPassive;
-
         WDF_DRIVER_CONFIG wdfDriverConfig;
         WDF_DRIVER_CONFIG_INIT(
             &wdfDriverConfig,
@@ -926,7 +935,7 @@ NTSTATUS DriverEntry (
         status = WdfDriverCreate(
                 DriverObjectPtr,
                 RegistryPathPtr,
-                &wdfObjectAttributes,
+                WDF_NO_OBJECT_ATTRIBUTES,
                 &wdfDriverConfig,
                 &wdfDriver);
         if (!NT_SUCCESS(status)) {

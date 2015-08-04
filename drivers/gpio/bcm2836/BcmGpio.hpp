@@ -221,6 +221,10 @@ private: // PAGED
         );
 
     _IRQL_requires_max_(PASSIVE_LEVEL)
+    _Must_inspect_result_
+    NTSTATUS initialize ( WDFDEVICE WdfDevice );
+
+    _IRQL_requires_max_(PASSIVE_LEVEL)
     BCM_GPIO (
         _In_ BCM_GPIO_REGISTERS* registersPtr,
         ULONG registersLength
