@@ -2,13 +2,13 @@
 
 Copyright (c) Microsoft Corporation.  All rights reserved.
 
-Module Name: 
+Module Name:
 
     bcmi2c.h
 
 Abstract:
 
-    This module contains the controller-specific type 
+    This module contains the controller-specific type
     definitions for the BCM2841 I2C controller driver hardware.
 
 Environment:
@@ -28,23 +28,21 @@ Revision History:
 
 //
 // BCM I2C controller registers.
-// BCM : Broadcom Serial Controller
+// BSC : Broadcom Serial Controller
 //
 
-typedef struct BCMI2C_REGISTERS
-{
-    // using the chatty register names because
-    // the short register names are not self explanatory
-    __declspec(align(4)) ULONG Control;             // C
-    __declspec(align(4)) ULONG Status;              // S
-    __declspec(align(4)) ULONG DataLength;          // DLEN
-    __declspec(align(4)) ULONG SlaveAddress;        // A
-    __declspec(align(4)) ULONG DataFIFO;            // FIFO
-    __declspec(align(4)) ULONG ClockDivider;        // DIV
-    __declspec(align(4)) ULONG DataDelay;           // DEL
-    __declspec(align(4)) ULONG ClockStretchTimeout; // CLKT
-}
-BCM_I2C_REGISTERS, *PBCM_I2C_REGISTERS;
+#include <pshpack1.h>
+struct BCM_I2C_REGISTERS {
+    ULONG Control;             // C
+    ULONG Status;              // S
+    ULONG DataLength;          // DLEN
+    ULONG SlaveAddress;        // A
+    ULONG DataFIFO;            // FIFO
+    ULONG ClockDivider;        // DIV
+    ULONG DataDelay;           // DEL
+    ULONG ClockStretchTimeout; // CLKT
+};
+#include <poppack.h>
 
 //
 // I2C.C Control Register bit fields
@@ -70,6 +68,7 @@ BCM_I2C_REGISTERS, *PBCM_I2C_REGISTERS;
 #define BCM_I2C_REG_STATUS_TXW              0x00000004
 #define BCM_I2C_REG_STATUS_DONE             0x00000002
 #define BCM_I2C_REG_STATUS_TA               0x00000001
+#define BCM_I2C_REG_STATUS_MASK             0x000003FF
 
 //
 // I2C.DLEN DataLength Register bit fields
@@ -89,13 +88,13 @@ BCM_I2C_REGISTERS, *PBCM_I2C_REGISTERS;
 //
 // I2C.DIV ClockDivider Register bit fields
 //
-#define BCM_I2C_REG_DIV_CDIV                0x0000FFFE
+#define BCM_I2C_REG_CDIV_MASK               0x0000FFFE
 
 //
-// I2C.DEL DataDelay Register bit fields
+// I2C.DEL DataDelay Register bit field scaled for 250Mhz clock operation.
 //
-#define BCM_I2C_REG_DEL_FEDL                0xFFFF0000
-#define BCM_I2C_REG_DEL_REDL                0x0000FFFF
+#define BCM_I2C_REG_DEL_DEFAULT             0x00300030
+#define BCM_I2C_REG_DEL_FEDL                0x50
 
 //
 // I2C.CLKT ClockStretchTimeout Register bit fields
@@ -103,41 +102,13 @@ BCM_I2C_REGISTERS, *PBCM_I2C_REGISTERS;
 #define BCM_I2C_REG_CLKT_TOUT               0x0000FFFF
 
 //
-// Default values for Control Register
-//
-#define BCM_I2C_REG_CONTROL_DEFAULT BCM_I2C_REG_CONTROL_I2CEN
-#define BCM_I2C_REG_TOUT_DEFAULT    0x40        
-#define BCM_I2C_REG_DEL_DEFAULT     0x300030    
-
-//
 // I2C ClockDivider
 //
-#define BCM_I2C_CORE_CLOCK                  250000000L // 250MHz
-#define BCM_I2C_CLOCK_RATE_LOWEST           ((BCM_I2C_CORE_CLOCK / BCM_I2C_REG_DIV_CDIV) + 1) 
-                                                       // min. supported I2C bus clock rate
-#define BCM_I2C_CLOCK_RATE_STANDARD         100000     // standard I2C bus clock rate
-#define BCM_I2C_CLOCK_RATE_FAST             400000     // fast I2C bus clock rate
+#define BCM_I2C_CORE_CLOCK                  250000000   // 250MHz
+#define BCM_I2C_MIN_CONNECTION_SPEED        (BCM_I2C_CORE_CLOCK / BCM_I2C_REG_CDIV_MASK)
+#define BCM_I2C_MAX_CONNECTION_SPEED        400000      // highest tested speed
+#define BCM_I2C_REG_CDIV_DEFAULT            ((BCM_I2C_CORE_CLOCK / 100000) & BCM_I2C_REG_CDIV_MASK)
 
-inline ULONG
-BCMI2CSetClkDivider(ULONG clock)
-{
-    ULONG cdiv;
-    if (clock < BCM_I2C_CLOCK_RATE_LOWEST)
-    {
-        clock = BCM_I2C_CLOCK_RATE_LOWEST;
-    }
-    else if (clock >= BCM_I2C_CLOCK_RATE_FAST)
-    {
-        clock = BCM_I2C_CLOCK_RATE_FAST;
-    }
-    
-    cdiv = BCM_I2C_CORE_CLOCK / clock;
+#define BCM_I2C_MAX_TRANSFER_LENGTH         16384       // largest tested size
 
-    return cdiv;
-}
-
-#define BCM_I2C_MAX_TRANSFER_LENGTH         BCM_I2C_REG_DLEN_MASK
-#define BCM_I2C_MAX_BYTES_PER_TRANSFER      16
-#define BCM_TA_BIT_TIMEOUT                  1000    // 1000us
-
-#endif
+#endif // _BCMI2C_H_

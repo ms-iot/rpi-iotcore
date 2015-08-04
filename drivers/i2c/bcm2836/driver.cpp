@@ -2,13 +2,13 @@
 
 Copyright (c) Microsoft Corporation.  All rights reserved.
 
-Module Name: 
+Module Name:
 
     driver.cpp
 
 Abstract:
 
-    This module contains the WDF driver initialization 
+    This module contains the WDF driver initialization
     functions for the controller driver.
 
 Environment:
@@ -18,133 +18,40 @@ Environment:
 Revision History:
 
 --*/
+#include "precomp.h"
 
-#include "internal.h"
-#include "driver.h"
+#include "i2ctrace.h"
+#include "bcmi2c.h"
 #include "device.h"
-#include "ntstrsafe.h"
+#include "driver.h"
 
 #include "driver.tmh"
 
-_Use_decl_annotations_
-NTSTATUS
-DriverEntry(
-    PDRIVER_OBJECT  DriverObject,
-    PUNICODE_STRING RegistryPath
-    )
-{
-    WDF_DRIVER_CONFIG driverConfig;
-    WDF_OBJECT_ATTRIBUTES driverAttributes;
+BCM_I2C_PAGED_SEGMENT_BEGIN; //================================================
 
-    WDFDRIVER fxDriver;
+_Use_decl_annotations_
+NTSTATUS OnDeviceAdd (WDFDRIVER /*WdfDriver*/, WDFDEVICE_INIT* DeviceInitPtr)
+{
+    PAGED_CODE();
+    BCM_I2C_ASSERT_MAX_IRQL(PASSIVE_LEVEL);
 
     NTSTATUS status;
-
-    WPP_INIT_TRACING(DriverObject, RegistryPath);
-
-    FuncEntry(TRACE_FLAG_WDFLOADING);
-
-    WDF_DRIVER_CONFIG_INIT(&driverConfig, OnDeviceAdd);
-    driverConfig.DriverPoolTag = BCMI_POOL_TAG;
-
-    WDF_OBJECT_ATTRIBUTES_INIT(&driverAttributes);
-    driverAttributes.EvtCleanupCallback = OnDriverCleanup;
-
-    status = WdfDriverCreate(
-        DriverObject,
-        RegistryPath,
-        &driverAttributes,
-        &driverConfig,
-        &fxDriver);
-
-    if (!NT_SUCCESS(status))
-    {
-        Trace(
-            TRACE_LEVEL_ERROR, 
-            TRACE_FLAG_WDFLOADING,
-            "Error creating WDF driver object - %!STATUS!", 
-            status);
-
-        goto exit;
-    }
-
-    Trace(
-        TRACE_LEVEL_VERBOSE, 
-        TRACE_FLAG_WDFLOADING,
-        "Created WDFDRIVER %p",
-        fxDriver);
-
-exit:
-
-    FuncExit(TRACE_FLAG_WDFLOADING);
-
-    return status;
-}
-
-_Use_decl_annotations_
-VOID
-OnDriverCleanup(
-    WDFOBJECT Object
-    )
-{
-    UNREFERENCED_PARAMETER(Object);
-
-    WPP_CLEANUP(NULL);
-}
-
-_Use_decl_annotations_
-NTSTATUS
-OnDeviceAdd(
-    WDFDRIVER       FxDriver,
-    PWDFDEVICE_INIT FxDeviceInit
-    )
-/*++
- 
-  Routine Description:
-
-    This routine creates the device object for an SPB 
-    controller and the device's child objects.
-
-  Arguments:
-
-    FxDriver - the WDF driver object handle
-    FxDeviceInit - information about the PDO that we are loading on
-
-  Return Value:
-
-    Status
-
---*/
-{
-    FuncEntry(TRACE_FLAG_WDFLOADING);
-
-    PPBC_DEVICE pDevice;
-    NTSTATUS status;
-    
-    UNREFERENCED_PARAMETER(FxDriver);
 
     //
     // Configure DeviceInit structure
     //
-    
-    status = SpbDeviceInitConfig(FxDeviceInit);
-
-    if (!NT_SUCCESS(status))
-    {
-        Trace(
-            TRACE_LEVEL_ERROR, 
-            TRACE_FLAG_WDFLOADING,
-            "Failed SpbDeviceInitConfig() for WDFDEVICE_INIT %p - %!STATUS!", 
-            FxDeviceInit,
+    status = SpbDeviceInitConfig(DeviceInitPtr);
+    if (!NT_SUCCESS(status)) {
+        BSC_LOG_ERROR(
+            "SpbDeviceInitConfig() failed. (DeviceInitPtr = %p, status = %!STATUS!)",
+            DeviceInitPtr,
             status);
+        return status;
+    }
 
-        goto exit;
-    }  
-        
     //
     // Setup PNP/Power callbacks.
     //
-
     {
         WDF_PNPPOWER_EVENT_CALLBACKS pnpCallbacks;
         WDF_PNPPOWER_EVENT_CALLBACKS_INIT(&pnpCallbacks);
@@ -153,60 +60,51 @@ OnDeviceAdd(
         pnpCallbacks.EvtDeviceReleaseHardware = OnReleaseHardware;
         pnpCallbacks.EvtDeviceD0Entry = OnD0Entry;
         pnpCallbacks.EvtDeviceD0Exit = OnD0Exit;
-        pnpCallbacks.EvtDeviceSelfManagedIoInit = OnSelfManagedIoInit;
-        pnpCallbacks.EvtDeviceSelfManagedIoCleanup = OnSelfManagedIoCleanup;
 
-        WdfDeviceInitSetPnpPowerEventCallbacks(FxDeviceInit, &pnpCallbacks);
+        WdfDeviceInitSetPnpPowerEventCallbacks(DeviceInitPtr, &pnpCallbacks);
     }
 
     //
     // Create the device.
     //
-
+    WDFDEVICE wdfDevice;
+    BCM_I2C_DEVICE_CONTEXT* devicePtr;
     {
         WDF_OBJECT_ATTRIBUTES deviceAttributes;
-        WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(&deviceAttributes, PBC_DEVICE);
-        WDFDEVICE fxDevice;
+        WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(
+            &deviceAttributes,
+            BCM_I2C_DEVICE_CONTEXT);
 
         status = WdfDeviceCreate(
-            &FxDeviceInit, 
+            &DeviceInitPtr,
             &deviceAttributes,
-            &fxDevice);
-
-        if (!NT_SUCCESS(status))
-        {
-            Trace(
-                TRACE_LEVEL_ERROR, 
-                TRACE_FLAG_WDFLOADING,
-                "Failed to create WDFDEVICE from WDFDEVICE_INIT %p - %!STATUS!", 
-                FxDeviceInit,
+            &wdfDevice);
+        if (!NT_SUCCESS(status)) {
+            BSC_LOG_ERROR(
+                "Failed to create WDFDEVICE. (DeviceInitPtr = %p, status = %!STATUS!)",
+                DeviceInitPtr,
                 status);
-
-            goto exit;
+            return status;
         }
 
-        pDevice = GetDeviceContext(fxDevice);
-        NT_ASSERT(pDevice != NULL);
-
-        pDevice->FxDevice = fxDevice;
+        devicePtr = GetDeviceContext(wdfDevice);
+        NT_ASSERT(devicePtr);
+        devicePtr->WdfDevice = wdfDevice;
     }
-        
+
     //
     // Ensure device is disable-able
     //
-    
     {
         WDF_DEVICE_STATE deviceState;
         WDF_DEVICE_STATE_INIT(&deviceState);
-        
         deviceState.NotDisableable = WdfFalse;
-        WdfDeviceSetDeviceState(pDevice->FxDevice, &deviceState);
+        WdfDeviceSetDeviceState(wdfDevice, &deviceState);
     }
-    
+
     //
     // Bind a SPB controller object to the device.
     //
-
     {
         SPB_CONTROLLER_CONFIG spbConfig;
         SPB_CONTROLLER_CONFIG_INIT(&spbConfig);
@@ -216,231 +114,136 @@ OnDeviceAdd(
         // does not need to respond to target disconnect.
         //
 
-        spbConfig.EvtSpbTargetConnect    = OnTargetConnect;
+        spbConfig.EvtSpbTargetConnect = OnTargetConnect;
 
         //
         // Register for IO callbacks.
         //
 
         spbConfig.ControllerDispatchType = WdfIoQueueDispatchSequential;
-        spbConfig.PowerManaged           = WdfTrue;
-        spbConfig.EvtSpbIoRead           = OnRead;
-        spbConfig.EvtSpbIoWrite          = OnWrite;
-        spbConfig.EvtSpbIoSequence       = OnSequence;
-        // lock / unlock is not supported
-        spbConfig.EvtSpbControllerLock   = NULL; // OnControllerLock;
-        spbConfig.EvtSpbControllerUnlock = NULL; // OnControllerUnlock;
+        spbConfig.EvtSpbIoRead = OnRead;
+        spbConfig.EvtSpbIoWrite = OnWrite;
+        spbConfig.EvtSpbIoSequence = OnSequence;
 
-        status = SpbDeviceInitialize(pDevice->FxDevice, &spbConfig);
-       
-        if (!NT_SUCCESS(status))
-        {
-            Trace(
-                TRACE_LEVEL_ERROR, 
-                TRACE_FLAG_WDFLOADING,
-                "Failed SpbDeviceInitialize() for WDFDEVICE %p - %!STATUS!", 
-                pDevice->FxDevice,
+        status = SpbDeviceInitialize(wdfDevice, &spbConfig);
+        if (!NT_SUCCESS(status)) {
+            BSC_LOG_ERROR(
+                "SpbDeviceInitialize failed. (wdfDevice = %p, status = %!STATUS!)",
+                wdfDevice,
                 status);
-
-            goto exit;
+            return status;
         }
-
-        //
-        // Register for IO other callbacks.
-        //
-
-        SpbControllerSetIoOtherCallback(
-            pDevice->FxDevice,
-            OnOther,
-            OnOtherInCallerContext);
     }
 
     //
     // Set target object attributes.
     //
-
     {
-        WDF_OBJECT_ATTRIBUTES targetAttributes; 
-        WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(&targetAttributes, PBC_TARGET);
+        WDF_OBJECT_ATTRIBUTES targetAttributes;
+        WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(
+            &targetAttributes,
+            BCM_I2C_TARGET_CONTEXT);
 
-        SpbControllerSetTargetAttributes(pDevice->FxDevice, &targetAttributes);
+        SpbControllerSetTargetAttributes(wdfDevice, &targetAttributes);
     }
 
     //
-    // Set request object attributes.
+    // Create an interrupt object
     //
-
+    BCM_I2C_INTERRUPT_CONTEXT* interruptContextPtr;
     {
-        WDF_OBJECT_ATTRIBUTES requestAttributes; 
-        WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(&requestAttributes, PBC_REQUEST);
-        
-        //
-        // NOTE: Be mindful when registering for EvtCleanupCallback or 
-        //       EvtDestroyCallback. IO requests arriving in the class
-        //       extension, but not presented to the driver (due to
-        //       cancellation), will still have their cleanup and destroy 
-        //       callbacks invoked.
-        //
-
-        SpbControllerSetRequestAttributes(pDevice->FxDevice, &requestAttributes);
-    }
-
-    //
-    // Create an interrupt object, interrupt spinlock,
-    // and register callbacks.
-    //
-
-    {            
-        //
-        // Create the interrupt spinlock.
-        //
-
-        WDF_OBJECT_ATTRIBUTES attributes;
-        WDF_OBJECT_ATTRIBUTES_INIT(&attributes);
-        attributes.ParentObject = pDevice->FxDevice;
-        
-        WDFSPINLOCK interruptLock;
-
-        status = WdfSpinLockCreate(
-           &attributes,
-           &interruptLock);
-        
-        if (!NT_SUCCESS(status))
-        {
-            Trace(
-                TRACE_LEVEL_ERROR, 
-                TRACE_FLAG_WDFLOADING, 
-                "Failed to create interrupt spinlock for WDFDEVICE %p - %!STATUS!", 
-                pDevice->FxDevice,
-                status);
-
-            goto exit;
-        }
-
-        //
-        // Create the interrupt object.
-        //
+        WDF_OBJECT_ATTRIBUTES interruptObjectAttributes;
+        WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(
+            &interruptObjectAttributes,
+            BCM_I2C_INTERRUPT_CONTEXT);
 
         WDF_INTERRUPT_CONFIG interruptConfig;
-
         WDF_INTERRUPT_CONFIG_INIT(
             &interruptConfig,
             OnInterruptIsr,
             OnInterruptDpc);
 
-        interruptConfig.SpinLock = interruptLock;
-
         status = WdfInterruptCreate(
-            pDevice->FxDevice,
+            wdfDevice,
             &interruptConfig,
-            WDF_NO_OBJECT_ATTRIBUTES,
-            &pDevice->InterruptObject);
-
-        if (!NT_SUCCESS(status))
-        {
-            Trace(
-                TRACE_LEVEL_ERROR, 
-                TRACE_FLAG_WDFLOADING,
-                "Failed to create interrupt object for WDFDEVICE %p - %!STATUS!",
-                pDevice->FxDevice,
+            &interruptObjectAttributes,
+            &devicePtr->WdfInterrupt);
+        if (!NT_SUCCESS(status)) {
+            BSC_LOG_ERROR(
+                "Failed to create interrupt object. (wdfDevice = %p, status = %!STATUS!)",
+                wdfDevice,
                 status);
-
-            goto exit;
+            return status;
         }
+
+        interruptContextPtr = GetInterruptContext(devicePtr->WdfInterrupt);
+        interruptContextPtr->WdfInterrupt = devicePtr->WdfInterrupt;
     }
-    
-    //
-    // Create the delay timer to stall between transfers.
-    //
-    {    
-        WDF_TIMER_CONFIG      wdfTimerConfig;
-        WDF_OBJECT_ATTRIBUTES timerAttributes;
+    devicePtr->InterruptContextPtr = interruptContextPtr;
 
-        WDF_TIMER_CONFIG_INIT(&wdfTimerConfig, OnDelayTimerExpired);
-        WDF_OBJECT_ATTRIBUTES_INIT(&timerAttributes);
-        timerAttributes.ParentObject = pDevice->FxDevice;
+    NT_ASSERT(status == STATUS_SUCCESS);
+    return STATUS_SUCCESS;
+}
 
-        status = WdfTimerCreate(
-            &wdfTimerConfig,
-            &timerAttributes,
-            &(pDevice->DelayTimer)
-            );
+_Use_decl_annotations_
+VOID OnDriverUnload ( WDFDRIVER WdfDriver )
+{
+    PAGED_CODE();
 
-        if (!NT_SUCCESS(status))
-        {
-            Trace(
-                TRACE_LEVEL_ERROR, 
-                TRACE_FLAG_WDFLOADING, 
-                "Failed to create delay timer for WDFDEVICE %p - %!STATUS!", 
-                pDevice->FxDevice,
-                status);
+    DRIVER_OBJECT* driverObjectPtr = WdfDriverWdmGetDriverObject(WdfDriver);
+    WPP_CLEANUP(driverObjectPtr);
+}
 
-            goto exit;
-        }
-    }
+BCM_I2C_PAGED_SEGMENT_END; //==================================================
+BCM_I2C_INIT_SEGMENT_BEGIN; //=================================================
+
+_Use_decl_annotations_
+NTSTATUS DriverEntry (
+    DRIVER_OBJECT* DriverObjectPtr,
+    UNICODE_STRING* RegistryPathPtr
+    )
+{
+    PAGED_CODE();
 
     //
-    // Create the spin lock to synchronize access
-    // to the controller driver.
+    // Initialize logging
     //
-    
-    WDF_OBJECT_ATTRIBUTES attributes;
-    WDF_OBJECT_ATTRIBUTES_INIT(&attributes);
-    attributes.ParentObject = pDevice->FxDevice;
-
-    status = WdfSpinLockCreate(
-       &attributes,
-       &pDevice->Lock);
-    
-    if (!NT_SUCCESS(status))
     {
-        Trace(
-            TRACE_LEVEL_ERROR, 
-            TRACE_FLAG_WDFLOADING, 
-            "Failed to create device spinlock for WDFDEVICE %p - %!STATUS!", 
-            pDevice->FxDevice,
-            status);
-
-        goto exit;
+        WPP_INIT_TRACING(DriverObjectPtr, RegistryPathPtr);
+        RECORDER_CONFIGURE_PARAMS recorderConfigureParams;
+        RECORDER_CONFIGURE_PARAMS_INIT(&recorderConfigureParams);
+        WppRecorderConfigure(&recorderConfigureParams);
+#if DBG
+        WPP_RECORDER_LEVEL_FILTER(BSC_TRACING_VERBOSE) = TRUE;
+#endif // DBG
     }
-    
-    //
-    // Configure idle settings to use system
-    // managed idle timeout.
-    //
-    {    
-        WDF_DEVICE_POWER_POLICY_IDLE_SETTINGS idleSettings;
-        WDF_DEVICE_POWER_POLICY_IDLE_SETTINGS_INIT(
-            &idleSettings, 
-            IdleCannotWakeFromS0);
 
-        //
-        // Explicitly set initial idle timeout delay.
-        //
+    NTSTATUS status;
 
-        idleSettings.IdleTimeoutType = SystemManagedIdleTimeoutWithHint;
-        idleSettings.IdleTimeout = IDLE_TIMEOUT_MONITOR_ON;
+    WDFDRIVER wdfDriver;
+    {
+        WDF_DRIVER_CONFIG wdfDriverConfig;
+        WDF_DRIVER_CONFIG_INIT(&wdfDriverConfig, OnDeviceAdd);
+        wdfDriverConfig.DriverPoolTag = BCM_I2C_POOL_TAG;
+        wdfDriverConfig.EvtDriverUnload = OnDriverUnload;
 
-        status = WdfDeviceAssignS0IdleSettings(
-            pDevice->FxDevice, 
-            &idleSettings);
-
-        if (!NT_SUCCESS(status))
-        {
-            Trace(
-                TRACE_LEVEL_ERROR,
-                TRACE_FLAG_WDFLOADING,
-                "Failed to initalize S0 idle settings for WDFDEVICE %p- %!STATUS!",
-                pDevice->FxDevice,
-                status);
-                
-            goto exit;
+        status = WdfDriverCreate(
+                DriverObjectPtr,
+                RegistryPathPtr,
+                WDF_NO_OBJECT_ATTRIBUTES,
+                &wdfDriverConfig,
+                &wdfDriver);
+        if (!NT_SUCCESS(status)) {
+            BSC_LOG_ERROR(
+                "Failed to create WDF driver object. (DriverObjectPtr = %p, RegistryPathPtr = %p)",
+                DriverObjectPtr,
+                RegistryPathPtr);
+            return status;
         }
     }
 
-exit:
-
-    FuncExit(TRACE_FLAG_WDFLOADING);
-
+    NT_ASSERT(status == STATUS_SUCCESS);
     return status;
 }
+
+BCM_I2C_INIT_SEGMENT_END; //===================================================

@@ -2,7 +2,7 @@
 
 Copyright (c) Microsoft Corporation.  All rights reserved.
 
-Module Name: 
+Module Name:
 
     driver.h
 
@@ -22,15 +22,40 @@ Revision History:
 #ifndef _DRIVER_H_
 #define _DRIVER_H_
 
-extern "C"
-_Function_class_(DRIVER_INITIALIZE) _IRQL_requires_same_
-NTSTATUS
-DriverEntry(
-    _In_  PDRIVER_OBJECT   pDriverObject,
-    _In_  PUNICODE_STRING  pRegistryPath
-    );    
+//
+// Macros to be used for proper PAGED/NON-PAGED code placement
+//
 
-EVT_WDF_DRIVER_DEVICE_ADD       OnDeviceAdd;
-EVT_WDF_OBJECT_CONTEXT_CLEANUP  OnDriverCleanup;
+#define BCM_I2C_NONPAGED_SEGMENT_BEGIN \
+    __pragma(code_seg(push)) \
+    //__pragma(code_seg(.text))
 
-#endif
+#define BCM_I2C_NONPAGED_SEGMENT_END \
+    __pragma(code_seg(pop))
+
+#define BCM_I2C_PAGED_SEGMENT_BEGIN \
+    __pragma(code_seg(push)) \
+    __pragma(code_seg("PAGE"))
+
+#define BCM_I2C_PAGED_SEGMENT_END \
+    __pragma(code_seg(pop))
+
+#define BCM_I2C_INIT_SEGMENT_BEGIN \
+    __pragma(code_seg(push)) \
+    __pragma(code_seg("INIT"))
+
+#define BCM_I2C_INIT_SEGMENT_END \
+    __pragma(code_seg(pop))
+
+#define BCM_I2C_ASSERT_MAX_IRQL(Irql) NT_ASSERT(KeGetCurrentIrql() <= (Irql))
+
+enum : ULONG {
+    BCM_I2C_POOL_TAG = 'IMCB'
+};
+
+EVT_WDF_DRIVER_DEVICE_ADD OnDeviceAdd;
+
+EVT_WDF_DRIVER_UNLOAD OnDriverUnload;
+extern "C" DRIVER_INITIALIZE DriverEntry;
+
+#endif // _DRIVER_H_
