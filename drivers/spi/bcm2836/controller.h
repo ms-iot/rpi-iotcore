@@ -2,7 +2,7 @@
 
 Copyright (c) Microsoft Corporation.  All rights reserved.
 
-Module Name: 
+Module Name:
 
     controller.h
 
@@ -27,55 +27,58 @@ Revision History:
 //
 
 VOID ControllerInitialize(
-    _Inout_  PPBC_DEVICE   pDevice);
+    _Inout_ PPBC_DEVICE pDevice
+    );
 
 VOID ControllerUninitialize(
-    _Inout_  PPBC_DEVICE   pDevice);
-
-VOID
-ControllerConfigureForTransfer(
-    _Inout_  PPBC_DEVICE   pDevice,
-    _Inout_  PPBC_REQUEST  pRequest);
+    _Inout_ PPBC_DEVICE pDevice
+    );
 
 NTSTATUS
 ControllerTransferData(
-    _Inout_  PPBC_DEVICE   pDevice,
-    _Inout_  PPBC_REQUEST  pRequest);
-    
+    _Inout_ PPBC_DEVICE pDevice,
+    _Inout_ PPBC_REQUEST pRequest
+    );
+
+NTSTATUS
+ControllerDoOneTransferPollMode(
+    _Inout_ PPBC_DEVICE pDevice,
+    _Inout_ PPBC_REQUEST pRequest
+    );
+
 VOID
 ControllerCompleteTransfer(
-    _Inout_  PPBC_DEVICE   pDevice,
-    _Inout_  PPBC_REQUEST  pRequest,
-    _In_     BOOLEAN       AbortSequence);
+    _Inout_ PPBC_DEVICE pDevice,
+    _Inout_ PPBC_REQUEST pRequest,
+    _In_ BOOLEAN AbortSequence
+    );
 
 VOID
 ControllerUnlockTransfer(
-    _Inout_  PPBC_DEVICE   pDevice
-);
+    _Inout_ PPBC_DEVICE pDevice
+    );
 
 VOID
-ControllerEnableInterrupts(
-    _Inout_  PPBC_DEVICE   pDevice,
-    _In_     ULONG         InterruptMask);
+ControllerConfigForTargetAndActivate(
+    _In_ PPBC_DEVICE pDevice
+    );
 
 VOID
-ControllerDisableInterrupts(
-    _Inout_  PPBC_DEVICE   pDevice);
+ControllerCompleteRequest(
+    _In_ PPBC_DEVICE pDevice,
+    _In_ PPBC_REQUEST pRequest
+    );
 
-ULONG
-ControllerGetInterruptStatus(
-    _In_  PPBC_DEVICE   pDevice,
-    _In_  ULONG         InterruptMask);
-
-VOID
-ControllerAcknowledgeInterrupts(
-    _In_  PPBC_DEVICE   pDevice,
-    _In_  ULONG         InterruptMask);
+NTSTATUS
+ControllerDelayTransfer(
+    _In_ PPBC_DEVICE pDevice,
+    _In_ PPBC_REQUEST pRequest
+    );
 
 VOID
-ControllerProcessInterrupts(
-    _Inout_ PPBC_DEVICE   pDevice,
-    _Inout_ PPBC_REQUEST  pRequest,
-    _In_    ULONG         InterruptStatus);
+ControllerConfigClock(
+    PPBC_DEVICE pDevice,
+    ULONG clockHz
+    );
 
 #endif

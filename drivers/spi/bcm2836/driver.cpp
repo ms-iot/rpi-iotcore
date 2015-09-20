@@ -29,7 +29,7 @@ Revision History:
 _Use_decl_annotations_
 NTSTATUS
 DriverEntry(
-    PDRIVER_OBJECT  DriverObject,
+    PDRIVER_OBJECT DriverObject,
     PUNICODE_STRING RegistryPath
     )
 {
@@ -95,7 +95,7 @@ OnDriverCleanup(
 _Use_decl_annotations_
 NTSTATUS
 OnDeviceAdd(
-    WDFDRIVER       FxDriver,
+    WDFDRIVER FxDriver,
     PWDFDEVICE_INIT FxDeviceInit
     )
 /*++
@@ -226,7 +226,7 @@ OnDeviceAdd(
         spbConfig.PowerManaged           = WdfTrue;
         spbConfig.EvtSpbIoRead           = OnRead;
         spbConfig.EvtSpbIoWrite          = OnWrite;
-        spbConfig.EvtSpbIoSequence       = OnSequence;
+        spbConfig.EvtSpbIoSequence       = OnSequenceRequest;
         spbConfig.EvtSpbControllerLock   = OnControllerLock;
         spbConfig.EvtSpbControllerUnlock = OnControllerUnlock;
 
@@ -282,100 +282,6 @@ OnDeviceAdd(
         //
 
         SpbControllerSetRequestAttributes(pDevice->FxDevice, &requestAttributes);
-    }
-
-    //
-    // Create an interrupt object, interrupt spinlock,
-    // and register callbacks.
-    //
-
-    {            
-        //
-        // Create the interrupt spinlock.
-        //
-
-        WDF_OBJECT_ATTRIBUTES attributes;
-        WDF_OBJECT_ATTRIBUTES_INIT(&attributes);
-        attributes.ParentObject = pDevice->FxDevice;
-        
-        WDFSPINLOCK interruptLock;
-
-        status = WdfSpinLockCreate(
-           &attributes,
-           &interruptLock);
-        
-        if (!NT_SUCCESS(status))
-        {
-            Trace(
-                TRACE_LEVEL_ERROR, 
-                TRACE_FLAG_WDFLOADING, 
-                "Failed to create interrupt spinlock for WDFDEVICE %p - %!STATUS!", 
-                pDevice->FxDevice,
-                status);
-
-            goto exit;
-        }
-
-        //
-        // Create the interrupt object.
-        //
-
-        WDF_INTERRUPT_CONFIG interruptConfig;
-
-        WDF_INTERRUPT_CONFIG_INIT(
-            &interruptConfig,
-            OnInterruptIsr,
-            OnInterruptDpc);
-
-        interruptConfig.SpinLock = interruptLock;
-
-        status = WdfInterruptCreate(
-            pDevice->FxDevice,
-            &interruptConfig,
-            WDF_NO_OBJECT_ATTRIBUTES,
-            &pDevice->InterruptObject);
-
-        if (!NT_SUCCESS(status))
-        {
-            Trace(
-                TRACE_LEVEL_ERROR, 
-                TRACE_FLAG_WDFLOADING,
-                "Failed to create interrupt object for WDFDEVICE %p - %!STATUS!",
-                pDevice->FxDevice,
-                status);
-
-            goto exit;
-        }
-    }
-
-    //
-    // Create the delay timer to stall between transfers.
-    //
-    {    
-        WDF_TIMER_CONFIG      wdfTimerConfig;
-        WDF_OBJECT_ATTRIBUTES timerAttributes;
-
-        WDF_TIMER_CONFIG_INIT(&wdfTimerConfig, OnDelayTimerExpired);
-        WDF_OBJECT_ATTRIBUTES_INIT(&timerAttributes);
-        timerAttributes.ParentObject = pDevice->FxDevice;
-
-        status = WdfTimerCreate(
-            &wdfTimerConfig,
-            &timerAttributes,
-            &(pDevice->DelayTimer)
-            );
-
-        if (!NT_SUCCESS(status))
-        {
-            Trace(
-                TRACE_LEVEL_ERROR, 
-                TRACE_FLAG_WDFLOADING, 
-                "Failed to create delay timer for WDFDEVICE %p - %!STATUS!", 
-                pDevice->FxDevice,
-                status);
-
-            goto exit;
-        }
     }
 
     //
