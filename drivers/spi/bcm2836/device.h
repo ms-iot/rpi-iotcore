@@ -63,16 +63,11 @@ EVT_SPB_CONTROLLER_SEQUENCE          OnSequenceRequest;
 EVT_WDF_IO_IN_CALLER_CONTEXT         OnOtherInCallerContext;
 EVT_SPB_CONTROLLER_OTHER             OnOther;
 
+KSTART_ROUTINE TransferPollModeThread;
+
 //
 // PBC function prototypes.
 //
-
-NTSTATUS
-OnRequest(
-    _In_ PPBC_DEVICE pDevice,
-    _In_ PPBC_TARGET pTarget,
-    _In_ PPBC_REQUEST pRequest
-    );
 
 VOID
 OnNonSequenceRequest(
@@ -83,15 +78,22 @@ OnNonSequenceRequest(
     );
 
 NTSTATUS
+OnRequest(
+    _In_ PPBC_DEVICE pDevice,
+    _In_ PPBC_TARGET pTarget,
+    _In_ PPBC_REQUEST pRequest
+    );
+
+VOID
+OnRequestPollMode(
+    _In_ PPBC_DEVICE pDevice
+    );
+
+NTSTATUS
 PbcTargetGetSettings(
     _In_ PPBC_DEVICE  pDevice,
     _In_ PVOID ConnectionParameters,
     _Out_ PPBC_TARGET_SETTINGS pSettings
-    );
-
-NTSTATUS
-PbcRequestValidate(
-    _In_ PPBC_REQUEST pRequest
     );
 
 NTSTATUS
@@ -106,36 +108,12 @@ PbcRequestDoTransfer(
     _In_ PPBC_REQUEST pRequest
     );
 
-VOID
-PbcRequestComplete(
-    _In_ PPBC_DEVICE pDevice,
-    _In_ PPBC_REQUEST pRequest
+ULONGLONG
+PbcRequestEstimateAllTransfersTimeUs(
+    _In_ PPBC_TARGET pTarget,
+    _In_ PPBC_REQUEST pRequest,
+    bool CountTransferDelays
     );
-
-size_t
-FORCEINLINE
-PbcRequestGetTransferInfoRemaining(
-   _In_ PPBC_REQUEST pRequest
-   )
-/*++
- 
-  Routine Description:
-
-    This is a helper routine used to retrieve the 
-    number of bytes remaining in the current transfer.
-
-  Arguments:
-
-    pRequest - a pointer to the PBC request context
-
-  Return Value:
-
-    Bytes remaining in request
-
---*/
-{
-    return (pRequest->CurrentTransferLength - pRequest->CurrentTransferInformation);
-}
 
 NTSTATUS
 FORCEINLINE
@@ -213,13 +191,6 @@ MdlGetByte(
 
     return status;
 }
-
-ULONGLONG
-PbcRequestEstimateAllTransfersTimeUs(
-    _In_ PPBC_TARGET pTarget,
-    _In_ PPBC_REQUEST pRequest,
-    bool CountTransferDelays
-    );
 
 NTSTATUS
 FORCEINLINE

@@ -935,42 +935,29 @@ OnNonSequenceRequest(
     // the lifetime of the request
     //
 
-    RtlZeroMemory(pRequest, sizeof(PBC_REQUEST));
-
     pRequest->SpbRequest = SpbRequest;
     pRequest->Type = params.Type;
-    pRequest->SequencePosition = params.Position;
+    pRequest->CurrentTransferSequencePosition = params.Position;
     pRequest->TransferCount = 1;
     pRequest->CurrentTransferIndex = 0;
     pRequest->TotalInformation = 0;
-    pRequest->Status = STATUS_SUCCESS;
-    pRequest->bRequestComplete = false;
     pRequest->RequestLength = params.Length;
 
-    //
-    // Validate the request before beginning the transfer.
-    //
-
-    status = PbcRequestValidate(pRequest);
-    if (!NT_SUCCESS(status))
-    {
-        goto exit;
-    }
-
     status = OnRequest(pDevice, pTarget, pRequest);
-    if (!NT_SUCCESS(status))
-    {
-        goto exit;
-    }
-
-exit:
 
     if (!NT_SUCCESS(status))
     {
-        pRequest->Status = status;
-    }
+        Trace(
+            TRACE_LEVEL_ERROR,
+            TRACE_FLAG_SPBDDI,
+            "Error configuring non-sequence, completing SPBREQUEST %p synchronously - %!STATUS!",
+            pRequest->SpbRequest,
+            status);
 
-    PbcRequestComplete(pDevice, pRequest);
+        SpbRequestComplete(
+            pRequest->SpbRequest,
+            status);
+    }
 
     FuncExit(TRACE_FLAG_TRANSFER);
 }
@@ -1025,33 +1012,22 @@ OnSequenceRequest(
     // Initialize request context.
     //
     
-    RtlZeroMemory(pRequest, sizeof(PBC_REQUEST));
-
     pRequest->SpbRequest = SpbRequest;
     pRequest->Type = params.Type;
-    pRequest->SequencePosition = params.Position;
+    pRequest->CurrentTransferSequencePosition = params.Position;
     pRequest->CurrentTransferIndex = 0;
     pRequest->TotalInformation = 0;
-    pRequest->Status = STATUS_SUCCESS;
-    pRequest->bRequestComplete = false;
     pRequest->RequestLength = params.Length;
     pRequest->TransferCount = TransferCount;
 
     //
-    // Validate the request before beginning the transfer.
+    // Special handling for fullduplex transfer
     //
-
-    status = PbcRequestValidate(pRequest);
-
-    if (!NT_SUCCESS(status))
-    {
-        goto exit;
-    }
 
     if (params.Type == SpbRequestTypeOther)
     {   
         //
-        // Full duplex request is a special kind of sequence request
+        // Fullduplex request is a special kind of sequence request
         // It comes as sequence of write then read transfer and SPB
         // assign to it different rquest type
         //
@@ -1088,9 +1064,7 @@ OnSequenceRequest(
             goto exit;
         }
 
-        NT_ASSERT(pRequest->Direction == SpbTransferDirectionFromDevice);
-        // save read MDL for full duplex transfer
-        pRequest->CurrentTransferReadLength = pRequest->CurrentTransferLength;
+        NT_ASSERT(pRequest->CurrentTransferDirection == SpbTransferDirectionFromDevice);
 
         Trace(
             TRACE_LEVEL_INFORMATION,
@@ -1139,26 +1113,21 @@ OnSequenceRequest(
 
     if (pRequest->Type == SpbRequestTypeOther)
     {
-        NT_ASSERT(pRequest->Direction == SpbTransferDirectionToDevice);
+        NT_ASSERT(pRequest->CurrentTransferDirection == SpbTransferDirectionToDevice);
 
-        pRequest->Direction = SpbTransferDirectionNone;
+        pRequest->CurrentTransferDirection = SpbTransferDirectionNone;
 
         //
-        // fullduplex request actual transfer length is the max of write and read
-        // transfers supplied by SPB
+        // fullduplex request actual transfer length .ie the amount of bytes that goes
+        // over the wires is the max of write and read transfers supplied by SPB
         //
 
-        pRequest->CurrentTransferWriteLength = pRequest->CurrentTransferLength;
-        pRequest->CurrentTransferLength = 
-            max(pRequest->CurrentTransferReadLength, pRequest->CurrentTransferWriteLength);
-        pRequest->RequestLength = pRequest->CurrentTransferLength;
+        pRequest->RequestLength = max(
+            pRequest->CurrentTransferWriteLength,
+            pRequest->CurrentTransferReadLength);
     }
 
     status = OnRequest(pDevice, pTarget, pRequest);
-    if (!NT_SUCCESS(status))
-    {
-        goto exit;
-    }
 
 exit:
 
@@ -1171,10 +1140,10 @@ exit:
             pRequest->SpbRequest,
             status);
 
-        pRequest->Status = status;
+        SpbRequestComplete(
+            pRequest->SpbRequest,
+            status);
     }
-    
-    PbcRequestComplete(pDevice, pRequest);
 
     FuncExit(TRACE_FLAG_SPBDDI);
 }
@@ -1353,122 +1322,6 @@ OnOther(
     FuncExit(TRACE_FLAG_SPBDDI);
 }
 
-_Use_decl_annotations_
-VOID
-OnCancel(
-    WDFREQUEST FxRequest
-    )
-
-/*++
- 
-  Routine Description:
-
-    This routine cancels an outstanding request. It
-    must synchronize with other driver callbacks.
-
-  Arguments:
-
-    wdfRequest - a handle to the WDFREQUEST object
-
-  Return Value:
-
-    None.  The request is completed with status.
-
---*/
-{
-    FuncEntry(TRACE_FLAG_TRANSFER);
-
-    SPBREQUEST spbRequest = (SPBREQUEST) FxRequest;
-    PPBC_DEVICE pDevice;
-    PPBC_TARGET pTarget;
-    PPBC_REQUEST pRequest;
-    BOOLEAN bTransferCompleted = FALSE;
-
-    //
-    // Get the contexts.
-    //
-
-    pDevice = GetDeviceContext(SpbRequestGetController(spbRequest));
-    pTarget = GetTargetContext(SpbRequestGetTarget(spbRequest));
-    pRequest = GetRequestContext(spbRequest);
-    
-    NT_ASSERT(pDevice  != NULL);
-    NT_ASSERT(pTarget  != NULL);
-    NT_ASSERT(pRequest != NULL);
-
-    //
-    // Acquire the device lock.
-    //
-
-    WdfSpinLockAcquire(pDevice->Lock);
-
-    //
-    // Make sure the current target and request 
-    // are valid.
-    //
-    
-    if (pTarget != pDevice->pCurrentTarget)
-    {
-        Trace(
-            TRACE_LEVEL_WARNING,
-            TRACE_FLAG_TRANSFER,
-            "Cancel callback without a valid current target for WDFDEVICE %p",
-            pDevice->FxDevice
-            );
-
-        goto exit;
-    }
-
-    if (pRequest != pTarget->pCurrentRequest)
-    {
-        Trace(
-            TRACE_LEVEL_WARNING,
-            TRACE_FLAG_TRANSFER,
-            "Cancel callback without a valid current request for SPBTARGET %p",
-            pTarget->SpbTarget
-            );
-
-        goto exit;
-    }
-
-    Trace(
-        TRACE_LEVEL_INFORMATION,
-        TRACE_FLAG_TRANSFER,
-        "Cancel callback with outstanding SPBREQUEST %p, "
-        "stop IO and complete it",
-        spbRequest);
-
-
-    //
-    // Mark request as cancelled and complete.
-    //
-
-    pRequest->Status = STATUS_CANCELLED;
-
-    ControllerCompleteTransfer(pDevice, pRequest, TRUE);
-    bTransferCompleted = TRUE;
-
-exit:
-
-    //
-    // Release the device lock.
-    //
-
-    WdfSpinLockRelease(pDevice->Lock);
-
-    //
-    // Complete the request. There shouldn't be more IO.
-    // This must be done outside of the locked code.
-    //
-
-    if (bTransferCompleted)
-    {
-        PbcRequestComplete(pDevice, pRequest);
-    }
-
-    FuncExit(TRACE_FLAG_SPBDDI);
-}
-
 /////////////////////////////////////////////////
 //
 // PBC functions.
@@ -1585,64 +1438,6 @@ PbcTargetGetSettings(
 
 _Use_decl_annotations_
 NTSTATUS
-PbcRequestValidate(
-    PPBC_REQUEST pRequest
-    )
-{
-    FuncEntry(TRACE_FLAG_TRANSFER);
-
-    SPB_TRANSFER_DESCRIPTOR descriptor;
-    NTSTATUS status = STATUS_SUCCESS;
-
-    //
-    // Validate each transfer descriptor.
-    //
-
-    for (ULONG i = 0; i < pRequest->TransferCount; i++)
-    {
-        //
-        // Get transfer parameters for index.
-        //
-
-        SPB_TRANSFER_DESCRIPTOR_INIT(&descriptor);
-
-        SpbRequestGetTransferParameters(
-            pRequest->SpbRequest, 
-            i, 
-            &descriptor, 
-            nullptr);
-
-        //
-        // Validate the transfer length.
-        //
-    
-        if (descriptor.TransferLength > BCM_SPI_MAX_TRANSFER_LENGTH)
-        {
-            status = STATUS_INVALID_PARAMETER;
-
-            Trace(
-                TRACE_LEVEL_ERROR, 
-                TRACE_FLAG_TRANSFER, 
-                "Transfer length %Iu is too large for controller driver, max supported is %d (SPBREQUEST %p, index %lu) - %!STATUS!",
-                descriptor.TransferLength,
-                BCM_SPI_MAX_TRANSFER_LENGTH,
-                pRequest->SpbRequest,
-                i,
-                status);
-
-            goto exit;
-        }
-    }
-
-exit:
-
-    FuncExit(TRACE_FLAG_TRANSFER);
-
-    return status;
-}
-
-_Use_decl_annotations_
-NTSTATUS
 PbcRequestSetNthTransferInfo(
     PPBC_REQUEST  pRequest,
     ULONG TransferIndex
@@ -1694,16 +1489,14 @@ PbcRequestSetNthTransferInfo(
     // Configure request context.
     //
 
-    pRequest->CurrentTransferLength = descriptor.TransferLength;
-
     pRequest->CurrentTransferInformation  = 0;
-    pRequest->Direction = descriptor.Direction;
-    pRequest->DelayInUs = descriptor.DelayInUs;
+    pRequest->CurrentTransferDirection = descriptor.Direction;
+    pRequest->CurrentTransferDelayInUs = descriptor.DelayInUs;
 
     // 
     // This method is called twice in preparation for the fullduplex
-    // transfer in which both write and read transfer info is fetched
-    // for other types, this method is called once after each transfer
+    // transfer in which both write and read transfer info is fetched.
+    // For other types, this method is called once after each transfer
     // 
 
     if (pRequest->Type != SpbRequestTypeOther)
@@ -1712,12 +1505,12 @@ PbcRequestSetNthTransferInfo(
         pRequest->CurrentTransferWriteLength = 0;
     }
 
-    if (pRequest->Direction == SpbTransferDirectionFromDevice)
+    if (pRequest->CurrentTransferDirection == SpbTransferDirectionFromDevice)
     {
         pRequest->pCurrentTransferReadMdlChain = pMdl;
         pRequest->CurrentTransferReadLength = descriptor.TransferLength;
     }
-    else if (pRequest->Direction == SpbTransferDirectionToDevice)
+    else if (pRequest->CurrentTransferDirection == SpbTransferDirectionToDevice)
     {
         pRequest->pCurrentTransferWriteMdlChain = pMdl;
         pRequest->CurrentTransferWriteLength = descriptor.TransferLength;
@@ -1735,101 +1528,25 @@ PbcRequestSetNthTransferInfo(
     {
         if (pRequest->TransferCount == 1)
         {
-            pRequest->SequencePosition = SpbRequestSequencePositionSingle;
+            pRequest->CurrentTransferSequencePosition = SpbRequestSequencePositionSingle;
         }
         else if (TransferIndex == 0)
         {
-            pRequest->SequencePosition = SpbRequestSequencePositionFirst;
+            pRequest->CurrentTransferSequencePosition = SpbRequestSequencePositionFirst;
         }
         else if (TransferIndex == (pRequest->TransferCount - 1))
         {
-            pRequest->SequencePosition = SpbRequestSequencePositionLast;
+            pRequest->CurrentTransferSequencePosition = SpbRequestSequencePositionLast;
         }
         else
         {
-            pRequest->SequencePosition = SpbRequestSequencePositionContinue;
+            pRequest->CurrentTransferSequencePosition = SpbRequestSequencePositionContinue;
         }
     }
 
     FuncExit(TRACE_FLAG_TRANSFER);
 
     return status;
-}
-
-_Use_decl_annotations_
-VOID
-PbcRequestComplete(
-    PPBC_DEVICE pDevice,
-    PPBC_REQUEST pRequest
-    )
-/*++
- 
-  Routine Description:
-
-    This routine completes the SpbRequest associated with
-    the PBC_REQUEST context.
-
-  Arguments:
-
-    pRequest - a pointer to the PBC request context
-
-  Return Value:
-
-    None. The request is completed asynchronously.
-
---*/
-{
-    FuncEntry(TRACE_FLAG_TRANSFER);
-
-    NT_ASSERT(pRequest != NULL);
-
-    Trace(
-        TRACE_LEVEL_INFORMATION,
-        TRACE_FLAG_TRANSFER,
-        "Completing SPBREQUEST %p with %!STATUS!, transferred %Iu bytes",
-        pRequest->SpbRequest,
-        pRequest->Status,
-        pRequest->TotalInformation);
-
-    //
-    // If request is still pending for processing, then
-    // keep the current request and target contexts for use
-    // by the deferred processing, otherwise null them to 
-    // protect from access by mistake
-    //
-
-    if (pRequest->Status != STATUS_PENDING)
-    {
-        pDevice->pCurrentTarget->pCurrentRequest = NULL;
-
-        if (!pDevice->Locked)
-        {
-            //
-            // Clear the controller's current target if any of
-            //   1. request is type sequence or fullduplex
-            //   2. request position is single 
-            //      (did not come between lock/unlock)
-            // Otherwise wait until unlock.
-            //
-
-            if ((pRequest->Type == SpbRequestTypeSequence) ||
-                (pRequest->Type == SpbRequestTypeOther) ||
-                (pRequest->SequencePosition == SpbRequestSequencePositionSingle))
-            {
-                pDevice->pCurrentTarget = NULL;
-            }
-        }
-    }
-
-    WdfRequestSetInformation(
-        pRequest->SpbRequest,
-        pRequest->TotalInformation);
-
-    SpbRequestComplete(
-        pRequest->SpbRequest, 
-        pRequest->Status);
-
-    FuncExit(TRACE_FLAG_TRANSFER);
 }
 
 _Use_decl_annotations_
@@ -1887,48 +1604,13 @@ OnRequest(
     PPBC_REQUEST pRequest
     )
 {
-    //
-    // Set thread affinity mask to allow rescheduling the current thread
-    // on any processor but CPU0
-    //
-    KAFFINITY noCpu0Affinity = KAFFINITY(~1);
-    NT_ASSERTMSG("IRQL unexpected", KeGetCurrentIrql() < DISPATCH_LEVEL);
-    KAFFINITY callerAffinity = KeSetSystemAffinityThreadEx(noCpu0Affinity);
-    NT_ASSERTMSG("Affinity not set as required", KeGetCurrentProcessorNumber() != 0);
+    NTSTATUS status = STATUS_SUCCESS;
 
     //
     // Acquire the device lock.
     //
 
     WdfSpinLockAcquire(pDevice->Lock);
-
-    //
-    // Mark request cancellable (if cancellation supported).
-    //
-
-    NTSTATUS status = WdfRequestMarkCancelableEx(
-        pRequest->SpbRequest, OnCancel);
-
-    if (!NT_SUCCESS(status))
-    {
-        //
-        // WdfRequestMarkCancelableEx should only fail if the request
-        // has already been cancelled. If it does fail the request
-        // must be completed with the corresponding status.
-        //
-
-        NT_ASSERTMSG("WdfRequestMarkCancelableEx should only fail if the request has already been cancelled",
-                     status == STATUS_CANCELLED);
-
-        Trace(
-            TRACE_LEVEL_INFORMATION,
-            TRACE_FLAG_TRANSFER,
-            "Failed to mark SPBREQUEST %p cancellable - %!STATUS!",
-            pRequest->SpbRequest,
-            status);
-
-        goto exit;
-    }
 
     //
     // Update device and target contexts.
@@ -1947,17 +1629,28 @@ OnRequest(
     NT_ASSERT(pTarget->pCurrentRequest == NULL);
     pTarget->pCurrentRequest = pRequest;
 
-    //
-    // Configure controller HW if necessary and kick-off transfer
-    //
+    (void)KeSetEvent(
+        &pDevice->TransferThreadWakeEvt,
+        0,
+        FALSE);
 
-    if (pRequest->SequencePosition == SpbRequestSequencePositionSingle ||
-        pRequest->SequencePosition == SpbRequestSequencePositionFirst)
-    {
-        ControllerConfigForTargetAndActivate(pDevice);
-    }
+    WdfSpinLockRelease(pDevice->Lock);
 
-    ULONGLONG transferTimeEstimateUs = PbcRequestEstimateAllTransfersTimeUs(pTarget, pRequest, false);
+    return status;
+}
+
+_Use_decl_annotations_
+VOID
+OnRequestPollMode(
+    PPBC_DEVICE pDevice
+    )
+{
+    // WdfSpinLockAcquire(pDevice->Lock);
+
+    PPBC_REQUEST pRequest = pDevice->pCurrentTarget->pCurrentRequest;
+
+#if DBG
+    ULONGLONG transferTimeEstimateUs = PbcRequestEstimateAllTransfersTimeUs(pDevice->pCurrentTarget, pRequest, false);
 
     Trace(
         TRACE_LEVEL_INFORMATION,
@@ -1967,6 +1660,22 @@ OnRequest(
         pRequest->RequestLength,
         pRequest->SpbRequest,
         pDevice->FxDevice);
+#endif
+
+    //
+    // Configure controller HW if necessary and kick-off transfer
+    //
+
+    if (pRequest->CurrentTransferSequencePosition == SpbRequestSequencePositionSingle ||
+        pRequest->CurrentTransferSequencePosition == SpbRequestSequencePositionFirst)
+    {
+        ControllerConfigForTargetAndActivate(pDevice);
+    }
+
+    // WdfSpinLockRelease(pDevice->Lock);
+
+    NTSTATUS status = STATUS_SUCCESS;
+    bool bIsRequestComplete = false;
 
     // 
     // Fulduplex request despite consisting of 2 transfers write followed
@@ -1977,40 +1686,84 @@ OnRequest(
     if (pRequest->Type == SpbRequestTypeOther)
     {
         status = ControllerDoOneTransferPollMode(pDevice, pRequest);
-        status = STATUS_SUCCESS;
-        if (!NT_SUCCESS(status))
-        {
-            goto exit;
-        }
 
-        ControllerCompleteTransfer(pDevice, pRequest, FALSE);
+        bIsRequestComplete = ControllerCompleteTransfer(pDevice, pRequest, status);
+        NT_ASSERT(bIsRequestComplete);
     }
     else
     {
-        while (!pRequest->bRequestComplete &&
-               pRequest->Status != STATUS_CANCELLED)
+        do
         {
             status = PbcRequestSetNthTransferInfo(pRequest, pRequest->CurrentTransferIndex);
-            if (!NT_SUCCESS(status))
+            if (NT_SUCCESS(status))
             {
-                goto exit;
+                status = ControllerDoOneTransferPollMode(pDevice, pRequest);
             }
 
-            status = ControllerDoOneTransferPollMode(pDevice, pRequest);
-            if (!NT_SUCCESS(status))
-            {
-                goto exit;
-            }
-
-            ControllerCompleteTransfer(pDevice, pRequest, FALSE);
-        }
+            bIsRequestComplete = ControllerCompleteTransfer(pDevice, pRequest, status);
+        } while (!bIsRequestComplete);
     }
+}
 
-exit:
+_Use_decl_annotations_
+VOID
+TransferPollModeThread(
+    PVOID StartContext
+    )
+{
+    FuncEntry(TRACE_FLAG_TRANSFER);
+    
+    PPBC_DEVICE pDevice = GetDeviceContext((WDFDEVICE)StartContext);
 
-    WdfSpinLockRelease(pDevice->Lock);
+    Trace(
+        TRACE_LEVEL_VERBOSE,
+        TRACE_FLAG_TRANSFER,
+        "Transfer poll mode thread started. WDFDEVICE %p",
+        pDevice->FxDevice);
+
+    //
+    // Set thread affinity mask to allow rescheduling the current thread
+    // on any processor but CPU0. Purpose is to move polling to any thread
+    // other than the system main thread on which interupts are being
+    // handled to make polling smooth and uninterruptable as possible
+    //
+
+    NT_ASSERTMSG("IRQL unexpected", KeGetCurrentIrql() < DISPATCH_LEVEL);
+    ULONG numCpus = KeQueryActiveProcessorCountEx(ALL_PROCESSOR_GROUPS);
+    ULONG noCpu0AffinityMask = (~(ULONG(~0x0) << numCpus) & ULONG(~0x1));
+    KAFFINITY callerAffinity = KeSetSystemAffinityThreadEx(KAFFINITY(noCpu0AffinityMask));
+    NT_ASSERTMSG("Affinity not set as asked", KeGetCurrentProcessorNumberEx(NULL) != 0);
+
+    NTSTATUS status;
+
+    for (;;)
+    {
+        //
+        // Wait until waken up to either shutdown or 
+        // handle a request transfer
+        //
+
+        status = KeWaitForSingleObject(
+            &pDevice->TransferThreadWakeEvt,
+            Executive,
+            KernelMode,
+            FALSE,
+            nullptr);
+        NT_ASSERTMSG("Other wake reasons not possible", status == STATUS_SUCCESS);
+
+        if (InterlockedOr(&pDevice->TransferThreadShutdown, 0))
+            break;
+
+        OnRequestPollMode(pDevice);
+    }
 
     KeRevertToUserAffinityThreadEx(callerAffinity);
 
-    return status;
+    Trace(
+        TRACE_LEVEL_VERBOSE,
+        TRACE_FLAG_TRANSFER,
+        "Transfer poll mode thread shutting down. WDFDEVICE %p",
+        pDevice->FxDevice);
+
+    FuncExit(TRACE_FLAG_TRANSFER);
 }

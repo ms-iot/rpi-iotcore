@@ -77,8 +77,8 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM'">
     <ClCompile>
       <EnablePREfast>true</EnablePREfast>
-      <WppRecorderEnabled>false</WppRecorderEnabled>
-      <WppEnabled>false</WppEnabled>
+      <WppRecorderEnabled>true</WppRecorderEnabled>
+      <WppEnabled>true</WppEnabled>
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -110,7 +110,7 @@
   </ItemGroup>
   <!-- Necessary to pick up proper files from local directory when in the IDE-->
   <ItemGroup>
-    <None Exclude="@(None)" Include="*.txt;*.htm;*.html" />
+    <None Include="License.txt" />
     <None Exclude="@(None)" Include="*.ico;*.cur;*.bmp;*.dlg;*.rct;*.gif;*.jpg;*.jpeg;*.wav;*.jpe;*.tiff;*.tif;*.png;*.rc2" />
     <None Exclude="@(None)" Include="*.def;*.bat;*.hpj;*.asmx" />
   </ItemGroup>

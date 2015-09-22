@@ -47,6 +47,10 @@ ControllerFlushFifos(
 {
     // must only be called on active transfer
     NT_ASSERT(READ_REGISTER_ULONG(&pDevice->pSPIRegisters->CS) & BCM_SPI_REG_CS_TA);
+    
+    // clear the Rx fifo
+    WRITE_REGISTER_ULONG(&pDevice->pSPIRegisters->CS, pDevice->SPI_CS_COPY | BCM_SPI_REG_CS_CLEARRX);
+
     // wait for Tx fifo empty
     ULONG timeout = BCM_SPI_FIFO_FLUSH_TIMEOUT_US;
     while ((timeout > 0) &&
@@ -55,6 +59,7 @@ ControllerFlushFifos(
         KeStallExecutionProcessor(1);
         timeout--;
     }
+
     // clear the Rx fifo
     WRITE_REGISTER_ULONG(&pDevice->pSPIRegisters->CS, pDevice->SPI_CS_COPY | BCM_SPI_REG_CS_CLEARRX);
 
@@ -130,8 +135,7 @@ ControllerUninitialize(
     NT_ASSERT(pDevice != NULL);
 
     // make sure pending transactions are stopped
-    pDevice->SPI_CS_COPY &= ~BCM_SPI_REG_CS_TA;
-    WRITE_REGISTER_ULONG(&pDevice->pSPIRegisters->CS, pDevice->SPI_CS_COPY);
+    ControllerDeactivateTransfer(pDevice);
 
     FuncExit(TRACE_FLAG_PBCLOADING);
 }
@@ -161,20 +165,11 @@ ControllerDoOneTransferPollMode(
 {
     FuncEntry(TRACE_FLAG_TRANSFER);
 
-    Trace(
-        TRACE_LEVEL_INFORMATION,
-        TRACE_FLAG_TRANSFER,
-        "Controller will use Polling to transfer %Iu bytes on processor %u (SPBREQUEST %p, WDFDEVICE %p)",
-        pRequest->RequestLength,
-        KeGetCurrentProcessorIndex(),
-        pRequest->SpbRequest,
-        pDevice->FxDevice);
-
     size_t bytesToWrite = 0;
     size_t bytesToRead = 0;
     NTSTATUS status = STATUS_SUCCESS;
 
-    if (pRequest->DelayInUs > 0)
+    if (pRequest->CurrentTransferDelayInUs > 0)
     {
         status = ControllerDelayTransfer(pDevice, pRequest);
         if (!NT_SUCCESS(status))
@@ -183,7 +178,7 @@ ControllerDoOneTransferPollMode(
         }
     }
 
-    if (pRequest->Direction == SpbTransferDirectionToDevice)
+    if (pRequest->CurrentTransferDirection == SpbTransferDirectionToDevice)
     {
         //
         // Write
@@ -198,7 +193,7 @@ ControllerDoOneTransferPollMode(
             bytesToWrite,
             pDevice->pCurrentTarget->Settings.DeviceSelection);
     }
-    else if (pRequest->Direction == SpbTransferDirectionFromDevice)
+    else if (pRequest->CurrentTransferDirection == SpbTransferDirectionFromDevice)
     {
         //
         // Read
@@ -219,7 +214,7 @@ ControllerDoOneTransferPollMode(
         // full duplex
         //
 
-        NT_ASSERT(pRequest->Direction == SpbTransferDirectionNone);
+        NT_ASSERT(pRequest->CurrentTransferDirection == SpbTransferDirectionNone);
 
         bytesToRead = pRequest->CurrentTransferReadLength;
         bytesToWrite = pRequest->CurrentTransferWriteLength;
@@ -245,11 +240,24 @@ ControllerDoOneTransferPollMode(
         (bytesToWrite + zeroBytesToWrite + bytesToRead + readBytesToDiscard) == 
         (transferByteLength * 2));
 
-    // As long as there are bytes to transfer
-    while (bytesToWrite > 0 ||
-           zeroBytesToWrite > 0 ||
-           bytesToRead > 0 ||
-           readBytesToDiscard > 0)
+#ifdef DBG
+    ULONGLONG numPolls = 0;
+#endif
+
+    Trace(
+        TRACE_LEVEL_INFORMATION,
+        TRACE_FLAG_TRANSFER,
+        "Controller will use Polling on processor %u to transfer %Iu bytes  (SPBREQUEST %p, WDFDEVICE %p)",
+        KeGetCurrentProcessorNumberEx(NULL),
+        transferByteLength,
+        pRequest->SpbRequest,
+        pDevice->FxDevice);
+
+    // As long as there are bytes to transfer and request has not been canceled
+    while ((bytesToWrite > 0) ||
+           (zeroBytesToWrite > 0) ||
+           (bytesToRead > 0) ||
+           (readBytesToDiscard > 0))
     {
         CS = READ_REGISTER_ULONG(&pDevice->pSPIRegisters->CS);
 
@@ -272,7 +280,6 @@ ControllerDoOneTransferPollMode(
                 }
 
                 WRITE_REGISTER_ULONG(&pDevice->pSPIRegisters->FIFO, nextByte);
-
                 --bytesToWrite;
                 ++writeByteIndex;
             }
@@ -282,10 +289,28 @@ ControllerDoOneTransferPollMode(
                 --zeroBytesToWrite;
             }
         }
+        else if (WdfRequestIsCanceled(pRequest->SpbRequest))
+        {
+            //
+            // If TX FIFO is full and can't take more bytes, then we 
+            // have some free cycles to check if a request is cancelled 
+            // and terminate transfer
+            //
+
+            status = STATUS_CANCELLED;
+
+            Trace(
+                TRACE_LEVEL_INFORMATION,
+                TRACE_FLAG_TRANSFER,
+                "Terminating transfer due to request cancelled SPBREQUEST %p",
+                pRequest->SpbRequest);
+
+            break;
+        }
 
         if (CS & BCM_SPI_REG_CS_RXD)
         {
-            // Read bvtes from Rx FIFO as long as there a place in the client 
+            // Read bvtes from Rx FIFO as long as there is a place in the client 
             // read buffer, otherwise discard read bytes
             if (bytesToRead > 0)
             {
@@ -305,14 +330,16 @@ ControllerDoOneTransferPollMode(
                 --bytesToRead;
                 ++readByteIndex;
             }
-
-            // Read and discard bytes from Rx FIFO as much as possible
             else if (readBytesToDiscard > 0)
             {
                 (void)READ_REGISTER_ULONG(&pDevice->pSPIRegisters->FIFO);
                 --readBytesToDiscard;
             }
         }
+
+    #ifdef DBG
+        ++numPolls;
+    #endif
     }
 
     ControllerFlushFifos(pDevice);
@@ -320,6 +347,15 @@ ControllerDoOneTransferPollMode(
     pRequest->CurrentTransferInformation =
         (pRequest->CurrentTransferReadLength - bytesToRead) +
         (pRequest->CurrentTransferWriteLength - bytesToWrite);
+
+#ifdef DBG
+    Trace(
+        TRACE_LEVEL_INFORMATION,
+        TRACE_FLAG_TRANSFER,
+        "Polled %I64u time(s) to transfer %Iu byte(s)",
+        numPolls,
+        pRequest->CurrentTransferInformation);
+#endif
 
 exit:
 
@@ -329,11 +365,11 @@ exit:
 }
 
 _Use_decl_annotations_
-VOID
+bool
 ControllerCompleteTransfer(
     PPBC_DEVICE pDevice,
     PPBC_REQUEST pRequest,
-    BOOLEAN AbortSequence
+    NTSTATUS TransferStatus
     )
 /*++
  
@@ -364,9 +400,9 @@ ControllerCompleteTransfer(
     Trace(
         TRACE_LEVEL_INFORMATION,
         TRACE_FLAG_TRANSFER,
-        "Transfer (index %lu) %s with %Iu bytes for device 0x%lx (SPBREQUEST %p)",
+        "Transfer (index %lu) with %!STATUS! with %Iu bytes for device 0x%lx (SPBREQUEST %p)",
         pRequest->CurrentTransferIndex,
-        NT_SUCCESS(pRequest->Status) ? "complete" : "error",
+        TransferStatus,
         pRequest->CurrentTransferInformation,
         pDevice->pCurrentTarget->Settings.DeviceSelection,
         pRequest->SpbRequest);
@@ -382,18 +418,16 @@ ControllerCompleteTransfer(
     // Check if there are more transfers
     // in the sequence.
     //
-    if (!AbortSequence)
-    {
-        ++pRequest->CurrentTransferIndex;
+    ++pRequest->CurrentTransferIndex;
 
-        if (pRequest->CurrentTransferIndex < pRequest->TransferCount)
-        {
-            goto exit;
-        }
+    bool bIsRequestComplete = false;
+
+    if ((pRequest->CurrentTransferIndex < pRequest->TransferCount) &&
+        (TransferStatus != STATUS_CANCELLED))
+    {
+        goto exit;
     }
 
-    pRequest->bRequestComplete = true;
-  
     //
     // end the current transfer if this was a single sequence or the last
     //
@@ -401,53 +435,57 @@ ControllerCompleteTransfer(
     // deassert cs only if not between lock / unlock pair
     if (!pDevice->Locked)
     {
-        if (pRequest->SequencePosition == SpbRequestSequencePositionSingle ||
-            pRequest->SequencePosition == SpbRequestSequencePositionLast)
+        if ((pRequest->CurrentTransferSequencePosition == SpbRequestSequencePositionSingle) ||
+            (pRequest->CurrentTransferSequencePosition == SpbRequestSequencePositionLast) ||
+            (TransferStatus == STATUS_CANCELLED))
         {
-            NT_ASSERT(pDevice->SPI_CS_COPY & BCM_SPI_REG_CS_TA);
-            // stop transfer
-            pDevice->SPI_CS_COPY &= ~BCM_SPI_REG_CS_TA;
-            WRITE_REGISTER_ULONG(&pDevice->pSPIRegisters->CS, pDevice->SPI_CS_COPY);
+            ControllerDeactivateTransfer(pDevice);
         }
     }
 
-    //
-    // We are being called from either 2 places
-    // 1. Request Cancel callback
-    // 2. Request processing callback
-    //
+    pDevice->pCurrentTarget->pCurrentRequest = NULL;
 
-    if (pRequest->Status != STATUS_CANCELLED)
+    if (!pDevice->Locked)
     {
-        NTSTATUS cancelStatus;
-        cancelStatus = WdfRequestUnmarkCancelable(pRequest->SpbRequest);
+        //
+        // Clear the controller's current target if any of
+        //   1. request is type sequence or fullduplex
+        //   2. request position is single 
+        //      (did not come between lock/unlock)
+        // Otherwise wait until unlock.
+        //
 
-        if (!NT_SUCCESS(cancelStatus))
+        if ((pRequest->Type == SpbRequestTypeSequence) ||
+            (pRequest->Type == SpbRequestTypeOther) ||
+            (pRequest->CurrentTransferSequencePosition == SpbRequestSequencePositionSingle))
         {
-            //
-            // WdfRequestUnmarkCancelable should only fail if the request
-            // has already been or is about to be cancelled. If it does fail 
-            // the request must NOT be completed - the cancel callback will do
-            // this.
-            //
-
-            NT_ASSERTMSG("WdfRequestUnmarkCancelable should only fail if the request has already been or is about to be cancelled",
-                         cancelStatus == STATUS_CANCELLED);
-
-            Trace(
-                TRACE_LEVEL_INFORMATION,
-                TRACE_FLAG_TRANSFER,
-                "Failed to unmark SPBREQUEST %p as cancelable - %!STATUS!",
-                pRequest->SpbRequest,
-                cancelStatus);
-
-            goto exit;
+            pDevice->pCurrentTarget = NULL;
         }
     }
+
+    WdfRequestSetInformation(
+        pRequest->SpbRequest,
+        pRequest->TotalInformation);
+
+    Trace(
+        TRACE_LEVEL_INFORMATION,
+        TRACE_FLAG_TRANSFER,
+        "Completing request with %!STATUS! and Information=%Iu bytes (SPBREQUEST %p)",
+        TransferStatus,
+        pRequest->TotalInformation,
+        pRequest->SpbRequest);
+
+    SpbRequestComplete(
+        pRequest->SpbRequest,
+        TransferStatus);
+
+    bIsRequestComplete = true;
 
 exit:
 
     FuncExit(TRACE_FLAG_TRANSFER);
+
+    return bIsRequestComplete;
 }
 
 _Use_decl_annotations_
@@ -552,12 +590,8 @@ ControllerConfigForTargetAndActivate(
         pDevice->SPI_CS_COPY | BCM_SPI_REG_CS_CLEARTX | BCM_SPI_REG_CS_CLEARRX);
 
     // start transfer
-    NT_ASSERT((pDevice->SPI_CS_COPY & BCM_SPI_REG_CS_TA) == 0);
-    pDevice->SPI_CS_COPY |= BCM_SPI_REG_CS_TA;
-    WRITE_REGISTER_ULONG(&pDevice->pSPIRegisters->CS, pDevice->SPI_CS_COPY);
+    ControllerActivateTransfer(pDevice);
     
-    WRITE_REGISTER_ULONG(&pDevice->pSPIRegisters->LTOH, 0);
-
     Trace(
         TRACE_LEVEL_VERBOSE,
         TRACE_FLAG_TRANSFER,
@@ -579,19 +613,19 @@ ControllerDelayTransfer(
 
     NTSTATUS status;
 
-    if (pRequest->DelayInUs == 0)
+    if (pRequest->CurrentTransferDelayInUs == 0)
     {
         status = STATUS_SUCCESS;
         goto exit;
     }
 
-    if (pRequest->DelayInUs <= 1000)
+    if (pRequest->CurrentTransferDelayInUs <= 1000)
     {
         //
         // Achieve high precision delay in us resolution by stalling
         //
 
-        KeStallExecutionProcessor(pRequest->DelayInUs);
+        KeStallExecutionProcessor(pRequest->CurrentTransferDelayInUs);
         status = STATUS_SUCCESS;
     }
     else
@@ -606,7 +640,7 @@ ControllerDelayTransfer(
             TRACE_LEVEL_ERROR,
             TRACE_FLAG_TRANSFER,
             "Delaying more than 1ms is not implemented, requested delay %lu us WDFDEVICE %p",
-            pRequest->DelayInUs,
+            pRequest->CurrentTransferDelayInUs,
             pDevice->FxDevice);
         status = STATUS_NOT_SUPPORTED;
         goto exit;
@@ -616,7 +650,7 @@ ControllerDelayTransfer(
         TRACE_LEVEL_INFORMATION,
         TRACE_FLAG_TRANSFER,
         "Delayed %lu us before starting transfer for WDFDEVICE %p",
-        pRequest->DelayInUs,
+        pRequest->CurrentTransferDelayInUs,
         pDevice->FxDevice);
 
 exit:
@@ -660,11 +694,38 @@ ControllerConfigClock(
     Trace(
         TRACE_LEVEL_INFORMATION,
         TRACE_FLAG_TRANSFER,
-        "Configured SCLK, Asked:%uHz Given:%uHz usig CDIV=%u.  WDFDEVICE %p",
+        "Configured SCLK, Asked:%uHz Given:%uHz usig CDIV=%u. WDFDEVICE %p",
         clockHz,
         BCM_APB_CLK / cdiv,
         cdiv,
         pDevice->FxDevice);
 
     FuncExit(TRACE_FLAG_TRANSFER);
+}
+
+VOID
+ControllerActivateTransfer(
+    PPBC_DEVICE pDevice)
+{
+    Trace(
+        TRACE_LEVEL_INFORMATION,
+        TRACE_FLAG_TRANSFER,
+        "Activating transfer");
+
+    NT_ASSERT((pDevice->SPI_CS_COPY & BCM_SPI_REG_CS_TA) == 0);
+    pDevice->SPI_CS_COPY |= BCM_SPI_REG_CS_TA;
+    WRITE_REGISTER_ULONG(&pDevice->pSPIRegisters->CS, pDevice->SPI_CS_COPY);
+}
+
+VOID
+ControllerDeactivateTransfer(
+    PPBC_DEVICE pDevice)
+{
+    Trace(
+        TRACE_LEVEL_INFORMATION,
+        TRACE_FLAG_TRANSFER,
+        "Deactivating transfer");
+
+    pDevice->SPI_CS_COPY &= ~BCM_SPI_REG_CS_TA;
+    WRITE_REGISTER_ULONG(&pDevice->pSPIRegisters->CS, pDevice->SPI_CS_COPY);
 }

@@ -164,6 +164,10 @@ struct PBC_DEVICE
 
     // The power setting callback handle
     PVOID                           pMonitorPowerSettingHandle;
+
+    PVOID                           pTransferThread;
+    KEVENT                          TransferThreadWakeEvt;
+    LONG                            TransferThreadShutdown;
 };
 
 //
@@ -211,45 +215,27 @@ struct PBC_REQUEST
     // Total bytes transferred.
     size_t                         TotalInformation;
 
-    // Current status of the request.
-    NTSTATUS                       Status;
-    // Indicates that the last transfer in the request has been
-    // done and the request context is updated with information
-    // needed for the SPB request completion
-    bool                           bRequestComplete;
     size_t                         RequestLength;
 
     //
     // Variables that are reused for each transfer within
-    // a [sequence] request.
+    // each request.
     //
 
-    //
-    // For a read/write only simple request, this value is the size 
-    // of the input buffer or output buffer.
-    // For a sequence request, this member specifies the total number
-    // of bytes to be transferred in the sequence.
-    // For a fullduplex request, this member specifies the size of the
-    // maximum between input and ouput buffer.
-    //
-    size_t                         CurrentTransferLength;
     size_t                         CurrentTransferWriteLength;
     size_t                         CurrentTransferReadLength;
     PMDL                           pCurrentTransferWriteMdlChain;
     PMDL                           pCurrentTransferReadMdlChain;
+
     // Bytes read/written in the current transfer.
     size_t                         CurrentTransferInformation;
 
     // Position of the current transfer within
     // the sequence and its associated controller
     // settings.
-    SPB_REQUEST_SEQUENCE_POSITION  SequencePosition;
-
-    // Direction of the current transfer.
-    SPB_TRANSFER_DIRECTION         Direction;
-
-    // Time to delay before starting transfer.
-    ULONG                          DelayInUs;
+    SPB_REQUEST_SEQUENCE_POSITION  CurrentTransferSequencePosition;
+    SPB_TRANSFER_DIRECTION         CurrentTransferDirection;
+    ULONG                          CurrentTransferDelayInUs;
 };
 
 //

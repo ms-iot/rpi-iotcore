@@ -126,7 +126,7 @@ OnDeviceAdd(
     //
     // Configure DeviceInit structure
     //
-    
+
     status = SpbDeviceInitConfig(FxDeviceInit);
 
     if (!NT_SUCCESS(status))
@@ -166,8 +166,9 @@ OnDeviceAdd(
     {
         WDF_OBJECT_ATTRIBUTES deviceAttributes;
         WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(&deviceAttributes, PBC_DEVICE);
-        WDFDEVICE fxDevice;
+        deviceAttributes.EvtCleanupCallback = OnDeviceCleanup;
 
+        WDFDEVICE fxDevice;
         status = WdfDeviceCreate(
             &FxDeviceInit, 
             &deviceAttributes,
@@ -247,7 +248,7 @@ OnDeviceAdd(
         //
         // Register for IO other callbacks.
         //
-
+        
         SpbControllerSetIoOtherCallback(
             pDevice->FxDevice,
             OnOther,
@@ -343,9 +344,83 @@ OnDeviceAdd(
         }
     }
 
+    {
+        pDevice->TransferThreadShutdown = 0;
+
+        OBJECT_ATTRIBUTES objectAttributes;
+        InitializeObjectAttributes(&objectAttributes,
+                                   NULL,
+                                   OBJ_KERNEL_HANDLE,
+                                   NULL,
+                                   NULL);
+        HANDLE transferThread;
+
+        status = PsCreateSystemThread(
+            &transferThread,
+            THREAD_ALL_ACCESS,
+            NULL,
+            NULL,
+            NULL,
+            TransferPollModeThread,
+            (PVOID)pDevice->FxDevice);
+        if (!NT_SUCCESS(status))
+        {
+            Trace(
+                TRACE_LEVEL_ERROR,
+                TRACE_FLAG_WDFLOADING,
+                "Failed to create transfer thread WDFDEVICE %p- %!STATUS!",
+                pDevice->FxDevice,
+                status);
+
+            goto exit;
+        }
+
+        status = ObReferenceObjectByHandle(transferThread,
+                                      THREAD_ALL_ACCESS,
+                                      NULL,
+                                      KernelMode,
+                                      &pDevice->pTransferThread,
+                                      NULL);
+        NT_ASSERT(NT_SUCCESS(status));
+
+        ZwClose(transferThread);
+
+        KeInitializeEvent(
+            &pDevice->TransferThreadWakeEvt,
+            SynchronizationEvent,
+            FALSE);
+    }
+
 exit:
 
     FuncExit(TRACE_FLAG_WDFLOADING);
 
     return status;
+}
+
+_Use_decl_annotations_
+VOID
+OnDeviceCleanup(
+    WDFOBJECT Object
+    )
+{
+    PPBC_DEVICE pDevice = GetDeviceContext((WDFDEVICE)Object);
+
+    //
+    // Signal transfer thread to shutdown and wait indefinitely
+    // for it to exit
+    //
+
+    InterlockedOr(&pDevice->TransferThreadShutdown, LONG(1));
+
+    (void)KeSetEvent(&pDevice->TransferThreadWakeEvt, 0, FALSE);
+
+    (void)KeWaitForSingleObject(
+        pDevice->pTransferThread,
+        Executive,
+        KernelMode, 
+        FALSE,
+        NULL);
+
+    ObDereferenceObject(pDevice->pTransferThread);
 }

@@ -132,17 +132,9 @@ BCM_SPI_REGISTERS, *PBCM_SPI_REGISTERS;
 #define BCM_SPI_REG_DC_TDREQ            0x000000ff
 #define BCM_SPI_REG_DC_TDREQ_SET(v)     ((v) & BCM_SPI_REG_DC_TDREQ)
 
-#define BCM_SPI_MAX_TRANSFER_LENGTH 0x00010000
-
 // Number of clocks it takes the SPI HW to clock 1 byte
 // The SPI HW waits an extra clock after each byte transfered
 #define BCM_SPI_SCLK_TICKS_PER_BYTE 9
-
-// The transfer time threshold for small transfers for which Polling
-// is appropriate
-// For now, do everything polling, once DMA implemented specify proper
-// time limit based on expirmentation
-#define BCM_SPI_TRANSFER_POLL_LIMIT_US  MAXULONGLONG
 
 #endif
 

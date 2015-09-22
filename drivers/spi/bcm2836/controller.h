@@ -46,11 +46,11 @@ ControllerDoOneTransferPollMode(
     _Inout_ PPBC_REQUEST pRequest
     );
 
-VOID
+bool
 ControllerCompleteTransfer(
     _Inout_ PPBC_DEVICE pDevice,
     _Inout_ PPBC_REQUEST pRequest,
-    _In_ BOOLEAN AbortSequence
+    _In_ NTSTATUS TransferStatus
     );
 
 VOID
@@ -79,6 +79,16 @@ VOID
 ControllerConfigClock(
     PPBC_DEVICE pDevice,
     ULONG clockHz
+    );
+
+VOID
+ControllerActivateTransfer(
+    PPBC_DEVICE pDevice
+    );
+
+VOID
+ControllerDeactivateTransfer(
+    PPBC_DEVICE pDevice
     );
 
 #endif
