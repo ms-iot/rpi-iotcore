@@ -33,9 +33,6 @@ EVT_WDF_DEVICE_D0_EXIT                  OnD0Exit;
 EVT_WDF_DEVICE_SELF_MANAGED_IO_INIT     OnSelfManagedIoInit;
 EVT_WDF_DEVICE_SELF_MANAGED_IO_CLEANUP  OnSelfManagedIoCleanup;
 
-EVT_WDF_INTERRUPT_ISR                   OnInterruptIsr;
-EVT_WDF_INTERRUPT_DPC                   OnInterruptDpc;
-
 EVT_WDF_REQUEST_CANCEL                  OnCancel;
 
 //
@@ -46,10 +43,10 @@ __drv_functionClass(POWER_SETTING_CALLBACK)
 _IRQL_requires_same_
 NTSTATUS
 OnMonitorPowerSettingCallback(
-    _In_                          LPCGUID SettingGuid,
-    _In_reads_bytes_(ValueLength) PVOID   Value,
-    _In_                          ULONG   ValueLength,
-    _Inout_opt_                   PVOID   Context
+    _In_ LPCGUID SettingGuid,
+    _In_reads_bytes_(ValueLength) PVOID Value,
+    _In_  ULONG ValueLength,
+    _Inout_opt_  PVOID Context
    );
 
 //
@@ -61,164 +58,70 @@ EVT_SPB_CONTROLLER_LOCK              OnControllerLock;
 EVT_SPB_CONTROLLER_UNLOCK            OnControllerUnlock;
 EVT_SPB_CONTROLLER_READ              OnRead;
 EVT_SPB_CONTROLLER_WRITE             OnWrite;
-EVT_SPB_CONTROLLER_SEQUENCE          OnSequence;
+EVT_SPB_CONTROLLER_SEQUENCE          OnSequenceRequest;
 
 EVT_WDF_IO_IN_CALLER_CONTEXT         OnOtherInCallerContext;
 EVT_SPB_CONTROLLER_OTHER             OnOther;
+
+KSTART_ROUTINE TransferPollModeThread;
 
 //
 // PBC function prototypes.
 //
 
-NTSTATUS
-PbcTargetGetSettings(
-    _In_     PPBC_DEVICE             pDevice,
-    _In_     PVOID                   ConnectionParameters,
-    _Out_    PPBC_TARGET_SETTINGS    pSettings);
+VOID
+OnNonSequenceRequest(
+    _In_ WDFDEVICE SpbController,
+    _In_ SPBTARGET SpbTarget,
+    _In_ SPBREQUEST SpbRequest,
+    _In_ size_t Length
+    );
 
 NTSTATUS
-PbcRequestValidate(
-    _In_     PPBC_REQUEST            pRequest);
+OnRequest(
+    _In_ PPBC_DEVICE pDevice,
+    _In_ PPBC_TARGET pTarget,
+    _In_ PPBC_REQUEST pRequest
+    );
 
 VOID
-PbcRequestConfigureForNonSequence(
-    _In_  WDFDEVICE                  SpbController,
-    _In_  SPBTARGET                  SpbTarget,
-    _In_  SPBREQUEST                 SpbRequest,
-    _In_  size_t                     Length);
+OnRequestPollMode(
+    _In_ PPBC_DEVICE pDevice
+    );
 
 NTSTATUS
-PbcRequestConfigureForIndex(
-    _Inout_  PPBC_REQUEST            pRequest,
-    _In_     ULONG                   Index);
+PbcTargetGetSettings(
+    _In_ PPBC_DEVICE  pDevice,
+    _In_ PVOID ConnectionParameters,
+    _Out_ PPBC_TARGET_SETTINGS pSettings
+    );
+
+NTSTATUS
+PbcRequestSetNthTransferInfo(
+    _Inout_ PPBC_REQUEST pRequest,
+    _In_ ULONG Index
+    );
 
 VOID
 PbcRequestDoTransfer(
-    _In_     PPBC_DEVICE             pDevice,
-    _In_     PPBC_REQUEST            pRequest);
+    _In_ PPBC_DEVICE pDevice,
+    _In_ PPBC_REQUEST pRequest
+    );
 
-VOID
-PbcRequestComplete(
-    _In_     PPBC_REQUEST            pRequest);
-
-EVT_WDF_TIMER                        OnDelayTimerExpired;
-
-ULONG
-FORCEINLINE
-PbcDeviceGetInterruptMask(
-    _In_  PPBC_DEVICE                pDevice
-    )
-/*++
- 
-  Routine Description:
-
-    This routine returns the device context's current
-    interrupt mask.
-
-  Arguments:
-
-    pDevice - a pointer to the PBC device context
-
-  Return Value:
-
-    Interrupt mask
-
---*/
-{
-    return (ULONG)InterlockedOr((PLONG)&pDevice->InterruptMask, 0);
-}
-
-VOID
-FORCEINLINE
-PbcDeviceSetInterruptMask(
-    _In_  PPBC_DEVICE                pDevice,
-    _In_  ULONG                      InterruptMask
-    )
-/*++
- 
-  Routine Description:
-
-    This routine sets the device context's current
-    interrupt mask.
-
-  Arguments:
-
-    pDevice - a pointer to the PBC device context
-    InterruptMask - new interrupt mask value
-
-  Return Value:
-
-    None.
-
---*/
-{
-    InterlockedExchange(
-        (PLONG)&pDevice->InterruptMask, 
-        (LONG)InterruptMask);
-}
-
-VOID
-FORCEINLINE
-PbcDeviceAndInterruptMask(
-    _In_  PPBC_DEVICE                pDevice,
-    _In_  ULONG                      InterruptMask
-    )
-/*++
- 
-  Routine Description:
-
-    This routine performs a logical and between the device 
-    context's current interrupt mask and the input parameter.
-
-  Arguments:
-
-    pDevice - a pointer to the PBC device context
-    InterruptMask - new interrupt mask value to and
-
-  Return Value:
-
-    None.
-
---*/
-{
-    InterlockedAnd(
-        (PLONG)&pDevice->InterruptMask, 
-        (LONG)InterruptMask);
-}
-
-size_t
-FORCEINLINE
-PbcRequestGetInfoRemaining(
-   _In_  PPBC_REQUEST  pRequest
-   )
-/*++
- 
-  Routine Description:
-
-    This is a helper routine used to retrieve the 
-    number of bytes remaining in the current transfer.
-
-  Arguments:
-
-    pRequest - a pointer to the PBC request context
-
-  Return Value:
-
-    Bytes remaining in request
-
---*/
-{
-    return (pRequest->FullDuplexLength == 0) ? 
-        (pRequest->Length - pRequest->Information) : 
-        (pRequest->FullDuplexLength - pRequest->Information);
-}
+ULONGLONG
+PbcRequestEstimateAllTransfersTimeUs(
+    _In_ PPBC_TARGET pTarget,
+    _In_ PPBC_REQUEST pRequest,
+    bool CountTransferDelays
+    );
 
 NTSTATUS
 FORCEINLINE
-PbcRequestGetByte(
-   _In_  PPBC_REQUEST  pRequest,
-   _In_  size_t        Index,
-   _Out_ UCHAR*        pByte
+MdlGetByte(
+    _In_ PMDL mdl,
+    _In_ size_t Index,
+    _In_ size_t Length,
+   _Out_ UCHAR* pByte
    )
 /*++
  
@@ -242,7 +145,6 @@ PbcRequestGetByte(
 
 --*/
 {
-    PMDL mdl = pRequest->pMdlChain;
     size_t mdlByteCount;
     size_t currentOffset = Index;
     PUCHAR pBuffer;
@@ -252,7 +154,7 @@ PbcRequestGetByte(
     // Check for out-of-bounds index
     //
 
-    if (Index < pRequest->Length)
+    if (Index < Length)
     {
         while (mdl != NULL)
         {
@@ -292,11 +194,11 @@ PbcRequestGetByte(
 
 NTSTATUS
 FORCEINLINE
-PbcRequestSetByte(
-   _In_  PMDL          mdl,
-   _In_  size_t        Index,
-   _In_  size_t        Length,
-   _In_  UCHAR         Byte
+MdlSetByte(
+   _In_ PMDL mdl,
+   _In_ size_t Index,
+   _In_ size_t Length,
+   _In_ UCHAR Byte
    )
 /*++
  
@@ -366,6 +268,5 @@ PbcRequestSetByte(
 
     return status;
 }
-
 
 #endif

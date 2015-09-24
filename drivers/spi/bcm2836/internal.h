@@ -129,9 +129,9 @@ PBC_TARGET_SETTINGS, *PPBC_TARGET_SETTINGS;
 //
 /////////////////////////////////////////////////
 
-typedef struct PBC_DEVICE   PBC_DEVICE,   *PPBC_DEVICE;
-typedef struct PBC_TARGET   PBC_TARGET,   *PPBC_TARGET;
-typedef struct PBC_REQUEST  PBC_REQUEST,  *PPBC_REQUEST;
+typedef struct PBC_DEVICE PBC_DEVICE, *PPBC_DEVICE;
+typedef struct PBC_TARGET PBC_TARGET, *PPBC_TARGET;
+typedef struct PBC_REQUEST PBC_REQUEST, *PPBC_REQUEST;
 
 //
 // Device context.
@@ -159,20 +159,15 @@ struct PBC_DEVICE
     PPBC_TARGET                     pCurrentTarget;
     BOOLEAN                         Locked;
     
-    // Variables to track enabled interrupts
-    // and status between ISR and DPC.
-    WDFINTERRUPT                    InterruptObject;
-    ULONG                           InterruptMask;
-    ULONG                           InterruptStatus;
-
     // Controller driver spinlock.
     WDFSPINLOCK                     Lock;
 
-    // Delay timer used to stall between transfers.
-    WDFTIMER                        DelayTimer;
-
     // The power setting callback handle
     PVOID                           pMonitorPowerSettingHandle;
+
+    PVOID                           pTransferThread;
+    KEVENT                          TransferThreadWakeEvt;
+    LONG                            TransferThreadShutdown;
 };
 
 //
@@ -215,74 +210,41 @@ struct PBC_REQUEST
     // Number of transfers in sequence and 
     // index of the current one.
     ULONG                          TransferCount; 
-    ULONG                          TransferIndex;
+    ULONG                          CurrentTransferIndex;
 
     // Total bytes transferred.
     size_t                         TotalInformation;
 
-    // Current status of the request.
-    NTSTATUS                       Status;
-    BOOLEAN                        bIoComplete;
+    size_t                         RequestLength;
 
     //
     // Variables that are reused for each transfer within
-    // a [sequence] request.
+    // each request.
     //
 
-    // Pointer to the transfer buffer and length.
-    size_t                         Length;
-    PMDL                           pMdlChain;
+    size_t                         CurrentTransferWriteLength;
+    size_t                         CurrentTransferReadLength;
+    PMDL                           pCurrentTransferWriteMdlChain;
+    PMDL                           pCurrentTransferReadMdlChain;
+
+    // Bytes read/written in the current transfer.
+    size_t                         CurrentTransferInformation;
 
     // Position of the current transfer within
     // the sequence and its associated controller
     // settings.
-    SPB_REQUEST_SEQUENCE_POSITION  SequencePosition;
-
-    // Direction of the current transfer.
-    SPB_TRANSFER_DIRECTION         Direction;
-
-    // Time to delay before starting transfer.
-    ULONG                          DelayInUs;
-
-    // Interrupt flag indicating data is ready to
-    // be transferred.
-    ULONG                          DataReadyFlag; 
-
-    // Bytes read/written in the current transfer.
-    size_t                         Information;
-
-    // Bytes written in the current transfer. 
-    // This SPI controller needs dummy bytes written to read data.
-    size_t                         InformationWritten;
-
-    // Pointer to the full duplex read transfer buffer and length.
-    size_t                         FullDuplexLength;
-    size_t                         FullDuplexReadLength;
-    PMDL                           pFullDuplexReadMdlChain;
+    SPB_REQUEST_SEQUENCE_POSITION  CurrentTransferSequencePosition;
+    SPB_TRANSFER_DIRECTION         CurrentTransferDirection;
+    ULONG                          CurrentTransferDelayInUs;
 };
 
 //
 // Declate contexts for device, target, and request.
 //
 
-WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(PBC_DEVICE,  GetDeviceContext);
-WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(PBC_TARGET,  GetTargetContext);
+WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(PBC_DEVICE, GetDeviceContext);
+WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(PBC_TARGET, GetTargetContext);
 WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(PBC_REQUEST, GetRequestContext);
-
-//
-// Register evaluation functions.
-//
-
-FORCEINLINE
-bool
-TestAnyBits(
-    _In_ ULONG V1,
-    _In_ ULONG V2
-)
-{
-    return (V1 & V2) != 0;
-}
-
 
 #pragma warning(pop)
 

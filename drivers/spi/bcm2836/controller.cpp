@@ -26,14 +26,14 @@ Revision History:
 #include "controller.tmh"
 
 inline void
-BCM_SPIFlushRxFifo(
-    _In_  PPBC_DEVICE  pDevice
+ControllerFlushFifos(
+    _In_ PPBC_DEVICE pDevice
     )
 /*++
 
     Routine Description:
 
-        This routine flushes the Rx Fifo hardware and waits until the Tx Fifo is flushed.
+        This routine waits until the Tx Fifo is flushed and clears the Rx Fifo
 
     Arguments:
 
@@ -47,25 +47,38 @@ BCM_SPIFlushRxFifo(
 {
     // must only be called on active transfer
     NT_ASSERT(READ_REGISTER_ULONG(&pDevice->pSPIRegisters->CS) & BCM_SPI_REG_CS_TA);
+    
+    // clear the Rx fifo
+    WRITE_REGISTER_ULONG(&pDevice->pSPIRegisters->CS, pDevice->SPI_CS_COPY | BCM_SPI_REG_CS_CLEARRX);
+
     // wait for Tx fifo empty
-    int timeout = BCM_SPI_MAX_TIMEOUT_US;
-    while (timeout > 0 &&
-        (READ_REGISTER_ULONG(&pDevice->pSPIRegisters->CS) & BCM_SPI_REG_CS_DONE)==0)
+    ULONG timeout = BCM_SPI_FIFO_FLUSH_TIMEOUT_US;
+    while ((timeout > 0) &&
+           (READ_REGISTER_ULONG(&pDevice->pSPIRegisters->CS) & BCM_SPI_REG_CS_DONE) == 0)
     {   // do not flood the I/O bus
         KeStallExecutionProcessor(1);
         timeout--;
-        // we should never timeout
-        NT_ASSERT(timeout > 0);
     }
+
     // clear the Rx fifo
     WRITE_REGISTER_ULONG(&pDevice->pSPIRegisters->CS, pDevice->SPI_CS_COPY | BCM_SPI_REG_CS_CLEARRX);
-    WRITE_REGISTER_ULONG(&pDevice->pSPIRegisters->CS, pDevice->SPI_CS_COPY);
+
+    if (timeout == 0)
+    {
+        Trace(
+            TRACE_LEVEL_WARNING,
+            TRACE_FLAG_TRANSFER,
+            "Flushing FIFOs timedout after %ul us for device 0x%lx (SPBREQUEST %p)",
+            BCM_SPI_FIFO_FLUSH_TIMEOUT_US,
+            pDevice->pCurrentTarget->Settings.DeviceSelection,
+            pDevice->pCurrentTarget->pCurrentRequest->SpbRequest);
+    }
 }
 
 _Use_decl_annotations_
 VOID
 ControllerInitialize(
-    PPBC_DEVICE  pDevice
+    PPBC_DEVICE pDevice
     )
 /*++
  
@@ -91,8 +104,7 @@ ControllerInitialize(
     pDevice->SPI_CS_COPY = BCM_SPI_REG_CS_POLL_DEFAULT;
     pDevice->CurrentConnectionSpeed = BCM_SPI_REG_CLK_DEFAULT;
     WRITE_REGISTER_ULONG(&pDevice->pSPIRegisters->CS, pDevice->SPI_CS_COPY);
-    WRITE_REGISTER_ULONG(&pDevice->pSPIRegisters->CLK, 
-        BCM_SPI_REG_CLK_CDIV_SET(BCM_SPISetClkDivider(BCM_SPI_REG_CLK_DEFAULT)));
+    ControllerConfigClock(pDevice, BCM_SPI_REG_CLK_DEFAULT);
 
     FuncExit(TRACE_FLAG_PBCLOADING);
 }
@@ -100,7 +112,7 @@ ControllerInitialize(
 _Use_decl_annotations_
 VOID
 ControllerUninitialize(
-    PPBC_DEVICE  pDevice
+    PPBC_DEVICE pDevice
     )
 /*++
  
@@ -122,264 +134,23 @@ ControllerUninitialize(
 
     NT_ASSERT(pDevice != NULL);
 
-    ControllerDisableInterrupts(pDevice);
-
     // make sure pending transactions are stopped
-    pDevice->SPI_CS_COPY &= ~BCM_SPI_REG_CS_TA;
-    WRITE_REGISTER_ULONG(&pDevice->pSPIRegisters->CS, pDevice->SPI_CS_COPY);
+    ControllerDeactivateTransfer(pDevice);
 
     FuncExit(TRACE_FLAG_PBCLOADING);
 }
 
 _Use_decl_annotations_
-VOID
-ControllerConfigureForTransfer(
-    PPBC_DEVICE   pDevice,
-    PPBC_REQUEST  pRequest
-    )
-/*++
- 
-  Routine Description:
-
-    This routine configures and starts the controller
-    for a transfer.
-
-  Arguments:
-
-    pDevice - a pointer to the PBC device context
-    pRequest - a pointer to the PBC request context
-
-  Return Value:
-
-    None. The request is completed asynchronously.
-
---*/
-{
-    FuncEntry(TRACE_FLAG_TRANSFER);
-
-    NT_ASSERT(pDevice  != NULL);
-    NT_ASSERT(pRequest != NULL);
-    
-    //
-    // Initialize request context for transfer.
-    //
-
-    pRequest->Status = STATUS_SUCCESS;
-
-    //
-    // Configure hardware for transfer.
-    //
-    if (pRequest->SequencePosition == SpbRequestSequencePositionSingle ||
-        pRequest->SequencePosition == SpbRequestSequencePositionFirst)
-    {
-        PPBC_TARGET_SETTINGS pSettings = &pDevice->pCurrentTarget->Settings;
-        if (pDevice->CurrentConnectionSpeed != pSettings->ConnectionSpeed)
-        {
-            pDevice->CurrentConnectionSpeed = pSettings->ConnectionSpeed;
-
-            // set clock
-            WRITE_REGISTER_ULONG(&pDevice->pSPIRegisters->CLK,
-                BCM_SPI_REG_CLK_CDIV_SET(BCM_SPISetClkDivider(pDevice->CurrentConnectionSpeed)));
-        }
-
-        // set chip select, CPHA and CPOL
-        pDevice->SPI_CS_COPY &= ~(BCM_SPI_REG_CS_CS | BCM_SPI_REG_CS_CPHA | BCM_SPI_REG_CS_CPOL);
-        pDevice->SPI_CS_COPY |= BCM_SPI_REG_CS_CS_SET(pSettings->DeviceSelection);
-
-        // CPOL
-        if (pSettings->Polarity)
-        {
-            pDevice->SPI_CS_COPY |= BCM_SPI_REG_CS_CPOL;
-        }
-
-        // CPHA
-        if (pSettings->Phase)
-        {
-            pDevice->SPI_CS_COPY |= BCM_SPI_REG_CS_CPHA;
-        }
-
-        // WireMode, only 4 wire supported yet
-        NT_ASSERT((pSettings->TypeSpecificFlags & SPI_WIREMODE_BIT)==0);
-
-        // DevicePolarity
-        ULONG csPolarityBit = BCM_SPI_REG_CS_CSPOL0 << pSettings->DeviceSelection;
-        if (pSettings->TypeSpecificFlags & SPI_DEVICEPOLARITY_BIT)
-        {   // active high
-            pDevice->SPI_CS_COPY |= csPolarityBit | BCM_SPI_REG_CS_CSPOL;
-        }
-        else
-        {   // active low
-            pDevice->SPI_CS_COPY &= ~(csPolarityBit | BCM_SPI_REG_CS_CSPOL);
-        }
-
-        // reset Rx Fifo
-        WRITE_REGISTER_ULONG(&pDevice->pSPIRegisters->CS, pDevice->SPI_CS_COPY | BCM_SPI_REG_CS_CLEARRX);
-        WRITE_REGISTER_ULONG(&pDevice->pSPIRegisters->CS, pDevice->SPI_CS_COPY);
-
-        // start transfer
-        NT_ASSERT((pDevice->SPI_CS_COPY & BCM_SPI_REG_CS_TA)==0);
-        pDevice->SPI_CS_COPY |= BCM_SPI_REG_CS_TA;
-        WRITE_REGISTER_ULONG(&pDevice->pSPIRegisters->CS, pDevice->SPI_CS_COPY);
-    }
-    else
-    {
-        NT_ASSERT((pDevice->SPI_CS_COPY & BCM_SPI_REG_CS_TA) == BCM_SPI_REG_CS_TA);
-        NT_ASSERT(READ_REGISTER_ULONG(&pDevice->pSPIRegisters->CS) & BCM_SPI_REG_CS_TA);
-    }
-
-    NT_ASSERT(pRequest->Direction < SpbTransferDirectionMax);
-
-    ControllerTransferData(pDevice, pRequest);
-
-    //
-    // Synchronize access to device context with ISR.
-    //
-
-    WdfInterruptAcquireLock(pDevice->InterruptObject);
-
-    //
-    // Set interrupt mask and clear current status.
-    //
-
-    pRequest->DataReadyFlag = BCM_SPI_REG_CS_DONE;
-    PbcDeviceSetInterruptMask(pDevice, BCM_SPI_REG_CS_DONE);
-
-    pDevice->InterruptStatus = 0;
-
-    Trace(
-        TRACE_LEVEL_VERBOSE,
-        TRACE_FLAG_TRANSFER,
-        "Controller configured for %s of %Iu bytes to device 0x%lx (SPBREQUEST %p, WDFDEVICE %p)",
-        pRequest->Direction == SpbTransferDirectionFromDevice ? "read" : 
-            pRequest->Direction == SpbTransferDirectionToDevice ? "write" : "fullduplex",
-        pRequest->Length,
-        pDevice->pCurrentTarget->Settings.DeviceSelection,
-        pRequest->SpbRequest,
-        pDevice->FxDevice);
-
-    ControllerEnableInterrupts(
-        pDevice,
-        PbcDeviceGetInterruptMask(pDevice));
-
-    WdfInterruptReleaseLock(pDevice->InterruptObject);
-
-    FuncExit(TRACE_FLAG_TRANSFER);
-}
-
-_Use_decl_annotations_
-VOID
-ControllerProcessInterrupts(
-    PPBC_DEVICE   pDevice,
-    PPBC_REQUEST  pRequest,
-    ULONG         InterruptStatus
-    )
-/*++
- 
-  Routine Description:
-
-    This routine processes a hardware interrupt. Activities
-    include checking for errors and transferring data.
-
-  Arguments:
-
-    pDevice - a pointer to the PBC device context
-    pRequest - a pointer to the PBC request context
-    InterruptStatus - saved interrupt status bits from the ISR.
-        These have already been acknowledged and disabled
-
-  Return Value:
-
-    None. The request is completed asynchronously.
-
---*/
-{
-    FuncEntry(TRACE_FLAG_TRANSFER);
-
-    NTSTATUS status;
-
-    NT_ASSERT(pDevice  != NULL);
-    NT_ASSERT(pRequest != NULL);
-
-    Trace(
-        TRACE_LEVEL_INFORMATION,
-        TRACE_FLAG_TRANSFER,
-        "Ready to process interrupts with status 0x%lx for WDFDEVICE %p",
-        InterruptStatus,
-        pDevice->FxDevice);
-    
-    //
-    // Check if controller is ready to transfer more data.
-    // Check if transfer is complete.
-    //
-
-    if (TestAnyBits(InterruptStatus, pRequest->DataReadyFlag))
-    {
-        Trace(
-            TRACE_LEVEL_INFORMATION,
-            TRACE_FLAG_TRANSFER,
-            "Transfer complete for device 0x%lx with %Iu bytes remaining",
-            pDevice->pCurrentTarget->Settings.DeviceSelection,
-            PbcRequestGetInfoRemaining(pRequest));
-        
-        //
-        // If transfer complete interrupt occured and there
-        // are still bytes remaining, transfer data. 
-        //
-
-        if (PbcRequestGetInfoRemaining(pRequest) > 0)
-        {
-            status = ControllerTransferData(pDevice, pRequest);
-
-            if (!NT_SUCCESS(status))
-            {
-                pRequest->Status = status;
-
-                Trace(
-                    TRACE_LEVEL_ERROR, 
-                    TRACE_FLAG_TRANSFER,
-                    "Unexpected error while transferring data for device 0x%lx, "
-                    "completing transfer and resetting controller "
-                    "(WDFDEVICE %p) - %!STATUS!",
-                    pDevice->pCurrentTarget->Settings.DeviceSelection,
-                    pDevice->FxDevice,
-                    pRequest->Status);
-
-                //
-                // Complete the transfer and stop processing
-                // interrupts.
-                //
-                pRequest->DataReadyFlag = 0;
-                ControllerCompleteTransfer(pDevice, pRequest, TRUE);
-                goto exit;
-            }
-        }
-
-        //
-        // Complete the transfer.
-        //
-        if (PbcRequestGetInfoRemaining(pRequest) == 0)
-        {
-            pRequest->DataReadyFlag = 0;
-            ControllerCompleteTransfer(pDevice, pRequest, FALSE);
-        }
-    }
-
-exit:
-
-    FuncExit(TRACE_FLAG_TRANSFER);
-}
-
-_Use_decl_annotations_
 NTSTATUS
-ControllerTransferData(
-    PPBC_DEVICE   pDevice,
-    PPBC_REQUEST  pRequest
+ControllerDoOneTransferPollMode(
+    PPBC_DEVICE pDevice,
+    PPBC_REQUEST pRequest
     )
 /*++
  
   Routine Description:
 
-    This routine transfers data to or from the device.
+    This routine transfers data to or from the device in polling mode.
 
   Arguments:
 
@@ -394,172 +165,199 @@ ControllerTransferData(
 {
     FuncEntry(TRACE_FLAG_TRANSFER);
 
-    size_t bytesToTransfer = min(pRequest->Length - pRequest->Information, BCM_SPI_MAX_BYTES_PER_TRANSFER);
-    size_t bytesTransferred = 0;
+    size_t bytesToWrite = 0;
+    size_t bytesToRead = 0;
     NTSTATUS status = STATUS_SUCCESS;
-    UCHAR nextByte;
 
-    //
-    // Write
-    //
-
-    if (pRequest->Direction == SpbTransferDirectionToDevice)
+    if (pRequest->CurrentTransferDelayInUs > 0)
     {
+        status = ControllerDelayTransfer(pDevice, pRequest);
+        if (!NT_SUCCESS(status))
+        {
+            goto exit;
+        }
+    }
+
+    if (pRequest->CurrentTransferDirection == SpbTransferDirectionToDevice)
+    {
+        //
+        // Write
+        //
+
+        bytesToWrite = pRequest->CurrentTransferWriteLength;
+
         Trace(
             TRACE_LEVEL_INFORMATION, 
             TRACE_FLAG_TRANSFER,
             "Ready to write %Iu byte(s) for device 0x%lx", 
-            bytesToTransfer,
+            bytesToWrite,
             pDevice->pCurrentTarget->Settings.DeviceSelection);
-
-        // clear the read fifo first
-        BCM_SPIFlushRxFifo(pDevice);
-
-        while (bytesTransferred < bytesToTransfer)
-        {
-            status = PbcRequestGetByte(pRequest, pRequest->Information + bytesTransferred, &nextByte);
-            if (NT_SUCCESS(status))
-            {
-                WRITE_REGISTER_ULONG(&pDevice->pSPIRegisters->FIFO, (ULONG)nextByte);
-                bytesTransferred++;
-            }
-            else
-            {
-                break;
-            }
-        }
-
-        pRequest->InformationWritten += bytesTransferred;
-        pRequest->Information += bytesTransferred;
-
     }
-
-    //
-    // Read
-    //
-
-    else if (pRequest->Direction == SpbTransferDirectionFromDevice)
+    else if (pRequest->CurrentTransferDirection == SpbTransferDirectionFromDevice)
     {
+        //
+        // Read
+        //
+
+        bytesToRead = pRequest->CurrentTransferReadLength;
 
         Trace(
             TRACE_LEVEL_INFORMATION, 
             TRACE_FLAG_TRANSFER,
             "Ready to read %Iu byte(s) for device 0x%lx", 
-            bytesToTransfer,
+            bytesToRead,
             pDevice->pCurrentTarget->Settings.DeviceSelection);
-
-        // make sure we don't read data from the Rx fifo from a previous write transaction
-        if (pRequest->InformationWritten == 0)
-        {
-            BCM_SPIFlushRxFifo(pDevice);
-        }
-
-        // read pending Rx data
-        while (bytesTransferred < bytesToTransfer)
-        {
-            // more data in Rx Fifo?
-            if (READ_REGISTER_ULONG(&pDevice->pSPIRegisters->CS) & BCM_SPI_REG_CS_RXD)
-            {
-                nextByte = (UCHAR)READ_REGISTER_ULONG(&pDevice->pSPIRegisters->FIFO);
-                status = PbcRequestSetByte(pRequest->pMdlChain, pRequest->Information + bytesTransferred, pRequest->Length, nextByte);
-                if (NT_SUCCESS(status))
-                {
-                    bytesTransferred++;
-                }
-                else
-                {
-                    NT_ASSERT(!"the buffer is too small or we read too many bytes");
-                    break;
-                }
-            }
-            else
-            {
-                // catch this logic error, it means the read request is stuck if we have nothing more to transmit
-                NT_ASSERT(pRequest->Length > pRequest->InformationWritten);
-                break;
-            }
-        }
-
-        pRequest->Information += bytesTransferred;
-
-        // now the Rx buffer is empty
-        bytesTransferred = 0;
-        size_t bytesToWrite = min(pRequest->Length - pRequest->InformationWritten, BCM_SPI_MAX_BYTES_PER_TRANSFER);
-
-        // dummy data for Tx
-        while (bytesTransferred < bytesToWrite)
-        {
-            // write to the fifo to start the read transactions
-            WRITE_REGISTER_ULONG(&pDevice->pSPIRegisters->FIFO, 0);
-            bytesTransferred++;
-        }
-        pRequest->InformationWritten += bytesTransferred;
-
     }
-    //
-    // full duplex
-    //
     else
     {
-        size_t readBytesToTransfer = min(pRequest->FullDuplexLength - pRequest->Information, BCM_SPI_MAX_BYTES_PER_TRANSFER);
+        //
+        // full duplex
+        //
+
+        NT_ASSERT(pRequest->CurrentTransferDirection == SpbTransferDirectionNone);
+
+        bytesToRead = pRequest->CurrentTransferReadLength;
+        bytesToWrite = pRequest->CurrentTransferWriteLength;
 
         Trace(
             TRACE_LEVEL_INFORMATION,
             TRACE_FLAG_TRANSFER,
-            "Ready to read/write %Iu byte(s) for device 0x%lx",
-            readBytesToTransfer,
+            "Ready to fullduplex write/read %Iu/%Iu byte(s) for device 0x%lx",
+            bytesToWrite,
+            bytesToRead,
             pDevice->pCurrentTarget->Settings.DeviceSelection);
+    }
 
-        // make sure we don't read data from the Rx fifo from a previous transaction
-        if (pRequest->InformationWritten == 0)
+    size_t readByteIndex = 0;
+    size_t writeByteIndex = 0;
+    size_t transferByteLength = max(bytesToWrite, bytesToRead);
+    size_t zeroBytesToWrite = transferByteLength - bytesToWrite;
+    size_t readBytesToDiscard = transferByteLength - bytesToRead;
+    UCHAR nextByte;
+    ULONG CS;
+
+    NT_ASSERT(
+        (bytesToWrite + zeroBytesToWrite + bytesToRead + readBytesToDiscard) == 
+        (transferByteLength * 2));
+
+#ifdef DBG
+    ULONGLONG numPolls = 0;
+#endif
+
+    Trace(
+        TRACE_LEVEL_INFORMATION,
+        TRACE_FLAG_TRANSFER,
+        "Controller will use Polling on processor %u to transfer %Iu bytes  (SPBREQUEST %p, WDFDEVICE %p)",
+        KeGetCurrentProcessorNumberEx(NULL),
+        transferByteLength,
+        pRequest->SpbRequest,
+        pDevice->FxDevice);
+
+    // As long as there are bytes to transfer and request has not been canceled
+    while ((bytesToWrite > 0) ||
+           (zeroBytesToWrite > 0) ||
+           (bytesToRead > 0) ||
+           (readBytesToDiscard > 0))
+    {
+        CS = READ_REGISTER_ULONG(&pDevice->pSPIRegisters->CS);
+
+        if (CS & BCM_SPI_REG_CS_TXD)
         {
-            BCM_SPIFlushRxFifo(pDevice);
-        }
-
-        // read pending Rx data
-        while (bytesTransferred < readBytesToTransfer)
-        {
-            // more data in Rx Fifo?
-            if (READ_REGISTER_ULONG(&pDevice->pSPIRegisters->CS) & BCM_SPI_REG_CS_RXD)
+            // Write bytes to Tx FIFO from client buffer if any left
+            // otherwise fill with zeros
+            if (bytesToWrite)
             {
-                nextByte = (UCHAR)READ_REGISTER_ULONG(&pDevice->pSPIRegisters->FIFO);
-                PbcRequestSetByte(pRequest->pFullDuplexReadMdlChain, pRequest->Information + bytesTransferred, pRequest->FullDuplexReadLength, nextByte);
-                bytesTransferred++;
-            }
-            else
-            {
-                // catch this logic error, it means the read request is stuck if we have nothing more to transmit
-                NT_ASSERT(pRequest->FullDuplexLength > pRequest->InformationWritten);
-                break;
-            }
-        }
+                status = MdlGetByte(
+                    pRequest->pCurrentTransferWriteMdlChain,
+                    writeByteIndex,
+                    pRequest->CurrentTransferWriteLength,
+                    &nextByte);
+                if (!NT_SUCCESS(status))
+                {
+                    NT_ASSERTMSG("MDL size must match request set write buffer length", false);
+                    status = STATUS_INVALID_PARAMETER;
+                    goto exit;
+                }
 
-        pRequest->Information += bytesTransferred;
-
-        // now the Rx buffer is empty
-        bytesTransferred = 0;
-        size_t bytesToWrite = min(pRequest->FullDuplexLength - pRequest->InformationWritten, BCM_SPI_MAX_BYTES_PER_TRANSFER);
-
-        // write Tx data to fifo
-        while (bytesTransferred < bytesToWrite)
-        {
-            // if the write buffer is exceeded just write 0
-            status = PbcRequestGetByte(pRequest, pRequest->InformationWritten + bytesTransferred, &nextByte);
-
-            if (NT_SUCCESS(status))
-            {
                 WRITE_REGISTER_ULONG(&pDevice->pSPIRegisters->FIFO, nextByte);
+                --bytesToWrite;
+                ++writeByteIndex;
             }
-            else
+            else if (zeroBytesToWrite)
             {
                 WRITE_REGISTER_ULONG(&pDevice->pSPIRegisters->FIFO, 0);
+                --zeroBytesToWrite;
             }
-
-            bytesTransferred++;
         }
-        status = STATUS_SUCCESS;
-        pRequest->InformationWritten += bytesTransferred;
+        else if (WdfRequestIsCanceled(pRequest->SpbRequest))
+        {
+            //
+            // If TX FIFO is full and can't take more bytes, then we 
+            // have some free cycles to check if a request is cancelled 
+            // and terminate transfer
+            //
+
+            status = STATUS_CANCELLED;
+
+            Trace(
+                TRACE_LEVEL_INFORMATION,
+                TRACE_FLAG_TRANSFER,
+                "Terminating transfer due to request cancelled SPBREQUEST %p",
+                pRequest->SpbRequest);
+
+            break;
+        }
+
+        if (CS & BCM_SPI_REG_CS_RXD)
+        {
+            // Read bvtes from Rx FIFO as long as there is a place in the client 
+            // read buffer, otherwise discard read bytes
+            if (bytesToRead > 0)
+            {
+                nextByte = (UCHAR)READ_REGISTER_ULONG(&pDevice->pSPIRegisters->FIFO);
+                status = MdlSetByte(
+                    pRequest->pCurrentTransferReadMdlChain, 
+                    readByteIndex,
+                    pRequest->CurrentTransferReadLength,
+                    nextByte);
+                if (!NT_SUCCESS(status))
+                {
+                    NT_ASSERTMSG("MDL size must match request set read buffer length", false);
+                    status = STATUS_INVALID_PARAMETER;
+                    goto exit;
+                }
+
+                --bytesToRead;
+                ++readByteIndex;
+            }
+            else if (readBytesToDiscard > 0)
+            {
+                (void)READ_REGISTER_ULONG(&pDevice->pSPIRegisters->FIFO);
+                --readBytesToDiscard;
+            }
+        }
+
+    #ifdef DBG
+        ++numPolls;
+    #endif
     }
+
+    ControllerFlushFifos(pDevice);
+
+    pRequest->CurrentTransferInformation =
+        (pRequest->CurrentTransferReadLength - bytesToRead) +
+        (pRequest->CurrentTransferWriteLength - bytesToWrite);
+
+#ifdef DBG
+    Trace(
+        TRACE_LEVEL_INFORMATION,
+        TRACE_FLAG_TRANSFER,
+        "Polled %I64u time(s) to transfer %Iu byte(s)",
+        numPolls,
+        pRequest->CurrentTransferInformation);
+#endif
+
+exit:
 
     FuncExit(TRACE_FLAG_TRANSFER);
     
@@ -567,11 +365,11 @@ ControllerTransferData(
 }
 
 _Use_decl_annotations_
-VOID
+bool
 ControllerCompleteTransfer(
-    PPBC_DEVICE   pDevice,
-    PPBC_REQUEST  pRequest,
-    BOOLEAN       AbortSequence
+    PPBC_DEVICE pDevice,
+    PPBC_REQUEST pRequest,
+    NTSTATUS TransferStatus
     )
 /*++
  
@@ -602,10 +400,10 @@ ControllerCompleteTransfer(
     Trace(
         TRACE_LEVEL_INFORMATION,
         TRACE_FLAG_TRANSFER,
-        "Transfer (index %lu) %s with %Iu bytes for device 0x%lx (SPBREQUEST %p)",
-        pRequest->TransferIndex,
-        NT_SUCCESS(pRequest->Status) ? "complete" : "error",
-        pRequest->Information,
+        "Transfer (index %lu) with %!STATUS! with %Iu bytes for device 0x%lx (SPBREQUEST %p)",
+        pRequest->CurrentTransferIndex,
+        TransferStatus,
+        pRequest->CurrentTransferInformation,
         pDevice->pCurrentTarget->Settings.DeviceSelection,
         pRequest->SpbRequest);
 
@@ -613,150 +411,88 @@ ControllerCompleteTransfer(
     // Update request context with information from this transfer.
     //
 
-    pRequest->TotalInformation += pRequest->Information;
-    pRequest->Information = 0;
-    pRequest->InformationWritten = 0;
+    pRequest->TotalInformation += pRequest->CurrentTransferInformation;
+    pRequest->CurrentTransferInformation = 0;
 
     //
     // Check if there are more transfers
     // in the sequence.
     //
+    ++pRequest->CurrentTransferIndex;
 
-    if (!AbortSequence)
+    bool bIsRequestComplete = false;
+
+    if ((pRequest->CurrentTransferIndex < pRequest->TransferCount) &&
+        (TransferStatus != STATUS_CANCELLED))
     {
-        pRequest->TransferIndex++;
-
-        if (pRequest->TransferIndex < pRequest->TransferCount)
-        {
-            //
-            // Configure the request for the next transfer.
-            //
-
-            pRequest->Status = PbcRequestConfigureForIndex(
-                pRequest, 
-                pRequest->TransferIndex);
-
-            if (NT_SUCCESS(pRequest->Status))
-            {
-                //
-                // Configure controller and kick-off read.
-                // Request will be completed asynchronously.
-                //
-
-                PbcRequestDoTransfer(pDevice,pRequest);
-                goto exit;
-            }
-        }
+        goto exit;
     }
-
-    //
-    // If not already cancelled, unmark request cancellable.
-    //
-
-    if (pRequest->Status != STATUS_CANCELLED)
-    {
-        NTSTATUS cancelStatus;
-        cancelStatus = WdfRequestUnmarkCancelable(pRequest->SpbRequest);
-
-        if (!NT_SUCCESS(cancelStatus))
-        {
-            //
-            // WdfRequestUnmarkCancelable should only fail if the request
-            // has already been or is about to be cancelled. If it does fail 
-            // the request must NOT be completed - the cancel callback will do
-            // this.
-            //
-
-            NT_ASSERTMSG("WdfRequestUnmarkCancelable should only fail if the request has already been or is about to be cancelled",
-                cancelStatus == STATUS_CANCELLED);
-
-            Trace(
-                TRACE_LEVEL_INFORMATION,
-                TRACE_FLAG_TRANSFER,
-                "Failed to unmark SPBREQUEST %p as cancelable - %!STATUS!",
-                pRequest->SpbRequest,
-                cancelStatus);
-
-            goto exit;
-        }
-    }
-
-    //
-    // Done or error occurred. Set interrupt mask to 0.
-    // Doing this keeps the DPC from re-enabling interrupts.
-    //
-
-    PbcDeviceSetInterruptMask(pDevice, 0);
-    ControllerDisableInterrupts(pDevice);
-
-    //
-    // Clear the target's current request. This will prevent
-    // the request context from being accessed once the request
-    // is completed (and the context is invalid).
-    //
-
-    pDevice->pCurrentTarget->pCurrentRequest = NULL;
 
     //
     // end the current transfer if this was a single sequence or the last
     //
 
-    // clear the read fifo first
-    BCM_SPIFlushRxFifo(pDevice);
-
     // deassert cs only if not between lock / unlock pair
     if (!pDevice->Locked)
     {
-        if (pRequest->SequencePosition == SpbRequestSequencePositionSingle ||
-            pRequest->SequencePosition == SpbRequestSequencePositionLast)
+        if ((pRequest->CurrentTransferSequencePosition == SpbRequestSequencePositionSingle) ||
+            (pRequest->CurrentTransferSequencePosition == SpbRequestSequencePositionLast) ||
+            (TransferStatus == STATUS_CANCELLED))
         {
-            NT_ASSERT(pDevice->SPI_CS_COPY & BCM_SPI_REG_CS_TA);
-            // stop transfer
-            pDevice->SPI_CS_COPY &= ~BCM_SPI_REG_CS_TA;
-            WRITE_REGISTER_ULONG(&pDevice->pSPIRegisters->CS, pDevice->SPI_CS_COPY);
+            ControllerDeactivateTransfer(pDevice);
         }
+    }
 
+    pDevice->pCurrentTarget->pCurrentRequest = NULL;
+
+    if (!pDevice->Locked)
+    {
         //
         // Clear the controller's current target if any of
-        //   1. request is type sequence
+        //   1. request is type sequence or fullduplex
         //   2. request position is single 
         //      (did not come between lock/unlock)
         // Otherwise wait until unlock.
         //
 
         if ((pRequest->Type == SpbRequestTypeSequence) ||
-            (pRequest->SequencePosition == SpbRequestSequencePositionSingle))
+            (pRequest->Type == SpbRequestTypeOther) ||
+            (pRequest->CurrentTransferSequencePosition == SpbRequestSequencePositionSingle))
         {
             pDevice->pCurrentTarget = NULL;
         }
     }
 
-    // correct the result for a full duplex transfer
-    if (pRequest->SequencePosition == SpbRequestSequencePositionSingle &&
-        pRequest->Direction == SpbTransferDirectionNone)
-    {
-        NT_ASSERT(pRequest->FullDuplexLength != 0);
-        // the size of a full duplex request is the length of the write + read buffer
-        pRequest->TotalInformation = pRequest->Length + pRequest->FullDuplexReadLength;
-    }
+    WdfRequestSetInformation(
+        pRequest->SpbRequest,
+        pRequest->TotalInformation);
 
-    //
-    // Mark the IO complete. Request not
-    // completed here.
-    //
+    Trace(
+        TRACE_LEVEL_INFORMATION,
+        TRACE_FLAG_TRANSFER,
+        "Completing request with %!STATUS! and Information=%Iu bytes (SPBREQUEST %p)",
+        TransferStatus,
+        pRequest->TotalInformation,
+        pRequest->SpbRequest);
 
-    pRequest->bIoComplete = TRUE;
+    SpbRequestComplete(
+        pRequest->SpbRequest,
+        TransferStatus);
+
+    bIsRequestComplete = true;
 
 exit:
 
     FuncExit(TRACE_FLAG_TRANSFER);
+
+    return bIsRequestComplete;
 }
 
 _Use_decl_annotations_
 VOID
 ControllerUnlockTransfer(
-    PPBC_DEVICE   pDevice
-)
+    PPBC_DEVICE pDevice
+    )
 /*++
 
   Routine Description:
@@ -791,7 +527,7 @@ ControllerUnlockTransfer(
     if (pDevice->SPI_CS_COPY & BCM_SPI_REG_CS_TA)
     {
         // clear the read fifo first
-        BCM_SPIFlushRxFifo(pDevice);
+        ControllerFlushFifos(pDevice);
         // stop transfer
         pDevice->SPI_CS_COPY &= ~BCM_SPI_REG_CS_TA;
         WRITE_REGISTER_ULONG(&pDevice->pSPIRegisters->CS, pDevice->SPI_CS_COPY);
@@ -802,168 +538,194 @@ ControllerUnlockTransfer(
 
 _Use_decl_annotations_
 VOID
-ControllerEnableInterrupts(
-    PPBC_DEVICE   pDevice,
-    ULONG         InterruptMask
+ControllerConfigForTargetAndActivate(
+    PPBC_DEVICE pDevice
     )
-/*++
- 
-  Routine Description:
-
-    This routine enables the hardware interrupts for the
-    specificed mask.
-
-  Arguments:
-
-    pDevice - a pointer to the PBC device context
-    InterruptMask - interrupt bits to enable
-
-  Return Value:
-
-    None.
-
---*/
 {
     FuncEntry(TRACE_FLAG_TRANSFER);
 
-    NT_ASSERT(pDevice != NULL);
+    PPBC_TARGET_SETTINGS pSettings = &pDevice->pCurrentTarget->Settings;
 
+    if (pDevice->CurrentConnectionSpeed != pSettings->ConnectionSpeed)
+    {
+        pDevice->CurrentConnectionSpeed = pSettings->ConnectionSpeed;
+
+        // set clock
+        ControllerConfigClock(pDevice, pSettings->ConnectionSpeed);
+    }
+
+    // set chip select, CPHA and CPOL
+    pDevice->SPI_CS_COPY &= ~(BCM_SPI_REG_CS_CS | BCM_SPI_REG_CS_CPHA | BCM_SPI_REG_CS_CPOL);
+    pDevice->SPI_CS_COPY |= BCM_SPI_REG_CS_CS_SET(pSettings->DeviceSelection);
+
+    // CPOL
+    if (pSettings->Polarity)
+    {
+        pDevice->SPI_CS_COPY |= BCM_SPI_REG_CS_CPOL;
+    }
+
+    // CPHA
+    if (pSettings->Phase)
+    {
+        pDevice->SPI_CS_COPY |= BCM_SPI_REG_CS_CPHA;
+    }
+
+    // WireMode, only 4 wire supported yet
+    NT_ASSERT((pSettings->TypeSpecificFlags & SPI_WIREMODE_BIT) == 0);
+
+    // DevicePolarity
+    ULONG csPolarityBit = BCM_SPI_REG_CS_CSPOL0 << pSettings->DeviceSelection;
+    if (pSettings->TypeSpecificFlags & SPI_DEVICEPOLARITY_BIT)
+    {   // active high
+        pDevice->SPI_CS_COPY |= csPolarityBit | BCM_SPI_REG_CS_CSPOL;
+    }
+    else
+    {   // active low
+        pDevice->SPI_CS_COPY &= ~(csPolarityBit | BCM_SPI_REG_CS_CSPOL);
+    }
+    
+    // reset Tx/Rx Fifos
+    WRITE_REGISTER_ULONG(
+        &pDevice->pSPIRegisters->CS,
+        pDevice->SPI_CS_COPY | BCM_SPI_REG_CS_CLEARTX | BCM_SPI_REG_CS_CLEARRX);
+
+    // start transfer
+    ControllerActivateTransfer(pDevice);
+    
     Trace(
         TRACE_LEVEL_VERBOSE,
         TRACE_FLAG_TRANSFER,
-        "Enable interrupts with mask 0x%lx (WDFDEVICE %p)",
-        InterruptMask,
+        "Controller configured for transfers to device on CS%hu (WDFDEVICE %p)",
+        pDevice->pCurrentTarget->Settings.DeviceSelection,
         pDevice->FxDevice);
 
-    // The SPI interface exposes irq enable and status in different bits...
-    if (InterruptMask & BCM_SPI_REG_CS_DONE)
-    {
-        InterruptMask |= BCM_SPI_REG_CS_INTD;
-    }
-    if (InterruptMask & BCM_SPI_REG_CS_RXR)
-    {
-        InterruptMask |= BCM_SPI_REG_CS_INTR;
-    }
-
-    pDevice->SPI_CS_COPY |= InterruptMask;
-    WRITE_REGISTER_ULONG(&pDevice->pSPIRegisters->CS, pDevice->SPI_CS_COPY);
-
     FuncExit(TRACE_FLAG_TRANSFER);
 }
 
 _Use_decl_annotations_
+NTSTATUS
+ControllerDelayTransfer(
+    PPBC_DEVICE pDevice,
+    PPBC_REQUEST pRequest
+    )
+{
+    FuncEntry(TRACE_FLAG_TRANSFER);
+
+    NTSTATUS status;
+
+    if (pRequest->CurrentTransferDelayInUs == 0)
+    {
+        status = STATUS_SUCCESS;
+        goto exit;
+    }
+
+    if (pRequest->CurrentTransferDelayInUs <= 1000)
+    {
+        //
+        // Achieve high precision delay in us resolution by stalling
+        //
+
+        KeStallExecutionProcessor(pRequest->CurrentTransferDelayInUs);
+        status = STATUS_SUCCESS;
+    }
+    else
+    {
+        //
+        // TODO: Use WDF High Resolution Timer to implement delays in millisecond
+        // resolution. Using standard WDF Timer will be a bad choice for delays < 15ms
+        // See: https://msdn.microsoft.com/en-us/library/windows/hardware/ff545575(v=vs.85).aspx
+        //
+
+        Trace(
+            TRACE_LEVEL_ERROR,
+            TRACE_FLAG_TRANSFER,
+            "Delaying more than 1ms is not implemented, requested delay %lu us WDFDEVICE %p",
+            pRequest->CurrentTransferDelayInUs,
+            pDevice->FxDevice);
+        status = STATUS_NOT_SUPPORTED;
+        goto exit;
+    }
+
+    Trace(
+        TRACE_LEVEL_INFORMATION,
+        TRACE_FLAG_TRANSFER,
+        "Delayed %lu us before starting transfer for WDFDEVICE %p",
+        pRequest->CurrentTransferDelayInUs,
+        pDevice->FxDevice);
+
+exit:
+
+    FuncExit(TRACE_FLAG_TRANSFER);
+
+    return status;
+}
+
 VOID
-ControllerDisableInterrupts(
-    PPBC_DEVICE   pDevice
+ControllerConfigClock(
+    PPBC_DEVICE pDevice,
+    ULONG clockHz
     )
-/*++
- 
-  Routine Description:
-
-    This routine disables all controller interrupts.
-
-  Arguments:
-
-    pDevice - a pointer to the PBC device context
-
-  Return Value:
-
-    None.
-
---*/
 {
     FuncEntry(TRACE_FLAG_TRANSFER);
 
-    NT_ASSERT(pDevice != NULL);
+    ULONG cdiv;
 
-    pDevice->SPI_CS_COPY &= (ULONG)~(
-        BCM_SPI_REG_CS_INTR | BCM_SPI_REG_CS_INTD | 
-        BCM_SPI_REG_CS_RXR | BCM_SPI_REG_CS_DONE
-        );
-    WRITE_REGISTER_ULONG(&pDevice->pSPIRegisters->CS, pDevice->SPI_CS_COPY);
+    if (clockHz <= BCM_SPI_CLK_MIN_HZ)
+    {
+        cdiv = BCM_SPI_REG_CLK_CDIV_MAX;
+    }
+    else if (clockHz >= BCM_SPI_CLK_MAX_HZ)
+    {
+        cdiv = BCM_SPI_REG_CLK_CDIV_MIN;
+    }
+    else
+    {
+        // 
+        // There is a mistake in the datasheet that the
+        // divider must be power of 2, it turns out that it
+        // must be multiple of 2 i.e even number
+        //
+
+        cdiv = (BCM_APB_CLK / clockHz) & ULONG(~1);
+    }
+
+    WRITE_REGISTER_ULONG(&pDevice->pSPIRegisters->CLK, BCM_SPI_REG_CLK_CDIV_SET(cdiv));
+
+    Trace(
+        TRACE_LEVEL_INFORMATION,
+        TRACE_FLAG_TRANSFER,
+        "Configured SCLK, Asked:%uHz Given:%uHz usig CDIV=%u. WDFDEVICE %p",
+        clockHz,
+        BCM_APB_CLK / cdiv,
+        cdiv,
+        pDevice->FxDevice);
 
     FuncExit(TRACE_FLAG_TRANSFER);
 }
 
-_Use_decl_annotations_
-ULONG
-ControllerGetInterruptStatus(
-    PPBC_DEVICE   pDevice,
-    ULONG         InterruptMask
-    )
-/*++
- 
-  Routine Description:
-
-    This routine gets the interrupt status of the
-    specificed interrupt bits.
-
-  Arguments:
-
-    pDevice - a pointer to the PBC device context
-    InterruptMask - interrupt bits to check
-
-  Return Value:
-
-    A bitmap indicating which interrupts are set.
-
---*/
-{
-    FuncEntry(TRACE_FLAG_TRANSFER);
-
-    ULONG interruptStatus = 0;
-
-    NT_ASSERT(pDevice != NULL);
-
-    // The SPI interface exposes irq enable and status in different bits...
-    interruptStatus = READ_REGISTER_ULONG(&pDevice->pSPIRegisters->CS);
-    if (!(interruptStatus & BCM_SPI_REG_CS_INTR))
-    {
-        interruptStatus &= ~BCM_SPI_REG_CS_RXR;
-    }
-    if (!(interruptStatus & BCM_SPI_REG_CS_INTD))
-    {
-        interruptStatus &= ~BCM_SPI_REG_CS_DONE;
-    }
-    interruptStatus &= InterruptMask;
-
-    FuncExit(TRACE_FLAG_TRANSFER);
-
-    return interruptStatus;
-}
-
-_Use_decl_annotations_
 VOID
-ControllerAcknowledgeInterrupts(
-    PPBC_DEVICE   pDevice,
-    ULONG         InterruptMask
-    )
-/*++
- 
-  Routine Description:
-
-    This routine acknowledges the
-    specificed interrupt bits.
-
-  Arguments:
-
-    pDevice - a pointer to the PBC device context
-    InterruptMask - interrupt bits to acknowledge
-
-  Return Value:
-
-    None.
-
---*/
+ControllerActivateTransfer(
+    PPBC_DEVICE pDevice)
 {
-    FuncEntry(TRACE_FLAG_TRANSFER);
+    Trace(
+        TRACE_LEVEL_INFORMATION,
+        TRACE_FLAG_TRANSFER,
+        "Activating transfer");
 
-    NT_ASSERT(pDevice != NULL);
+    NT_ASSERT((pDevice->SPI_CS_COPY & BCM_SPI_REG_CS_TA) == 0);
+    pDevice->SPI_CS_COPY |= BCM_SPI_REG_CS_TA;
+    WRITE_REGISTER_ULONG(&pDevice->pSPIRegisters->CS, pDevice->SPI_CS_COPY);
+}
 
-    // intentional no op
+VOID
+ControllerDeactivateTransfer(
+    PPBC_DEVICE pDevice)
+{
+    Trace(
+        TRACE_LEVEL_INFORMATION,
+        TRACE_FLAG_TRANSFER,
+        "Deactivating transfer");
 
-    UNREFERENCED_PARAMETER(pDevice);
-    UNREFERENCED_PARAMETER(InterruptMask);
-
-    FuncExit(TRACE_FLAG_TRANSFER);
+    pDevice->SPI_CS_COPY &= ~BCM_SPI_REG_CS_TA;
+    WRITE_REGISTER_ULONG(&pDevice->pSPIRegisters->CS, pDevice->SPI_CS_COPY);
 }

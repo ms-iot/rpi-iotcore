@@ -77,88 +77,64 @@ BCM_SPI_REGISTERS, *PBCM_SPI_REGISTERS;
 #define BCM_SPI_REG_CS_CPOL         0x00000008
 #define BCM_SPI_REG_CS_CPHA         0x00000004
 #define BCM_SPI_REG_CS_CS           0x00000003
-#define BCM_SPI_REG_CS_CS_SET(v)    (v&BCM_SPI_REG_CS_CS)
+#define BCM_SPI_REG_CS_CS_SET(v)    (v & BCM_SPI_REG_CS_CS)
 
-#define BCM_SPI_REG_CS_MODE_MASK    (BCM_SPI_REG_CS_CPOL|BCM_SPI_REG_CS_CPHA)
+#define BCM_SPI_REG_CS_MODE_MASK    (BCM_SPI_REG_CS_CPOL | BCM_SPI_REG_CS_CPHA)
 
 // default setting for polling mode, TA=0, CS active low, INT off, No DMA, clear Fifos, CS=0
 #define BCM_SPI_REG_CS_POLL_DEFAULT     0 
-#define BCM_SPI_REG_CS_FIFO_RESET       (BCM_SPI_REG_CS_CLEARRX|BCM_SPI_REG_CS_CLEARTX)
+#define BCM_SPI_REG_CS_FIFO_RESET       (BCM_SPI_REG_CS_CLEARRX | BCM_SPI_REG_CS_CLEARTX)
 
 // from BCM2835 ARM peripherals 10.6.2
-#define BCM_SPI_MAX_BYTES_PER_TRANSFER  16
-#define BCM_SPI_BITS_SUPPORTED          8
-#define BCM_SPI_CS_SUPPORTED            3
+#define BCM_SPI_FIFO_BYTE_SIZE              16
+#define BCM_SPI_DATA_BIT_LENGTH_SUPPORTED   8
+#define BCM_SPI_CS_SUPPORTED                3
 
 //
 // CLK register bits.
 //
 
-#define BCM_APB_CLK                 250000000L  // 250Mhz core clock
-#define BCM_SPI_REG_CLK_DEFAULT     100000      // 100 khz default SPI clock speed
-#define BCM_SPI_REG_CLK_CDIV        0x0000ffff
-#define BCM_SPI_REG_CLK_CDIV_MAX    0x00008000
-#define BCM_SPI_REG_CLK_CDIV_MIN    0x00000002
-#define BCM_SPI_REG_CLK_CDIV_SET(v) ((v)&BCM_SPI_REG_CLK_CDIV)   
-#define BCM_SPI_REG_CLK_MIN         (BCM_APB_CLK/BCM_SPI_REG_CLK_CDIV_MAX)
-#define BCM_SPI_MAX_TIMEOUT_US      (BCM_SPI_MAX_BYTES_PER_TRANSFER*BCM_SPI_BITS_SUPPORTED*1000000/BCM_SPI_REG_CLK_MIN)
-
-//
-// calculate CLK register bits.
-//
-
-inline ULONG 
-BCM_SPISetClkDivider(ULONG clock)
-{
-    if (clock == 0)
-    {
-        return BCM_SPI_REG_CLK_CDIV_MAX;
-    }
-    else if (clock >= BCM_APB_CLK)
-    {
-        return BCM_SPI_REG_CLK_CDIV_MIN;
-    }
-    // from documentation it is yet unclear if the divider 'must' be
-    // a power of 2. For now play safe and always round the clock
-    // down to the next matching frequency
-    ULONG clkdiv = (BCM_APB_CLK / clock);
-    ULONG bittest = BCM_SPI_REG_CLK_CDIV_MAX >> 1;
-    while ((bittest > 1) && (bittest > clkdiv))
-    {
-        bittest >>= 1;
-    }
-    bittest <<= 1;
-    return bittest;
-}
+#define BCM_APB_CLK                     250000000L  // 250Mhz core clock
+#define BCM_SPI_REG_CLK_DEFAULT         100000      // 100 khz default SPI clock speed
+#define BCM_SPI_REG_CLK_CDIV            0x0000ffff
+#define BCM_SPI_REG_CLK_CDIV_MAX        0x0000fffe  // 3814Hz is the lowest clock with even divider
+#define BCM_SPI_REG_CLK_CDIV_MIN        0x00000002  // 125Mhz is the highest clock with even divider
+#define BCM_SPI_REG_CLK_CDIV_SET(v)     ((v) & BCM_SPI_REG_CLK_CDIV)
+#define BCM_SPI_CLK_MAX_HZ              (BCM_APB_CLK / BCM_SPI_REG_CLK_CDIV_MIN)
+#define BCM_SPI_CLK_MIN_HZ              (BCM_APB_CLK / BCM_SPI_REG_CLK_CDIV_MAX)
+#define BCM_SPI_FIFO_FLUSH_TIMEOUT_US   \
+    ((BCM_SPI_FIFO_BYTE_SIZE * BCM_SPI_DATA_BIT_LENGTH_SUPPORTED * 1000000) / BCM_SPI_CLK_MIN_HZ)
 
 //
 // DLEN register bits.
 //
 
 #define BCM_SPI_REG_DLEN_LEN        0x0000ffff
-#define BCM_SPI_REG_DLEN_LEN_SET(v) (v&BCM_SPI_REG_DLEN_LEN)   
+#define BCM_SPI_REG_DLEN_LEN_SET(v) (v & BCM_SPI_REG_DLEN_LEN)   
 
 //
 // LTOH register bits.
 //
 
 #define BCM_SPI_REG_LTOH_TOF        0x000000ff
-#define BCM_SPI_REG_LTOH_TOF_SET(v) (v&BCM_SPI_REG_LTOH_TOF)   
+#define BCM_SPI_REG_LTOH_TOF_SET(v) (v & BCM_SPI_REG_LTOH_TOF)   
 
 //
 // DC register bits.
 //
 
-#define BCM_SPI_REG_DC_RPANIC       0xff000000
-#define BCM_SPI_REG_DC_RPANIC_SET(v) (((v)<<24)&BCM_SPI_REG_DC_RPANIC)   
-#define BCM_SPI_REG_DC_RDREQ        0x00ff0000
-#define BCM_SPI_REG_DC_RDREQ_SET(v) (((v)<<16)&BCM_SPI_REG_DC_RDREQ)   
-#define BCM_SPI_REG_DC_TPANIC       0x0000ff00
-#define BCM_SPI_REG_DC_TPANIC_SET(v) (((v)<<8)&BCM_SPI_REG_DC_TPANIC)   
-#define BCM_SPI_REG_DC_TDREQ        0x000000ff
-#define BCM_SPI_REG_DC_TDREQ_SET(v) ((v)&BCM_SPI_REG_DC_TDREQ)
+#define BCM_SPI_REG_DC_RPANIC           0xff000000
+#define BCM_SPI_REG_DC_RPANIC_SET(v)    (((v) << 24) & BCM_SPI_REG_DC_RPANIC)   
+#define BCM_SPI_REG_DC_RDREQ            0x00ff0000
+#define BCM_SPI_REG_DC_RDREQ_SET(v)     (((v) << 16) & BCM_SPI_REG_DC_RDREQ)   
+#define BCM_SPI_REG_DC_TPANIC           0x0000ff00
+#define BCM_SPI_REG_DC_TPANIC_SET(v)    (((v) << 8) & BCM_SPI_REG_DC_TPANIC)   
+#define BCM_SPI_REG_DC_TDREQ            0x000000ff
+#define BCM_SPI_REG_DC_TDREQ_SET(v)     ((v) & BCM_SPI_REG_DC_TDREQ)
 
-#define BCM_SPI_MAX_TRANSFER_LENGTH 0x00010000
+// Number of clocks it takes the SPI HW to clock 1 byte
+// The SPI HW waits an extra clock after each byte transfered
+#define BCM_SPI_SCLK_TICKS_PER_BYTE 9
 
 #endif
 
