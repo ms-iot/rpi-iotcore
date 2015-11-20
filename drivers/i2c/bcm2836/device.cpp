@@ -895,27 +895,14 @@ BOOLEAN HandleInterrupt ( WDFINTERRUPT WdfInterrupt )
         while (dataPtr != endPtr) {
             statusReg = READ_REGISTER_NOFENCE_ULONG(&registersPtr->Status);
             if (!(statusReg & BCM_I2C_REG_STATUS_RXD)) {
-                readContextPtr->CurrentReadBufferPtr = dataPtr;
-                return TRUE;
+                break;
             }
 
             *dataPtr++ = static_cast<BYTE>(
                 READ_REGISTER_NOFENCE_ULONG(&registersPtr->DataFIFO));
         }
 
-        NT_ASSERT(dataPtr == endPtr);
-
-        BSC_LOG_TRACE("Received all bytes, going to DPC");
         readContextPtr->CurrentReadBufferPtr = dataPtr;
-        interruptContextPtr->CapturedStatus = statusReg;
-        WRITE_REGISTER_NOFENCE_ULONG(
-            &registersPtr->Control,
-            BCM_I2C_REG_CONTROL_I2CEN |
-            BCM_I2C_REG_CONTROL_READ);
-        WRITE_REGISTER_NOFENCE_ULONG(
-            &registersPtr->Status,
-            BCM_I2C_REG_STATUS_DONE);
-        WdfInterruptQueueDpcForIsr(WdfInterrupt);
         return TRUE;
     }
     case TRANSFER_STATE::SENDING_SEQUENCE:
@@ -1073,25 +1060,7 @@ BOOLEAN HandleInterrupt ( WDFINTERRUPT WdfInterrupt )
             sequenceContextPtr->CurrentReadMdlOffset = 0;
         } while (sequenceContextPtr->CurrentReadMdl);
 
-        NT_ASSERT(
-            sequenceContextPtr->BytesRead ==
-            sequenceContextPtr->BytesToRead);
-
-        BSC_LOG_TRACE("Received entire read buffer, going to DPC.");
-        interruptContextPtr->CapturedStatus =
-            READ_REGISTER_NOFENCE_ULONG(&registersPtr->Status);
-
-        // disable further interrupts and clear DONE bit
-        WRITE_REGISTER_NOFENCE_ULONG(
-            &registersPtr->Control,
-            BCM_I2C_REG_CONTROL_I2CEN |
-            BCM_I2C_REG_CONTROL_READ);
-        WRITE_REGISTER_NOFENCE_ULONG(
-            &registersPtr->Status,
-            BCM_I2C_REG_STATUS_DONE);
-
-        NT_ASSERT(!sequenceContextPtr->CurrentReadMdl);
-        WdfInterruptQueueDpcForIsr(WdfInterrupt);
+        BSC_LOG_TRACE("All bytes were received, waiting for DONE interrupt.");
         return TRUE;
     }
     default:

@@ -968,7 +968,7 @@ OnSequenceRequest(
     WDFDEVICE SpbController,
     SPBTARGET SpbTarget,
     SPBREQUEST SpbRequest,
-    ULONG TransferCount
+    ULONG /*TransferCount*/
     )
 /*++
  
@@ -1018,7 +1018,7 @@ OnSequenceRequest(
     pRequest->CurrentTransferIndex = 0;
     pRequest->TotalInformation = 0;
     pRequest->RequestLength = params.Length;
-    pRequest->TransferCount = TransferCount;
+    pRequest->TransferCount = params.SequenceTransferCount;
 
     //
     // Special handling for fullduplex transfer
@@ -1031,6 +1031,21 @@ OnSequenceRequest(
         // It comes as sequence of write then read transfer and SPB
         // assign to it different rquest type
         //
+
+        if (pRequest->TransferCount != 2)
+        {
+            Trace(
+                TRACE_LEVEL_ERROR,
+                TRACE_FLAG_SPBDDI,
+                "Full-duplex request should specify only 2 transfers, %lu specified. SPBREQUEST %p (SPBTARGET %p)",
+                pRequest->TransferCount,
+                pRequest->SpbRequest,
+                SpbTarget);
+
+            status = STATUS_INVALID_PARAMETER;
+            goto exit;
+        }
+
 
         pRequest->TransferCount = 1;
 
@@ -1048,15 +1063,13 @@ OnSequenceRequest(
                       params.Position == SpbRequestSequencePositionContinue);
         }
 
-        NT_ASSERT(TransferCount == 2);
-
         status = PbcRequestSetNthTransferInfo(pRequest, 1);
         if (!NT_SUCCESS(status))
         {
             Trace(
                 TRACE_LEVEL_ERROR,
                 TRACE_FLAG_SPBDDI,
-                "Error configuring full duplex request context for SPBREQUEST %p (SPBTARGET %p) - %!STATUS!",
+                "Error configuring full-duplex request context for SPBREQUEST %p (SPBTARGET %p) - %!STATUS!",
                 pRequest->SpbRequest,
                 SpbTarget,
                 status);
@@ -1064,7 +1077,31 @@ OnSequenceRequest(
             goto exit;
         }
 
-        NT_ASSERT(pRequest->CurrentTransferDirection == SpbTransferDirectionFromDevice);
+        if (pRequest->CurrentTransferDirection != SpbTransferDirectionFromDevice)
+        {
+            Trace(
+                TRACE_LEVEL_ERROR,
+                TRACE_FLAG_SPBDDI,
+                "Full-duplex request 2nd transfer should be a read transfer. SPBREQUEST %p (SPBTARGET %p)",
+                pRequest->SpbRequest,
+                SpbTarget);
+
+            status = STATUS_INVALID_PARAMETER;
+            goto exit;
+        }
+
+        if (pRequest->CurrentTransferDelayInUs > 0)
+        {
+            Trace(
+                TRACE_LEVEL_ERROR,
+                TRACE_FLAG_SPBDDI,
+                "Full-duplex request SPBREQUEST %p should have zero delay specified (SPBTARGET %p)",
+                pRequest->SpbRequest,
+                SpbTarget);
+
+            status = STATUS_INVALID_PARAMETER;
+            goto exit;
+        }
 
         Trace(
             TRACE_LEVEL_INFORMATION,
@@ -1113,6 +1150,32 @@ OnSequenceRequest(
 
     if (pRequest->Type == SpbRequestTypeOther)
     {
+        if (pRequest->CurrentTransferDirection != SpbTransferDirectionToDevice)
+        {
+            Trace(
+                TRACE_LEVEL_ERROR,
+                TRACE_FLAG_SPBDDI,
+                "Full-duplex request 1st transfer should be a write transfer. SPBREQUEST %p (SPBTARGET %p)",
+                pRequest->SpbRequest,
+                SpbTarget);
+
+            status = STATUS_INVALID_PARAMETER;
+            goto exit;
+        }
+
+        if (pRequest->CurrentTransferDelayInUs > 0)
+        {
+            Trace(
+                TRACE_LEVEL_ERROR,
+                TRACE_FLAG_SPBDDI,
+                "Full-duplex request SPBREQUEST %p should have zero delay specified (SPBTARGET %p)",
+                pRequest->SpbRequest,
+                SpbTarget);
+
+            status = STATUS_INVALID_PARAMETER;
+            goto exit;
+        }
+
         NT_ASSERT(pRequest->CurrentTransferDirection == SpbTransferDirectionToDevice);
 
         pRequest->CurrentTransferDirection = SpbTransferDirectionNone;
@@ -1550,53 +1613,6 @@ PbcRequestSetNthTransferInfo(
 }
 
 _Use_decl_annotations_
-ULONGLONG
-PbcRequestEstimateAllTransfersTimeUs(
-    PPBC_TARGET pTarget,
-    PPBC_REQUEST pRequest,
-    bool CountTransferDelays
-    )
-{
-    FuncEntry(TRACE_FLAG_TRANSFER);
-
-    PPBC_TARGET_SETTINGS pSettings = &pTarget->Settings;
-
-    //
-    // Estimated time in us for all transfers in a request excluding the delay time of each transfer
-    //
-
-    ULONGLONG allTransfersTimeEstimateUs =
-        ULONGLONG(pRequest->RequestLength) * ULONGLONG(BCM_SPI_SCLK_TICKS_PER_BYTE) * 1000000ull;
-    allTransfersTimeEstimateUs /= ULONGLONG(pSettings->ConnectionSpeed);
-
-    if (CountTransferDelays)
-    {
-        //
-        // Take each transfer delay time into account
-        //
-
-        SPB_TRANSFER_DESCRIPTOR descriptor;
-
-        for (ULONG i = 0; i < pRequest->TransferCount; i++)
-        {
-            SPB_TRANSFER_DESCRIPTOR_INIT(&descriptor);
-
-            SpbRequestGetTransferParameters(
-                pRequest->SpbRequest,
-                i,
-                &descriptor,
-                nullptr);
-
-            allTransfersTimeEstimateUs += ULONGLONG(descriptor.DelayInUs);
-        }
-    }
-
-    FuncExit(TRACE_FLAG_TRANSFER);
-
-    return allTransfersTimeEstimateUs;
-}
-
-_Use_decl_annotations_
 NTSTATUS
 OnRequest(
     PPBC_DEVICE pDevice,
@@ -1605,10 +1621,6 @@ OnRequest(
     )
 {
     NTSTATUS status = STATUS_SUCCESS;
-
-    //
-    // Acquire the device lock.
-    //
 
     WdfSpinLockAcquire(pDevice->Lock);
 
@@ -1645,19 +1657,19 @@ OnRequestPollMode(
     PPBC_DEVICE pDevice
     )
 {
-    // WdfSpinLockAcquire(pDevice->Lock);
-
     PPBC_REQUEST pRequest = pDevice->pCurrentTarget->pCurrentRequest;
 
 #if DBG
-    ULONGLONG transferTimeEstimateUs = PbcRequestEstimateAllTransfersTimeUs(pDevice->pCurrentTarget, pRequest, false);
+    ULONGLONG requestTimeNoDelayUs = ControllerEstimateRequestCompletionTimeUs(pDevice->pCurrentTarget, pRequest, false);
+    ULONGLONG requestTimeWithDelayUs = ControllerEstimateRequestCompletionTimeUs(pDevice->pCurrentTarget, pRequest, true);
 
     Trace(
         TRACE_LEVEL_INFORMATION,
         TRACE_FLAG_TRANSFER,
-        "Controller estimated request time to be %I64u us for %Iu bytes (SPBREQUEST %p, WDFDEVICE %p)",
-        transferTimeEstimateUs,
+        "Controller estimated request time to be %I64u us for %Iu bytes, with %I64u us spent in delays (SPBREQUEST %p, WDFDEVICE %p)",
+        requestTimeWithDelayUs,
         pRequest->RequestLength,
+        requestTimeWithDelayUs - requestTimeNoDelayUs,
         pRequest->SpbRequest,
         pDevice->FxDevice);
 #endif
@@ -1671,8 +1683,6 @@ OnRequestPollMode(
     {
         ControllerConfigForTargetAndActivate(pDevice);
     }
-
-    // WdfSpinLockRelease(pDevice->Lock);
 
     NTSTATUS status = STATUS_SUCCESS;
     bool bIsRequestComplete = false;
@@ -1715,11 +1725,7 @@ TransferPollModeThread(
     
     PPBC_DEVICE pDevice = GetDeviceContext((WDFDEVICE)StartContext);
 
-    Trace(
-        TRACE_LEVEL_VERBOSE,
-        TRACE_FLAG_TRANSFER,
-        "Transfer poll mode thread started. WDFDEVICE %p",
-        pDevice->FxDevice);
+
 
     //
     // Set thread affinity mask to allow rescheduling the current thread
@@ -1733,6 +1739,13 @@ TransferPollModeThread(
     ULONG noCpu0AffinityMask = (~(ULONG(~0x0) << numCpus) & ULONG(~0x1));
     KAFFINITY callerAffinity = KeSetSystemAffinityThreadEx(KAFFINITY(noCpu0AffinityMask));
     NT_ASSERTMSG("Affinity not set as asked", KeGetCurrentProcessorNumberEx(NULL) != 0);
+
+    Trace(
+        TRACE_LEVEL_INFORMATION,
+        TRACE_FLAG_TRANSFER,
+        "Transfer poll mode thread started on processor %u. WDFDEVICE %p",
+        KeGetCurrentProcessorNumberEx(NULL),
+        pDevice->FxDevice);
 
     NTSTATUS status;
 
@@ -1749,7 +1762,9 @@ TransferPollModeThread(
             KernelMode,
             FALSE,
             nullptr);
-        NT_ASSERTMSG("Other wake reasons not possible", status == STATUS_SUCCESS);
+        NT_ASSERTMSG(
+            "KeWaitForSingleObject non-success wake reason is not possible",
+            status == STATUS_SUCCESS);
 
         if (InterlockedOr(&pDevice->TransferThreadShutdown, 0))
             break;
@@ -1760,7 +1775,7 @@ TransferPollModeThread(
     KeRevertToUserAffinityThreadEx(callerAffinity);
 
     Trace(
-        TRACE_LEVEL_VERBOSE,
+        TRACE_LEVEL_INFORMATION,
         TRACE_FLAG_TRANSFER,
         "Transfer poll mode thread shutting down. WDFDEVICE %p",
         pDevice->FxDevice);
