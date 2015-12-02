@@ -187,7 +187,7 @@ ControllerDoOneTransferPollMode(
         bytesToWrite = pRequest->CurrentTransferWriteLength;
 
         Trace(
-            TRACE_LEVEL_INFORMATION, 
+            TRACE_LEVEL_VERBOSE, 
             TRACE_FLAG_TRANSFER,
             "Ready to write %Iu byte(s) for device 0x%lx", 
             bytesToWrite,
@@ -202,7 +202,7 @@ ControllerDoOneTransferPollMode(
         bytesToRead = pRequest->CurrentTransferReadLength;
 
         Trace(
-            TRACE_LEVEL_INFORMATION, 
+            TRACE_LEVEL_VERBOSE, 
             TRACE_FLAG_TRANSFER,
             "Ready to read %Iu byte(s) for device 0x%lx", 
             bytesToRead,
@@ -220,7 +220,7 @@ ControllerDoOneTransferPollMode(
         bytesToWrite = pRequest->CurrentTransferWriteLength;
 
         Trace(
-            TRACE_LEVEL_INFORMATION,
+            TRACE_LEVEL_VERBOSE,
             TRACE_FLAG_TRANSFER,
             "Ready to fullduplex write/read %Iu/%Iu byte(s) for device 0x%lx",
             bytesToWrite,
@@ -244,22 +244,26 @@ ControllerDoOneTransferPollMode(
     ULONGLONG numPolls = 0;
 #endif
 
-    Trace(
-        TRACE_LEVEL_INFORMATION,
-        TRACE_FLAG_TRANSFER,
-        "Controller will use Polling on processor %u to transfer %Iu bytes  (SPBREQUEST %p, WDFDEVICE %p)",
-        KeGetCurrentProcessorNumberEx(NULL),
-        transferByteLength,
-        pRequest->SpbRequest,
-        pDevice->FxDevice);
-
     // As long as there are bytes to transfer and request has not been canceled
     while ((bytesToWrite > 0) ||
            (zeroBytesToWrite > 0) ||
            (bytesToRead > 0) ||
            (readBytesToDiscard > 0))
     {
-        CS = READ_REGISTER_ULONG(&pDevice->pSPIRegisters->CS);
+        if (WdfRequestIsCanceled(pRequest->SpbRequest))
+        {
+            status = STATUS_CANCELLED;
+
+            Trace(
+                TRACE_LEVEL_INFORMATION,
+                TRACE_FLAG_TRANSFER,
+                "Terminating transfer due to request cancelled SPBREQUEST %p",
+                pRequest->SpbRequest);
+
+            break;
+        }
+
+        CS = READ_REGISTER_NOFENCE_ULONG(&pDevice->pSPIRegisters->CS);
 
         if (CS & BCM_SPI_REG_CS_TXD)
         {
@@ -279,33 +283,15 @@ ControllerDoOneTransferPollMode(
                     goto exit;
                 }
 
-                WRITE_REGISTER_ULONG(&pDevice->pSPIRegisters->FIFO, nextByte);
+                WRITE_REGISTER_NOFENCE_ULONG(&pDevice->pSPIRegisters->FIFO, nextByte);
                 --bytesToWrite;
                 ++writeByteIndex;
             }
             else if (zeroBytesToWrite)
             {
-                WRITE_REGISTER_ULONG(&pDevice->pSPIRegisters->FIFO, 0);
+                WRITE_REGISTER_NOFENCE_ULONG(&pDevice->pSPIRegisters->FIFO, 0);
                 --zeroBytesToWrite;
             }
-        }
-        else if (WdfRequestIsCanceled(pRequest->SpbRequest))
-        {
-            //
-            // If TX FIFO is full and can't take more bytes, then we 
-            // have some free cycles to check if a request is cancelled 
-            // and terminate transfer
-            //
-
-            status = STATUS_CANCELLED;
-
-            Trace(
-                TRACE_LEVEL_INFORMATION,
-                TRACE_FLAG_TRANSFER,
-                "Terminating transfer due to request cancelled SPBREQUEST %p",
-                pRequest->SpbRequest);
-
-            break;
         }
 
         if (CS & BCM_SPI_REG_CS_RXD)
@@ -314,7 +300,7 @@ ControllerDoOneTransferPollMode(
             // read buffer, otherwise discard read bytes
             if (bytesToRead > 0)
             {
-                nextByte = (UCHAR)READ_REGISTER_ULONG(&pDevice->pSPIRegisters->FIFO);
+                nextByte = (UCHAR)READ_REGISTER_NOFENCE_ULONG(&pDevice->pSPIRegisters->FIFO);
                 status = MdlSetByte(
                     pRequest->pCurrentTransferReadMdlChain, 
                     readByteIndex,
@@ -332,7 +318,7 @@ ControllerDoOneTransferPollMode(
             }
             else if (readBytesToDiscard > 0)
             {
-                (void)READ_REGISTER_ULONG(&pDevice->pSPIRegisters->FIFO);
+                (void)READ_REGISTER_NOFENCE_ULONG(&pDevice->pSPIRegisters->FIFO);
                 --readBytesToDiscard;
             }
         }
@@ -398,7 +384,7 @@ ControllerCompleteTransfer(
     NT_ASSERT(pRequest != NULL);
 
     Trace(
-        TRACE_LEVEL_INFORMATION,
+        TRACE_LEVEL_VERBOSE,
         TRACE_FLAG_TRANSFER,
         "Transfer (index %lu) with %!STATUS! with %Iu bytes for device 0x%lx (SPBREQUEST %p)",
         pRequest->CurrentTransferIndex,
@@ -630,27 +616,30 @@ ControllerDelayTransfer(
     }
     else
     {
-        //
-        // TODO: Use WDF High Resolution Timer to implement delays in millisecond
-        // resolution. Using standard WDF Timer will be a bad choice for delays < 15ms
-        // See: https://msdn.microsoft.com/en-us/library/windows/hardware/ff545575(v=vs.85).aspx
-        //
+        LARGE_INTEGER wait = { 0 };
+        wait.QuadPart = LONGLONG(WDF_REL_TIMEOUT_IN_US(ULONGLONG(pRequest->CurrentTransferDelayInUs)));
 
-        Trace(
-            TRACE_LEVEL_ERROR,
-            TRACE_FLAG_TRANSFER,
-            "Delaying more than 1ms is not implemented, requested delay %lu us WDFDEVICE %p",
-            pRequest->CurrentTransferDelayInUs,
-            pDevice->FxDevice);
-        status = STATUS_NOT_SUPPORTED;
-        goto exit;
+        status = KeDelayExecutionThread(KernelMode, FALSE, &wait);
+        if (!NT_SUCCESS(status))
+        {
+            Trace(
+                TRACE_LEVEL_ERROR,
+                TRACE_FLAG_TRANSFER,
+                "Delaying %lu failed for SPBREQUEST %p WDFDEVICE %p - %!STATUS!",
+                pRequest->CurrentTransferDelayInUs,
+                pRequest->SpbRequest,
+                pDevice->FxDevice,
+                status);
+            goto exit;
+        }
     }
 
     Trace(
         TRACE_LEVEL_INFORMATION,
         TRACE_FLAG_TRANSFER,
-        "Delayed %lu us before starting transfer for WDFDEVICE %p",
+        "Delayed %lu us before starting transfer for SPBREQUEST %p WDFDEVICE %p",
         pRequest->CurrentTransferDelayInUs,
+        pRequest->SpbRequest,
         pDevice->FxDevice);
 
 exit:
@@ -660,6 +649,7 @@ exit:
     return status;
 }
 
+_Use_decl_annotations_
 VOID
 ControllerConfigClock(
     PPBC_DEVICE pDevice,
@@ -703,29 +693,86 @@ ControllerConfigClock(
     FuncExit(TRACE_FLAG_TRANSFER);
 }
 
+_Use_decl_annotations_
 VOID
 ControllerActivateTransfer(
     PPBC_DEVICE pDevice)
 {
+    FuncEntry(TRACE_FLAG_TRANSFER);
+
     Trace(
-        TRACE_LEVEL_INFORMATION,
+        TRACE_LEVEL_VERBOSE,
         TRACE_FLAG_TRANSFER,
         "Activating transfer");
 
     NT_ASSERT((pDevice->SPI_CS_COPY & BCM_SPI_REG_CS_TA) == 0);
     pDevice->SPI_CS_COPY |= BCM_SPI_REG_CS_TA;
     WRITE_REGISTER_ULONG(&pDevice->pSPIRegisters->CS, pDevice->SPI_CS_COPY);
+
+    FuncExit(TRACE_FLAG_TRANSFER);
 }
 
+_Use_decl_annotations_
 VOID
 ControllerDeactivateTransfer(
     PPBC_DEVICE pDevice)
 {
+    FuncEntry(TRACE_FLAG_TRANSFER);
+
     Trace(
-        TRACE_LEVEL_INFORMATION,
+        TRACE_LEVEL_VERBOSE,
         TRACE_FLAG_TRANSFER,
         "Deactivating transfer");
 
     pDevice->SPI_CS_COPY &= ~BCM_SPI_REG_CS_TA;
     WRITE_REGISTER_ULONG(&pDevice->pSPIRegisters->CS, pDevice->SPI_CS_COPY);
+
+    FuncExit(TRACE_FLAG_TRANSFER);
+}
+
+_Use_decl_annotations_
+ULONGLONG
+ControllerEstimateRequestCompletionTimeUs(
+    PPBC_TARGET pTarget,
+    PPBC_REQUEST pRequest,
+    bool CountTransferDelays
+    )
+{
+    FuncEntry(TRACE_FLAG_TRANSFER);
+
+    PPBC_TARGET_SETTINGS pSettings = &pTarget->Settings;
+
+    //
+    // Estimated time in us for all transfers in a request excluding the delay time of each transfer
+    //
+
+    ULONGLONG allTransfersTimeEstimateUs =
+        ULONGLONG(pRequest->RequestLength) * ULONGLONG(BCM_SPI_SCLK_TICKS_PER_BYTE) * 1000000ull;
+    allTransfersTimeEstimateUs /= ULONGLONG(pSettings->ConnectionSpeed);
+
+    if (CountTransferDelays)
+    {
+        //
+        // Take each transfer delay time into account
+        //
+
+        SPB_TRANSFER_DESCRIPTOR descriptor;
+
+        for (ULONG i = 0; i < pRequest->TransferCount; i++)
+        {
+            SPB_TRANSFER_DESCRIPTOR_INIT(&descriptor);
+
+            SpbRequestGetTransferParameters(
+                pRequest->SpbRequest,
+                i,
+                &descriptor,
+                nullptr);
+
+            allTransfersTimeEstimateUs += ULONGLONG(descriptor.DelayInUs);
+        }
+    }
+
+    FuncExit(TRACE_FLAG_TRANSFER);
+
+    return allTransfersTimeEstimateUs;
 }

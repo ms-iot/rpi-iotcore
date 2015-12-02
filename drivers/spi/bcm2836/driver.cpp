@@ -34,7 +34,6 @@ DriverEntry(
     )
 {
     WDF_DRIVER_CONFIG driverConfig;
-    WDF_OBJECT_ATTRIBUTES driverAttributes;
 
     WDFDRIVER fxDriver;
 
@@ -46,14 +45,12 @@ DriverEntry(
 
     WDF_DRIVER_CONFIG_INIT(&driverConfig, OnDeviceAdd);
     driverConfig.DriverPoolTag = BCMS_POOL_TAG;
-
-    WDF_OBJECT_ATTRIBUTES_INIT(&driverAttributes);
-    driverAttributes.EvtCleanupCallback = OnDriverCleanup;
+    driverConfig.EvtDriverUnload = OnDriverUnload;
 
     status = WdfDriverCreate(
         DriverObject,
         RegistryPath,
-        &driverAttributes,
+        WDF_NO_OBJECT_ATTRIBUTES,
         &driverConfig,
         &fxDriver);
 
@@ -83,13 +80,11 @@ exit:
 
 _Use_decl_annotations_
 VOID
-OnDriverCleanup(
-    WDFOBJECT Object
+OnDriverUnload(
+    WDFDRIVER Driver
     )
 {
-    UNREFERENCED_PARAMETER(Object);
-
-    WPP_CLEANUP(NULL);
+    WPP_CLEANUP(Driver);
 }
 
 _Use_decl_annotations_
@@ -345,6 +340,11 @@ OnDeviceAdd(
     }
 
     {
+        KeInitializeEvent(
+            &pDevice->TransferThreadWakeEvt,
+            SynchronizationEvent,
+            FALSE);
+
         pDevice->TransferThreadShutdown = 0;
 
         OBJECT_ATTRIBUTES objectAttributes;
@@ -384,11 +384,6 @@ OnDeviceAdd(
         NT_ASSERT(NT_SUCCESS(status));
 
         ZwClose(transferThread);
-
-        KeInitializeEvent(
-            &pDevice->TransferThreadWakeEvt,
-            SynchronizationEvent,
-            FALSE);
     }
 
 exit:

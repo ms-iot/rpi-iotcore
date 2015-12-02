@@ -108,13 +108,6 @@ PbcRequestDoTransfer(
     _In_ PPBC_REQUEST pRequest
     );
 
-ULONGLONG
-PbcRequestEstimateAllTransfersTimeUs(
-    _In_ PPBC_TARGET pTarget,
-    _In_ PPBC_REQUEST pRequest,
-    bool CountTransferDelays
-    );
-
 NTSTATUS
 FORCEINLINE
 MdlGetByte(

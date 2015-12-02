@@ -77,18 +77,25 @@ ControllerDelayTransfer(
 
 VOID
 ControllerConfigClock(
-    PPBC_DEVICE pDevice,
+    _In_ PPBC_DEVICE pDevice,
     ULONG clockHz
     );
 
 VOID
 ControllerActivateTransfer(
-    PPBC_DEVICE pDevice
+    _In_ PPBC_DEVICE pDevice
     );
 
 VOID
 ControllerDeactivateTransfer(
-    PPBC_DEVICE pDevice
+    _In_ PPBC_DEVICE pDevice
+    );
+
+ULONGLONG
+ControllerEstimateRequestCompletionTimeUs(
+    _In_ PPBC_TARGET pTarget,
+    _In_ PPBC_REQUEST pRequest,
+    bool CountTransferDelays
     );
 
 #endif
