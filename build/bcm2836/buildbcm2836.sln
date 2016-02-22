@@ -11,6 +11,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "bcmspi", "..\..\drivers\spi
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "SerPL011", "..\..\drivers\uart\bcm2836\serPL011\SerPL011.vcxproj", "{FBCA6494-E3BE-4790-A521-C711CD24FF95}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "bcm2836pwm", "..\..\drivers\pwm\bcm2836\bcm2836pwm.vcxproj", "{2A752253-5057-42D3-95A0-DF29C45FD4F0}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|ARM = Debug|ARM
@@ -33,6 +35,10 @@ Global
 		{FBCA6494-E3BE-4790-A521-C711CD24FF95}.Debug|ARM.Build.0 = Debug|ARM
 		{FBCA6494-E3BE-4790-A521-C711CD24FF95}.Release|ARM.ActiveCfg = Release|ARM
 		{FBCA6494-E3BE-4790-A521-C711CD24FF95}.Release|ARM.Build.0 = Release|ARM
+		{2A752253-5057-42D3-95A0-DF29C45FD4F0}.Debug|ARM.ActiveCfg = Debug|ARM
+		{2A752253-5057-42D3-95A0-DF29C45FD4F0}.Debug|ARM.Build.0 = Debug|ARM
+		{2A752253-5057-42D3-95A0-DF29C45FD4F0}.Release|ARM.ActiveCfg = Release|ARM
+		{2A752253-5057-42D3-95A0-DF29C45FD4F0}.Release|ARM.Build.0 = Release|ARM
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

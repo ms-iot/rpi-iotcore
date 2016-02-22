@@ -1,0 +1,16 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="14.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <TARGETNAME Condition="'$(OVERRIDE_TARGETNAME)'!='true'">bcm2836pwm</TARGETNAME>
+    <TARGETTYPE Condition="'$(OVERRIDE_TARGETTYPE)'!='true'">DRIVER</TARGETTYPE>
+    <TARGET_DESTINATION Condition="'$(OVERRIDE_TARGET_DESTINATION)'!='true'">retail</TARGET_DESTINATION>
+    <MUI Condition="'$(OVERRIDE_MUI)'!='true'">0</MUI>
+    <MUI_COMMENT Condition="'$(OVERRIDE_MUI_COMMENT)'!='true'">This is not a user facing component</MUI_COMMENT>
+    <KMDF_VERSION_MAJOR Condition="'$(OVERRIDE_KMDF_VERSION_MAJOR)'!='true'">1</KMDF_VERSION_MAJOR>
+    <DRIVER_INFS Condition="'$(OVERRIDE_DRIVER_INFS)'!='true'">$(TARGETNAME).inf</DRIVER_INFS>
+    <TARGETLIBS Condition="'$(OVERRIDE_TARGETLIBS)'!='true'">$(TARGETLIBS)      $(DDK_LIB_PATH)\wpprecorder.lib</TARGETLIBS>
+    <MSC_WARNING_LEVEL Condition="'$(OVERRIDE_MSC_WARNING_LEVEL)'!='true'">/W4 /WX</MSC_WARNING_LEVEL>
+    <SOURCES Condition="'$(OVERRIDE_SOURCES)'!='true'">driver.cpp               device.cpp               pwm.cpp                  dma.cpp                  dmaInterrupt.cpp         resource.rc</SOURCES>
+    <RUN_WPP Condition="'$(OVERRIDE_RUN_WPP)'!='true'">$(SOURCES)     -scan:trace.h      -km     -DENABLE_WPP_RECORDER=1</RUN_WPP>
+  </PropertyGroup>
+</Project>
