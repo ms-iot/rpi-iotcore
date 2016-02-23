@@ -13,6 +13,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "SerPL011", "..\..\drivers\u
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "bcm2836pwm", "..\..\drivers\pwm\bcm2836\bcm2836pwm.vcxproj", "{2A752253-5057-42D3-95A0-DF29C45FD4F0}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "pi_miniuart", "..\..\drivers\uart\bcm2836\miniUart\pi_miniuart.vcxproj", "{1E4385E1-88E2-4F13-9AE2-B67C6B7A0F49}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|ARM = Debug|ARM
@@ -39,6 +41,12 @@ Global
 		{2A752253-5057-42D3-95A0-DF29C45FD4F0}.Debug|ARM.Build.0 = Debug|ARM
 		{2A752253-5057-42D3-95A0-DF29C45FD4F0}.Release|ARM.ActiveCfg = Release|ARM
 		{2A752253-5057-42D3-95A0-DF29C45FD4F0}.Release|ARM.Build.0 = Release|ARM
+		{1E4385E1-88E2-4F13-9AE2-B67C6B7A0F49}.Debug|ARM.ActiveCfg = Debug|ARM
+		{1E4385E1-88E2-4F13-9AE2-B67C6B7A0F49}.Debug|ARM.Build.0 = Debug|ARM
+		{1E4385E1-88E2-4F13-9AE2-B67C6B7A0F49}.Debug|ARM.Deploy.0 = Debug|ARM
+		{1E4385E1-88E2-4F13-9AE2-B67C6B7A0F49}.Release|ARM.ActiveCfg = Release|ARM
+		{1E4385E1-88E2-4F13-9AE2-B67C6B7A0F49}.Release|ARM.Build.0 = Release|ARM
+		{1E4385E1-88E2-4F13-9AE2-B67C6B7A0F49}.Release|ARM.Deploy.0 = Release|ARM
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
