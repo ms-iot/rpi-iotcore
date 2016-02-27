@@ -21,6 +21,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "EndpointsCommon", "..\..\dr
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "rpiwav", "rpiwav", "{5E0F66BD-F46A-410B-A693-E5958463B53F}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "rpiq", "..\..\drivers\mailbox\bcm2836\rpiq.vcxproj", "{78A52003-5B73-4EB4-AA11-C2FC34C6F9CF}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|ARM = Debug|ARM
@@ -59,6 +61,11 @@ Global
 		{1A0EEDCE-814F-4045-91BD-012E96D8F89F}.Debug|ARM.Build.0 = Debug|ARM
 		{1A0EEDCE-814F-4045-91BD-012E96D8F89F}.Release|ARM.ActiveCfg = Release|ARM
 		{1A0EEDCE-814F-4045-91BD-012E96D8F89F}.Release|ARM.Build.0 = Release|ARM
+		{78A52003-5B73-4EB4-AA11-C2FC34C6F9CF}.Debug|ARM.ActiveCfg = Debug|ARM
+		{78A52003-5B73-4EB4-AA11-C2FC34C6F9CF}.Debug|ARM.Build.0 = Debug|ARM
+		{78A52003-5B73-4EB4-AA11-C2FC34C6F9CF}.Release|ARM.ActiveCfg = Release|ARM
+		{78A52003-5B73-4EB4-AA11-C2FC34C6F9CF}.Release|ARM.Build.0 = Release|ARM
+		{78A52003-5B73-4EB4-AA11-C2FC34C6F9CF}.Release|ARM.Deploy.0 = Release|ARM
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
