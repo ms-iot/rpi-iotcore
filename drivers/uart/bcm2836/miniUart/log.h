@@ -1,6 +1,6 @@
 /*++
 
-Copyright (c) 1993  Microsoft Corporation
+Copyright (c) Microsoft Corporation
 :ts=4
 
 Module Name:

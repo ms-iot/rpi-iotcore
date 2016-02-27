@@ -53,6 +53,37 @@ enum : ULONG {
     BCM_I2C_POOL_TAG = 'IMCB'
 };
 
+namespace _DETAILS {
+
+// Disables template argument deduction from Forward helper
+template<class T>
+struct IDENTITY {
+    // Map T to type unchanged
+    typedef T TYPE;
+};
+
+template<class T>
+inline T&& Forward (typename IDENTITY<T>::TYPE& arg) throw()
+{
+    // Forward arg, given explicitly specified Type parameter
+    return (T&&)arg;
+}
+
+} // namespace _DETAILS
+
+template <typename Fn>
+struct _FINALLY : public Fn {
+    __forceinline _FINALLY (Fn&& Func) : Fn(_DETAILS::Forward<Fn>(Func)) {}
+    __forceinline _FINALLY (const _FINALLY&); // generate link error if copy constructor is called
+    __forceinline ~_FINALLY () { this->operator()(); }
+};
+
+template <typename Fn>
+__forceinline _FINALLY<Fn> Finally (Fn&& Func)
+{
+    return {_DETAILS::Forward<Fn>(Func)};
+}
+
 EVT_WDF_DRIVER_DEVICE_ADD OnDeviceAdd;
 
 EVT_WDF_DRIVER_UNLOAD OnDriverUnload;

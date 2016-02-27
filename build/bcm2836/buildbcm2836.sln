@@ -16,6 +16,9 @@ EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "pi_miniuart", "..\..\drivers\uart\bcm2836\miniUart\pi_miniuart.vcxproj", "{1E4385E1-88E2-4F13-9AE2-B67C6B7A0F49}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "rpiwav", "..\..\drivers\audio\bcm2836\rpiwav\rpiwav.vcxproj", "{3A038574-E9E7-4984-8EAA-DD1192C2498E}"
+	ProjectSection(ProjectDependencies) = postProject
+		{1A0EEDCE-814F-4045-91BD-012E96D8F89F} = {1A0EEDCE-814F-4045-91BD-012E96D8F89F}
+	EndProjectSection
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "EndpointsCommon", "..\..\drivers\audio\bcm2836\EndpointsCommon\EndpointsCommon.vcxproj", "{1A0EEDCE-814F-4045-91BD-012E96D8F89F}"
 EndProject

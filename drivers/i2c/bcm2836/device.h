@@ -27,6 +27,12 @@ Revision History:
 #define I2C_MAX_ADDRESS                             0x7f
 
 //
+// Optional Device Parameters REG_DWORD value to set clock stretch timeout
+// in SCL clock cycles. Setting this to 0 disables clock stretch timeout.
+//
+#define REGSTR_VAL_CLOCK_STRETCH_TIMEOUT L"ClockStretchTimeout"
+
+//
 // I2C Serial Bus ACPI Descriptor
 // See ACPI 5.0 spec table 6-192
 //
@@ -65,6 +71,7 @@ struct BCM_I2C_DEVICE_CONTEXT {
     BCM_I2C_REGISTERS* RegistersPtr;
     PHYSICAL_ADDRESS RegistersPhysicalAddress;
     ULONG RegistersLength;
+    ULONG ClockStretchTimeout;  // in units of SCL clock cycles
 };
 
 struct BCM_I2C_TARGET_CONTEXT {

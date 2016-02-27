@@ -110,16 +110,27 @@ void InitializeTransfer (
         (BCM_I2C_REG_DEL_FEDL << 16) | (clockDivider / 2 - 50));
 
     // program slave address
+    static_assert(
+        (I2C_MAX_ADDRESS & ~BCM_I2C_REG_ADDRESS_MASK) == 0,
+        "Verifying that I2C_MAX_ADDRESS will fit in Address register");
     NT_ASSERT(TargetPtr->Address <= I2C_MAX_ADDRESS);
     WRITE_REGISTER_NOFENCE_ULONG(
         &RegistersPtr->SlaveAddress,
-        TargetPtr->Address & BCM_I2C_REG_ADDRESS_MASK);
+        TargetPtr->Address);
+
+    //
+    // There is currently a compiler bug that causes writes to two adjacent
+    // registers to be combined into a single strd instruction. Inserting the
+    // following if statement prevents the optimization.
+    //
+    if (DataLength > BCM_I2C_MAX_TRANSFER_LENGTH) return;
 
     // Program data length
+    static_assert(
+        (BCM_I2C_MAX_TRANSFER_LENGTH & ~BCM_I2C_REG_DLEN_MASK) == 0,
+        "Verifying that BCM_I2C_MAX_TRANSFER_LENGTH will fit in DLEN register");
     NT_ASSERT(DataLength <= BCM_I2C_MAX_TRANSFER_LENGTH);
-    WRITE_REGISTER_NOFENCE_ULONG(
-        &RegistersPtr->DataLength,
-        DataLength & BCM_I2C_REG_DLEN_MASK);
+    WRITE_REGISTER_NOFENCE_ULONG(&RegistersPtr->DataLength, DataLength);
 }
 
 //
@@ -1237,7 +1248,7 @@ NTSTATUS ProcessRequestCompletion (
                 // necessarily clobberred when the read was queued.
                 // Report a partial transfer of 0 bytes.
                 //
-                BSC_LOG_ERROR("The write was NAKed before all bytes could be transmitted - partial transfer.");
+                BSC_LOG_ERROR("The write was NAK-ed before all bytes could be transmitted - partial transfer.");
                 *RequestInformationPtr = 0;
                 return STATUS_SUCCESS;
             } else {
@@ -1486,9 +1497,13 @@ NTSTATUS OnD0Entry (
     WRITE_REGISTER_NOFENCE_ULONG(
         &registersPtr->DataDelay,
         BCM_I2C_REG_DEL_DEFAULT);
+
+    NT_ASSERT(
+        (devicePtr->ClockStretchTimeout & BCM_I2C_REG_CLKT_TOUT_MASK) ==
+         devicePtr->ClockStretchTimeout);
     WRITE_REGISTER_NOFENCE_ULONG(
         &registersPtr->ClockStretchTimeout,
-        BCM_I2C_REG_CLKT_TOUT);
+        devicePtr->ClockStretchTimeout);
 
     return STATUS_SUCCESS;
 }
