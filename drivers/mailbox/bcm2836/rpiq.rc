@@ -1,0 +1,12 @@
+//
+//    Copyright (C) Microsoft.  All rights reserved.
+//
+#include <verrsrc.h>
+#include <ntverp.h>
+
+#define VER_FILETYPE                VFT_DRV
+#define VER_FILESUBTYPE             VFT2_DRV_SYSTEM
+#define VER_FILEDESCRIPTION_STR     "BCM2836 RPIQ Driver"
+#define VER_INTERNALNAME_STR        "rpiq.sys"
+
+#include "common.ver"

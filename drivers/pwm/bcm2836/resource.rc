@@ -1,0 +1,5 @@
+#define	VER_FILETYPE	VFT_DRV
+#define	VER_FILESUBTYPE	VFT2_DRV_SYSTEM
+#define VER_FILEDESCRIPTION_STR     "Broadcom PWM Controller Driver"
+#define VER_INTERNALNAME_STR        "bcm2836pwm.sys"
+#define VER_ORIGINALFILENAME_STR    "bcm2836pwm.sys"

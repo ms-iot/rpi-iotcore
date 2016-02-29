@@ -74,6 +74,7 @@ struct BCM_I2C_REGISTERS {
 // I2C.DLEN DataLength Register bit fields
 //
 #define BCM_I2C_REG_DLEN_MASK               0x0000FFFF
+#define BCM_I2C_MAX_TRANSFER_LENGTH         BCM_I2C_REG_DLEN_MASK
 
 //
 // I2C.A Address Register bit fields
@@ -99,7 +100,8 @@ struct BCM_I2C_REGISTERS {
 //
 // I2C.CLKT ClockStretchTimeout Register bit fields
 //
-#define BCM_I2C_REG_CLKT_TOUT               0x0000FFFF
+#define BCM_I2C_REG_CLKT_TOUT_MASK          0x0000FFFF
+#define BCM_I2C_REG_CLKT_TOUT_DEFAULT       BCM_I2C_REG_CLKT_TOUT_MASK
 
 //
 // I2C ClockDivider
@@ -109,6 +111,6 @@ struct BCM_I2C_REGISTERS {
 #define BCM_I2C_MAX_CONNECTION_SPEED        400000      // highest tested speed
 #define BCM_I2C_REG_CDIV_DEFAULT            ((BCM_I2C_CORE_CLOCK / 100000) & BCM_I2C_REG_CDIV_MASK)
 
-#define BCM_I2C_MAX_TRANSFER_LENGTH         16384       // largest tested size
+
 
 #endif // _BCMI2C_H_

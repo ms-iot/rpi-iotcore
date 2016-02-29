@@ -1,13 +1,30 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 14
-VisualStudioVersion = 14.0.23107.0
+VisualStudioVersion = 14.0.24720.0
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "bcmgpio", "..\..\drivers\gpio\bcm2836\bcmgpio.vcxproj", "{381A9C49-78D7-4B6F-98CD-5084F70B1207}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "bcmi2c", "..\..\drivers\i2c\bcm2836\bcmi2c.vcxproj", "{F9C0FC21-5C51-46B9-AEAA-AACED79B43D3}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "bcmspi", "..\..\drivers\spi\bcm2836\bcmspi.vcxproj", "{2AB8966A-787C-4105-9541-391C3B2BA973}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "SerPL011", "..\..\drivers\uart\bcm2836\serPL011\SerPL011.vcxproj", "{FBCA6494-E3BE-4790-A521-C711CD24FF95}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "bcm2836pwm", "..\..\drivers\pwm\bcm2836\bcm2836pwm.vcxproj", "{2A752253-5057-42D3-95A0-DF29C45FD4F0}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "pi_miniuart", "..\..\drivers\uart\bcm2836\miniUart\pi_miniuart.vcxproj", "{1E4385E1-88E2-4F13-9AE2-B67C6B7A0F49}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "rpiwav", "..\..\drivers\audio\bcm2836\rpiwav\rpiwav.vcxproj", "{3A038574-E9E7-4984-8EAA-DD1192C2498E}"
+	ProjectSection(ProjectDependencies) = postProject
+		{1A0EEDCE-814F-4045-91BD-012E96D8F89F} = {1A0EEDCE-814F-4045-91BD-012E96D8F89F}
+	EndProjectSection
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "EndpointsCommon", "..\..\drivers\audio\bcm2836\EndpointsCommon\EndpointsCommon.vcxproj", "{1A0EEDCE-814F-4045-91BD-012E96D8F89F}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "rpiwav", "rpiwav", "{5E0F66BD-F46A-410B-A693-E5958463B53F}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "rpiq", "..\..\drivers\mailbox\bcm2836\rpiq.vcxproj", "{78A52003-5B73-4EB4-AA11-C2FC34C6F9CF}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -27,8 +44,37 @@ Global
 		{2AB8966A-787C-4105-9541-391C3B2BA973}.Debug|ARM.Build.0 = Debug|ARM
 		{2AB8966A-787C-4105-9541-391C3B2BA973}.Release|ARM.ActiveCfg = Release|ARM
 		{2AB8966A-787C-4105-9541-391C3B2BA973}.Release|ARM.Build.0 = Release|ARM
+		{FBCA6494-E3BE-4790-A521-C711CD24FF95}.Debug|ARM.ActiveCfg = Debug|ARM
+		{FBCA6494-E3BE-4790-A521-C711CD24FF95}.Debug|ARM.Build.0 = Debug|ARM
+		{FBCA6494-E3BE-4790-A521-C711CD24FF95}.Release|ARM.ActiveCfg = Release|ARM
+		{FBCA6494-E3BE-4790-A521-C711CD24FF95}.Release|ARM.Build.0 = Release|ARM
+		{2A752253-5057-42D3-95A0-DF29C45FD4F0}.Debug|ARM.ActiveCfg = Debug|ARM
+		{2A752253-5057-42D3-95A0-DF29C45FD4F0}.Debug|ARM.Build.0 = Debug|ARM
+		{2A752253-5057-42D3-95A0-DF29C45FD4F0}.Release|ARM.ActiveCfg = Release|ARM
+		{2A752253-5057-42D3-95A0-DF29C45FD4F0}.Release|ARM.Build.0 = Release|ARM
+		{1E4385E1-88E2-4F13-9AE2-B67C6B7A0F49}.Debug|ARM.ActiveCfg = Debug|ARM
+		{1E4385E1-88E2-4F13-9AE2-B67C6B7A0F49}.Debug|ARM.Build.0 = Debug|ARM
+		{1E4385E1-88E2-4F13-9AE2-B67C6B7A0F49}.Release|ARM.ActiveCfg = Release|ARM
+		{1E4385E1-88E2-4F13-9AE2-B67C6B7A0F49}.Release|ARM.Build.0 = Release|ARM
+		{3A038574-E9E7-4984-8EAA-DD1192C2498E}.Debug|ARM.ActiveCfg = Debug|ARM
+		{3A038574-E9E7-4984-8EAA-DD1192C2498E}.Debug|ARM.Build.0 = Debug|ARM
+		{3A038574-E9E7-4984-8EAA-DD1192C2498E}.Release|ARM.ActiveCfg = Release|ARM
+		{3A038574-E9E7-4984-8EAA-DD1192C2498E}.Release|ARM.Build.0 = Release|ARM
+		{1A0EEDCE-814F-4045-91BD-012E96D8F89F}.Debug|ARM.ActiveCfg = Debug|ARM
+		{1A0EEDCE-814F-4045-91BD-012E96D8F89F}.Debug|ARM.Build.0 = Debug|ARM
+		{1A0EEDCE-814F-4045-91BD-012E96D8F89F}.Release|ARM.ActiveCfg = Release|ARM
+		{1A0EEDCE-814F-4045-91BD-012E96D8F89F}.Release|ARM.Build.0 = Release|ARM
+		{78A52003-5B73-4EB4-AA11-C2FC34C6F9CF}.Debug|ARM.ActiveCfg = Debug|ARM
+		{78A52003-5B73-4EB4-AA11-C2FC34C6F9CF}.Debug|ARM.Build.0 = Debug|ARM
+		{78A52003-5B73-4EB4-AA11-C2FC34C6F9CF}.Release|ARM.ActiveCfg = Release|ARM
+		{78A52003-5B73-4EB4-AA11-C2FC34C6F9CF}.Release|ARM.Build.0 = Release|ARM
+		{78A52003-5B73-4EB4-AA11-C2FC34C6F9CF}.Release|ARM.Deploy.0 = Release|ARM
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{3A038574-E9E7-4984-8EAA-DD1192C2498E} = {5E0F66BD-F46A-410B-A693-E5958463B53F}
+		{1A0EEDCE-814F-4045-91BD-012E96D8F89F} = {5E0F66BD-F46A-410B-A693-E5958463B53F}
 	EndGlobalSection
 EndGlobal

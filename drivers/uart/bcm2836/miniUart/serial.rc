@@ -1,0 +1,18 @@
+//
+//    Copyright (C) Microsoft.  All rights reserved.
+//
+#include <windows.h>
+#include <ntverp.h>
+
+#define VER_FILETYPE              VFT_DRV
+#define VER_FILESUBTYPE           VFT2_DRV_SYSTEM
+#define VER_FILEDESCRIPTION_STR   "BCM283x Mini UART Driver"
+#define VER_INTERNALNAME_STR      "pi_miniUart.sys"
+#define VER_ORIGINALFILENAME_STR  "pi_miniUart.sys"
+
+// Ensure that VS_VERSION_INFO in not defined
+#ifdef VS_VERSION_INFO 
+#undef VS_VERSION_INFO 
+#endif
+
+#include "common.ver"

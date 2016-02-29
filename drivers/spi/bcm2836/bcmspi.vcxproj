@@ -72,6 +72,8 @@
     <ClCompile>
       <WppRecorderEnabled>true</WppRecorderEnabled>
       <EnablePREfast>true</EnablePREfast>
+      <WppEnabled>true</WppEnabled>
+      <WppScanConfigurationData>spitrace.h</WppScanConfigurationData>
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM'">
@@ -79,6 +81,7 @@
       <EnablePREfast>true</EnablePREfast>
       <WppRecorderEnabled>true</WppRecorderEnabled>
       <WppEnabled>true</WppEnabled>
+      <WppScanConfigurationData>spitrace.h</WppScanConfigurationData>
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemGroup>

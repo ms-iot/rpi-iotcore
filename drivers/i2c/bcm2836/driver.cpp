@@ -93,6 +93,70 @@ NTSTATUS OnDeviceAdd (WDFDRIVER /*WdfDriver*/, WDFDEVICE_INIT* DeviceInitPtr)
     }
 
     //
+    // Query registry for ClockStretchTimeout
+    //
+    {
+        WDFKEY wdfKey;
+        status = WdfDeviceOpenRegistryKey(
+                wdfDevice,
+                PLUGPLAY_REGKEY_DEVICE,
+                KEY_QUERY_VALUE,
+                WDF_NO_OBJECT_ATTRIBUTES,
+                &wdfKey);
+        if (!NT_SUCCESS(status)) {
+            BSC_LOG_ERROR(
+                "Failed to open device parameters registry key. (status=%!STATUS!)",
+                status);
+            return status;
+        }
+        auto closeRegKey = Finally([&] {
+            PAGED_CODE();
+            WdfRegistryClose(wdfKey);
+        });
+
+        DECLARE_CONST_UNICODE_STRING(
+            regValString,
+            REGSTR_VAL_CLOCK_STRETCH_TIMEOUT);
+
+        ULONG clockStretchTimeout;
+        status = WdfRegistryQueryULong(
+                wdfKey,
+                &regValString,
+                &clockStretchTimeout);
+        if (NT_SUCCESS(status)) {
+            if ((clockStretchTimeout & BCM_I2C_REG_CLKT_TOUT_MASK) !=
+                 clockStretchTimeout) {
+
+                BSC_LOG_ERROR(
+                    "Clock stretch timeout value from registry is out of range. (clockStretchTimeout=0x%x, BCM_I2C_REG_CLKT_TOUT_MASK=0x%x)",
+                    clockStretchTimeout,
+                    BCM_I2C_REG_CLKT_TOUT_MASK);
+                return STATUS_INVALID_PARAMETER;
+            }
+
+            BSC_LOG_INFORMATION(
+                "Using ClockStretchTimeout value from registry. (clockStretchTimeout=0x%x)",
+                clockStretchTimeout);
+
+        } else {
+            switch (status) {
+            case STATUS_OBJECT_NAME_NOT_FOUND:
+                clockStretchTimeout = BCM_I2C_REG_CLKT_TOUT_DEFAULT;
+                status = STATUS_SUCCESS;
+                break;
+            default:
+                BSC_LOG_ERROR(
+                    "Failed to query clock stretch timeout from registry. (status=%!STATUS!, REGSTR_VAL_CLOCK_STRETCH_TIMEOUT=%S)",
+                    status,
+                    REGSTR_VAL_CLOCK_STRETCH_TIMEOUT);
+                return status;
+            }
+        }
+
+        devicePtr->ClockStretchTimeout = clockStretchTimeout;
+    }
+
+    //
     // Ensure device is disable-able
     //
     {
@@ -181,7 +245,7 @@ NTSTATUS OnDeviceAdd (WDFDRIVER /*WdfDriver*/, WDFDEVICE_INIT* DeviceInitPtr)
     }
     devicePtr->InterruptContextPtr = interruptContextPtr;
 
-    NT_ASSERT(status == STATUS_SUCCESS);
+    NT_ASSERT(NT_SUCCESS(status));
     return STATUS_SUCCESS;
 }
 
@@ -242,8 +306,8 @@ NTSTATUS DriverEntry (
         }
     }
 
-    NT_ASSERT(status == STATUS_SUCCESS);
-    return status;
+    NT_ASSERT(NT_SUCCESS(status));
+    return STATUS_SUCCESS;
 }
 
 BCM_I2C_INIT_SEGMENT_END; //===================================================
