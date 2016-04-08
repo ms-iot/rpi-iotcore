@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 14
-VisualStudioVersion = 14.0.24720.0
+VisualStudioVersion = 14.0.25123.0
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "bcmgpio", "..\..\drivers\gpio\bcm2836\bcmgpio.vcxproj", "{381A9C49-78D7-4B6F-98CD-5084F70B1207}"
 EndProject
@@ -25,6 +25,10 @@ EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "rpiwav", "rpiwav", "{5E0F66BD-F46A-410B-A693-E5958463B53F}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "rpiq", "..\..\drivers\mailbox\bcm2836\rpiq.vcxproj", "{78A52003-5B73-4EB4-AA11-C2FC34C6F9CF}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "rpisdhc", "..\..\drivers\sd\bcm2836\rpisdhc\rpisdhc.vcxproj", "{35EBB0B3-001F-45CE-8B60-F50DB4295138}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "bcm2836sdhc", "..\..\drivers\sd\bcm2836\bcm2836sdhc\bcm2836sdhc.vcxproj", "{FC32ADC1-CBD3-412E-A7C0-E2BE04B14232}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -69,6 +73,16 @@ Global
 		{78A52003-5B73-4EB4-AA11-C2FC34C6F9CF}.Release|ARM.ActiveCfg = Release|ARM
 		{78A52003-5B73-4EB4-AA11-C2FC34C6F9CF}.Release|ARM.Build.0 = Release|ARM
 		{78A52003-5B73-4EB4-AA11-C2FC34C6F9CF}.Release|ARM.Deploy.0 = Release|ARM
+		{35EBB0B3-001F-45CE-8B60-F50DB4295138}.Debug|ARM.ActiveCfg = Debug|Arm
+		{35EBB0B3-001F-45CE-8B60-F50DB4295138}.Debug|ARM.Build.0 = Debug|Arm
+		{35EBB0B3-001F-45CE-8B60-F50DB4295138}.Release|ARM.ActiveCfg = Release|Arm
+		{35EBB0B3-001F-45CE-8B60-F50DB4295138}.Release|ARM.Build.0 = Release|Arm
+		{35EBB0B3-001F-45CE-8B60-F50DB4295138}.Release|ARM.Deploy.0 = Release|Arm
+		{FC32ADC1-CBD3-412E-A7C0-E2BE04B14232}.Debug|ARM.ActiveCfg = Debug|ARM
+		{FC32ADC1-CBD3-412E-A7C0-E2BE04B14232}.Debug|ARM.Build.0 = Debug|ARM
+		{FC32ADC1-CBD3-412E-A7C0-E2BE04B14232}.Release|ARM.ActiveCfg = Release|ARM
+		{FC32ADC1-CBD3-412E-A7C0-E2BE04B14232}.Release|ARM.Build.0 = Release|ARM
+		{FC32ADC1-CBD3-412E-A7C0-E2BE04B14232}.Release|ARM.Deploy.0 = Release|ARM
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

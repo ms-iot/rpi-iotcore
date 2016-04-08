@@ -1,0 +1,14 @@
+//
+//    Copyright (C) Microsoft.  All rights reserved.
+//
+#include <windows.h>
+
+#include <ntverp.h>
+
+#define VER_FILETYPE                VFT_DRV
+#define VER_FILESUBTYPE             VFT2_DRV_SYSTEM
+#define VER_FILEDESCRIPTION_STR     "RaspberryPi SD2.0 Host Controller Driver"
+#define VER_INTERNALNAME_STR        "rpisdhc.sys"
+#define VER_ORIGINALFILENAME_STR    "rpisdhc.sys"
+
+#include "common.ver"
