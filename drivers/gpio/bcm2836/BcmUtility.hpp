@@ -56,6 +56,8 @@
 //
 // Default memory allocation and object construction for C++ modules
 //
+#pragma warning(push)
+#pragma warning(disable:4595)
 
 inline void* __cdecl operator new (
     size_t Size,
@@ -125,6 +127,8 @@ inline void __cdecl operator delete[] (void*, void*) throw ()
 
 inline void __cdecl operator delete (void*, unsigned int) throw ()
 {} // void operator delete (void*, unsigned int)
+
+#pragma warning(pop)
 
 //
 // class BITFIELD_ARRAY<...>

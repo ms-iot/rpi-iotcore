@@ -8,7 +8,9 @@ Abstract:
 --*/
 
 //4127: conditional expression is constant
+//4595: illegal inline operator
 #pragma warning (disable : 4127)
+#pragma warning (disable : 4595)
 
 #include <rpiwav.h>
 #include "basetopo.h"
