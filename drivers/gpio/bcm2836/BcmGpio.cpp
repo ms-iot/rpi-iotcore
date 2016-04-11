@@ -19,6 +19,33 @@
 
 BCM_NONPAGED_SEGMENT_BEGIN; //=================================================
 
+//
+// Placement new definition. Note <new> cannot be included in kernel mode.
+//
+
+void* __cdecl operator new (size_t, void* Ptr) throw ()
+{
+    return Ptr;
+} // operator new (size_t, void*)
+
+//
+// Definition of delete operator for C++ modules.
+//
+
+void __cdecl operator delete (
+    void* Ptr
+    ) throw ()
+{
+    if (Ptr) ExFreePool(Ptr);
+} // operator delete (void*)
+
+//
+// Definition of delete operator for C++ modules. VS2015 compatible.
+//
+
+void __cdecl operator delete (void*, unsigned int) throw ()
+{} // void operator delete (void*, unsigned int)
+
 namespace { // static
 
     typedef BCM_GPIO::_DPC_CONTEXT DPC_CONTEXT;
