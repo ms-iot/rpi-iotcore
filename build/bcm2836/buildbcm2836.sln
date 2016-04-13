@@ -30,6 +30,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "rpisdhc", "..\..\drivers\sd
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "bcm2836sdhc", "..\..\drivers\sd\bcm2836\bcm2836sdhc\bcm2836sdhc.vcxproj", "{FC32ADC1-CBD3-412E-A7C0-E2BE04B14232}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "bcmauxspi", "..\..\drivers\spi\bcmauxspi\bcmauxspi.vcxproj", "{74219FC7-92D3-4477-A729-A5CEB965B338}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|ARM = Debug|ARM
@@ -83,6 +85,12 @@ Global
 		{FC32ADC1-CBD3-412E-A7C0-E2BE04B14232}.Release|ARM.ActiveCfg = Release|ARM
 		{FC32ADC1-CBD3-412E-A7C0-E2BE04B14232}.Release|ARM.Build.0 = Release|ARM
 		{FC32ADC1-CBD3-412E-A7C0-E2BE04B14232}.Release|ARM.Deploy.0 = Release|ARM
+		{74219FC7-92D3-4477-A729-A5CEB965B338}.Debug|ARM.ActiveCfg = Debug|ARM
+		{74219FC7-92D3-4477-A729-A5CEB965B338}.Debug|ARM.Build.0 = Debug|ARM
+		{74219FC7-92D3-4477-A729-A5CEB965B338}.Debug|ARM.Deploy.0 = Debug|ARM
+		{74219FC7-92D3-4477-A729-A5CEB965B338}.Release|ARM.ActiveCfg = Release|ARM
+		{74219FC7-92D3-4477-A729-A5CEB965B338}.Release|ARM.Build.0 = Release|ARM
+		{74219FC7-92D3-4477-A729-A5CEB965B338}.Release|ARM.Deploy.0 = Release|ARM
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
