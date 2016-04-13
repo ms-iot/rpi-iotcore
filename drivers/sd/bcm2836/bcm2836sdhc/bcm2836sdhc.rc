@@ -11,5 +11,10 @@
 #define VER_INTERNALNAME_STR        "bcm2836sdhc.sys"
 #define VER_ORIGINALFILENAME_STR    "bcm2836sdhc.sys"
 
+// Ensure that VS_VERSION_INFO is not defined
+#ifdef VS_VERSION_INFO
+#undef VS_VERSION_INFO
+#endif
+
 #include "common.ver"
 

@@ -11,6 +11,5 @@
     <TARGETLIBS Condition="'$(OVERRIDE_TARGETLIBS)'!='true'">$(TARGETLIBS)      $(DDK_LIB_PATH)\wpprecorder.lib</TARGETLIBS>
     <MSC_WARNING_LEVEL Condition="'$(OVERRIDE_MSC_WARNING_LEVEL)'!='true'">/W4 /WX</MSC_WARNING_LEVEL>
     <SOURCES Condition="'$(OVERRIDE_SOURCES)'!='true'">driver.cpp               device.cpp               pwm.cpp                  dma.cpp                  dmaInterrupt.cpp         resource.rc</SOURCES>
-    <RUN_WPP Condition="'$(OVERRIDE_RUN_WPP)'!='true'">$(SOURCES)     -scan:trace.h      -km     -DENABLE_WPP_RECORDER=1</RUN_WPP>
   </PropertyGroup>
 </Project>

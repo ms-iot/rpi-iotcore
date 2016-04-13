@@ -71,7 +71,7 @@ typedef struct _PL011_DEVICE_EXTENSION
     //
     // Device open count, used for initialization/cleanup...
     //
-    ULONG                           OpenCount;
+    LONG                           OpenCount;
 
     //
     // If we are conflicting with the serial debugger.

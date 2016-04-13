@@ -608,7 +608,6 @@ PL011HwSetBaudRate(
     // 6) Update current configuration
     //
     {
-        PL011_DEVICE_EXTENSION* devExtPtr = PL011DeviceGetExtension(WdfDevice);
         KIRQL oldIrql = ExAcquireSpinLockExclusive(&devExtPtr->ConfigLock);
 
         devExtPtr->CurrentConfiguration.UartSerialBusDescriptor.BaudRate = 

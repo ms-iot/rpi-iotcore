@@ -75,7 +75,10 @@
       <WarningVersion>18</WarningVersion>
       <DisableSpecificWarnings>4296;%(DisableSpecificWarnings)</DisableSpecificWarnings>
       <WppEnabled>true</WppEnabled>
+      <WppKernelMode>true</WppKernelMode>
       <WppRecorderEnabled>true</WppRecorderEnabled>
+      <WppAddAlternateNameToMessageGUID>SerPL011</WppAddAlternateNameToMessageGUID>
+      <WppPreprocessorDefinitions>ENABLE_WPP_RECORDER=1;WPP_EMIT_FUNC_NAME</WppPreprocessorDefinitions>
       <WppScanConfigurationData>PL011logging.h</WppScanConfigurationData>
       <EnablePREfast>false</EnablePREfast>
     </ClCompile>
@@ -85,7 +88,10 @@
       <WarningVersion>18</WarningVersion>
       <DisableSpecificWarnings>4296;%(DisableSpecificWarnings)</DisableSpecificWarnings>
       <WppEnabled>true</WppEnabled>
+      <WppKernelMode>true</WppKernelMode>
       <WppRecorderEnabled>true</WppRecorderEnabled>
+      <WppAddAlternateNameToMessageGUID>SerPL011</WppAddAlternateNameToMessageGUID>
+      <WppPreprocessorDefinitions>ENABLE_WPP_RECORDER=1;WPP_EMIT_FUNC_NAME</WppPreprocessorDefinitions>
       <WppScanConfigurationData>PL011logging.h</WppScanConfigurationData>
       <EnablePREfast>false</EnablePREfast>
     </ClCompile>

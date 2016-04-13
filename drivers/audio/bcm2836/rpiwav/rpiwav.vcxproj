@@ -80,11 +80,19 @@
     <ClCompile>
       <AdditionalIncludeDirectories>..\..\..\pwm\bcm2836;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
+    <Link>
+      <AdditionalDependencies>EndpointsCommon.lib;%(AdditionalDependencies);$(ConvertedTargetLibs);$(ConvertedUMLIBS)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(OutputPath); $(OBJ_PATH)\..\EndpointsCommon\$(O)\</AdditionalLibraryDirectories>
+    </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM'">
     <ClCompile>
       <AdditionalIncludeDirectories>..\..\..\pwm\bcm2836;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
+    <Link>
+      <AdditionalDependencies>EndpointsCommon.lib;%(AdditionalDependencies);$(ConvertedTargetLibs);$(ConvertedUMLIBS)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(OutputPath); $(OBJ_PATH)\..\EndpointsCommon\$(O)\</AdditionalLibraryDirectories>
+    </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
     <!-- We only add items (e.g. form ClSourceFiles) that do not already exist (e.g in the ClCompile list), this avoids duplication -->

@@ -11,4 +11,9 @@
 #define VER_INTERNALNAME_STR        "rpisdhc.sys"
 #define VER_ORIGINALFILENAME_STR    "rpisdhc.sys"
 
+// Ensure that VS_VERSION_INFO is not defined
+#ifdef VS_VERSION_INFO
+#undef VS_VERSION_INFO
+#endif
+
 #include "common.ver"
