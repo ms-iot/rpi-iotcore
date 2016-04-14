@@ -1,0 +1,14 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="14.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <TARGETNAME Condition="'$(OVERRIDE_TARGETNAME)'!='true'">vcos_win32_kern_generic</TARGETNAME>
+    <TARGETTYPE Condition="'$(OVERRIDE_TARGETTYPE)'!='true'">LIBRARY</TARGETTYPE>
+    <KM_LIBRARY Condition="'$(OVERRIDE_KM_LIBRARY)'!='true'">1</KM_LIBRARY>
+    <MUI_VERIFY_NO_LOC_RESOURCE Condition="'$(OVERRIDE_MUI_VERIFY_NO_LOC_RESOURCE)'!='true'">1</MUI_VERIFY_NO_LOC_RESOURCE>
+    <BUILD_FOR_CORESYSTEM Condition="'$(OVERRIDE_BUILD_FOR_CORESYSTEM)'!='true'">1</BUILD_FOR_CORESYSTEM>
+    <KMDF_VERSION_MAJOR Condition="'$(OVERRIDE_KMDF_VERSION_MAJOR)'!='true'">1</KMDF_VERSION_MAJOR>
+    <C_DEFINES Condition="'$(OVERRIDE_C_DEFINES)'!='true'">$(C_DEFINES) -DUNICODE -D_UNICODE -DWIN32_KERN -DWIN32DLL_EXPORTS -DVCOS_PROVIDER</C_DEFINES>
+    <INCLUDES Condition="'$(OVERRIDE_INCLUDES)'!='true'">$(INCLUDES);      ..\;      ..\..\..\;      ..\win32\;</INCLUDES>
+    <SOURCES Condition="'$(OVERRIDE_SOURCES)'!='true'">vcos_abort.c      vcos_generic_blockpool.c      vcos_generic_named_sem.c      vcos_init.c      vcos_logcat.c      vcos_mem_from_malloc.c      vcos_msgqueue.c</SOURCES>
+  </PropertyGroup>
+</Project>

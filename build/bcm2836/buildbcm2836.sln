@@ -32,6 +32,20 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "bcm2836sdhc", "..\..\driver
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "bcmauxspi", "..\..\drivers\spi\bcmauxspi\bcmauxspi.vcxproj", "{74219FC7-92D3-4477-A729-A5CEB965B338}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "vchiq", "..\..\drivers\misc\vchiq\vchiq.vcxproj", "{7FED7DE7-D8AE-448B-A7D9-ED99DCDB1F79}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "vcos_win32_kern_generic", "..\..\drivers\misc\userland\interface\vcos\generic\vcos_win32_kern_generic.vcxproj", "{824BAE1C-53BC-4137-A07F-AF6582316A7C}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "vcos_win32_kern", "..\..\drivers\misc\userland\interface\vcos\win32\vcos_win32_kern.vcxproj", "{2DF1927E-BBD9-40FD-9658-88C9FB1C9340}"
+	ProjectSection(ProjectDependencies) = postProject
+		{824BAE1C-53BC-4137-A07F-AF6582316A7C} = {824BAE1C-53BC-4137-A07F-AF6582316A7C}
+	EndProjectSection
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "vchiq_arm_kern", "..\..\drivers\misc\userland\interface\vchiq_arm\vchiq_arm_kern.vcxproj", "{9DB72B9A-642B-4B27-A118-91DEEBF5A073}"
+	ProjectSection(ProjectDependencies) = postProject
+		{2DF1927E-BBD9-40FD-9658-88C9FB1C9340} = {2DF1927E-BBD9-40FD-9658-88C9FB1C9340}
+	EndProjectSection
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|ARM = Debug|ARM
@@ -74,23 +88,34 @@ Global
 		{78A52003-5B73-4EB4-AA11-C2FC34C6F9CF}.Debug|ARM.Build.0 = Debug|ARM
 		{78A52003-5B73-4EB4-AA11-C2FC34C6F9CF}.Release|ARM.ActiveCfg = Release|ARM
 		{78A52003-5B73-4EB4-AA11-C2FC34C6F9CF}.Release|ARM.Build.0 = Release|ARM
-		{78A52003-5B73-4EB4-AA11-C2FC34C6F9CF}.Release|ARM.Deploy.0 = Release|ARM
 		{35EBB0B3-001F-45CE-8B60-F50DB4295138}.Debug|ARM.ActiveCfg = Debug|Arm
 		{35EBB0B3-001F-45CE-8B60-F50DB4295138}.Debug|ARM.Build.0 = Debug|Arm
 		{35EBB0B3-001F-45CE-8B60-F50DB4295138}.Release|ARM.ActiveCfg = Release|Arm
 		{35EBB0B3-001F-45CE-8B60-F50DB4295138}.Release|ARM.Build.0 = Release|Arm
-		{35EBB0B3-001F-45CE-8B60-F50DB4295138}.Release|ARM.Deploy.0 = Release|Arm
 		{FC32ADC1-CBD3-412E-A7C0-E2BE04B14232}.Debug|ARM.ActiveCfg = Debug|ARM
 		{FC32ADC1-CBD3-412E-A7C0-E2BE04B14232}.Debug|ARM.Build.0 = Debug|ARM
 		{FC32ADC1-CBD3-412E-A7C0-E2BE04B14232}.Release|ARM.ActiveCfg = Release|ARM
 		{FC32ADC1-CBD3-412E-A7C0-E2BE04B14232}.Release|ARM.Build.0 = Release|ARM
-		{FC32ADC1-CBD3-412E-A7C0-E2BE04B14232}.Release|ARM.Deploy.0 = Release|ARM
 		{74219FC7-92D3-4477-A729-A5CEB965B338}.Debug|ARM.ActiveCfg = Debug|ARM
 		{74219FC7-92D3-4477-A729-A5CEB965B338}.Debug|ARM.Build.0 = Debug|ARM
-		{74219FC7-92D3-4477-A729-A5CEB965B338}.Debug|ARM.Deploy.0 = Debug|ARM
 		{74219FC7-92D3-4477-A729-A5CEB965B338}.Release|ARM.ActiveCfg = Release|ARM
 		{74219FC7-92D3-4477-A729-A5CEB965B338}.Release|ARM.Build.0 = Release|ARM
-		{74219FC7-92D3-4477-A729-A5CEB965B338}.Release|ARM.Deploy.0 = Release|ARM
+		{7FED7DE7-D8AE-448B-A7D9-ED99DCDB1F79}.Debug|ARM.ActiveCfg = Debug|ARM
+		{7FED7DE7-D8AE-448B-A7D9-ED99DCDB1F79}.Debug|ARM.Build.0 = Debug|ARM
+		{7FED7DE7-D8AE-448B-A7D9-ED99DCDB1F79}.Release|ARM.ActiveCfg = Release|ARM
+		{7FED7DE7-D8AE-448B-A7D9-ED99DCDB1F79}.Release|ARM.Build.0 = Release|ARM
+		{824BAE1C-53BC-4137-A07F-AF6582316A7C}.Debug|ARM.ActiveCfg = Debug|ARM
+		{824BAE1C-53BC-4137-A07F-AF6582316A7C}.Debug|ARM.Build.0 = Debug|ARM
+		{824BAE1C-53BC-4137-A07F-AF6582316A7C}.Release|ARM.ActiveCfg = Release|ARM
+		{824BAE1C-53BC-4137-A07F-AF6582316A7C}.Release|ARM.Build.0 = Release|ARM
+		{2DF1927E-BBD9-40FD-9658-88C9FB1C9340}.Debug|ARM.ActiveCfg = Debug|ARM
+		{2DF1927E-BBD9-40FD-9658-88C9FB1C9340}.Debug|ARM.Build.0 = Debug|ARM
+		{2DF1927E-BBD9-40FD-9658-88C9FB1C9340}.Release|ARM.ActiveCfg = Release|ARM
+		{2DF1927E-BBD9-40FD-9658-88C9FB1C9340}.Release|ARM.Build.0 = Release|ARM
+		{9DB72B9A-642B-4B27-A118-91DEEBF5A073}.Debug|ARM.ActiveCfg = Debug|ARM
+		{9DB72B9A-642B-4B27-A118-91DEEBF5A073}.Debug|ARM.Build.0 = Debug|ARM
+		{9DB72B9A-642B-4B27-A118-91DEEBF5A073}.Release|ARM.ActiveCfg = Release|ARM
+		{9DB72B9A-642B-4B27-A118-91DEEBF5A073}.Release|ARM.Build.0 = Release|ARM
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
