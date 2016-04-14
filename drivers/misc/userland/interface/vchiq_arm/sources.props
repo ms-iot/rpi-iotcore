@@ -1,0 +1,18 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="14.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <TARGETNAME Condition="'$(OVERRIDE_TARGETNAME)'!='true'">vchiq_arm_kern</TARGETNAME>
+    <TARGETTYPE Condition="'$(OVERRIDE_TARGETTYPE)'!='true'">EXPORT_DRIVER</TARGETTYPE>
+    <TARGETEXT Condition="'$(OVERRIDE_TARGETEXT)'!='true'">dll</TARGETEXT>
+    <TARGET_DESTINATION Condition="'$(OVERRIDE_TARGET_DESTINATION)'!='true'">retail</TARGET_DESTINATION>
+    <DLLDEF Condition="'$(OVERRIDE_DLLDEF)'!='true'" />
+    <MUI_VERIFY_NO_LOC_RESOURCE Condition="'$(OVERRIDE_MUI_VERIFY_NO_LOC_RESOURCE)'!='true'">1</MUI_VERIFY_NO_LOC_RESOURCE>
+    <BUILD_FOR_CORESYSTEM Condition="'$(OVERRIDE_BUILD_FOR_CORESYSTEM)'!='true'">1</BUILD_FOR_CORESYSTEM>
+    <KMDF_VERSION_MAJOR Condition="'$(OVERRIDE_KMDF_VERSION_MAJOR)'!='true'">1</KMDF_VERSION_MAJOR>
+    <USE_DEFAULT_WIN32_LIBS Condition="'$(OVERRIDE_USE_DEFAULT_WIN32_LIBS)'!='true'">0</USE_DEFAULT_WIN32_LIBS>
+    <C_DEFINES Condition="'$(OVERRIDE_C_DEFINES)'!='true'">$(C_DEFINES) -DUNICODE -D_UNICODE -DWIN32 -DWIN32_KERN -DWIN32DLL_EXPORTS -DUSE_VCHIQ_ARM</C_DEFINES>
+    <INCLUDES Condition="'$(OVERRIDE_INCLUDES)'!='true'">$(INCLUDES);      $(IFSKIT_INC_PATH);      ..\;      ..\..\;      ..\vcos\win32;</INCLUDES>
+    <SOURCES Condition="'$(OVERRIDE_SOURCES)'!='true'">vchiq_lib.c</SOURCES>
+    <TARGETLIBS Condition="'$(OVERRIDE_TARGETLIBS)'!='true'">$(TARGETLIBS)      $(SDK_LIB_PATH)\onecore.lib      $(DDK_LIB_PATH)\ntoskrnl.lib</TARGETLIBS>
+  </PropertyGroup>
+</Project>

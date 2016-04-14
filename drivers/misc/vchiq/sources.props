@@ -1,0 +1,15 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="14.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <TARGETNAME Condition="'$(OVERRIDE_TARGETNAME)'!='true'">vchiq</TARGETNAME>
+    <TARGETTYPE Condition="'$(OVERRIDE_TARGETTYPE)'!='true'">DRIVER</TARGETTYPE>
+    <TARGET_DESTINATION Condition="'$(OVERRIDE_TARGET_DESTINATION)'!='true'">retail</TARGET_DESTINATION>
+    <MUI_VERIFY_NO_LOC_RESOURCE Condition="'$(OVERRIDE_MUI_VERIFY_NO_LOC_RESOURCE)'!='true'">1</MUI_VERIFY_NO_LOC_RESOURCE>
+    <MSC_WARNING_LEVEL Condition="'$(OVERRIDE_MSC_WARNING_LEVEL)'!='true'">/W4 /WX</MSC_WARNING_LEVEL>
+    <KMDF_VERSION_MAJOR Condition="'$(OVERRIDE_KMDF_VERSION_MAJOR)'!='true'">1</KMDF_VERSION_MAJOR>
+    <LOC_DRIVER_INFS Condition="'$(OVERRIDE_LOC_DRIVER_INFS)'!='true'">vchiq.inf</LOC_DRIVER_INFS>
+    <INCLUDES Condition="'$(OVERRIDE_INCLUDES)'!='true'">$(INCLUDES);      ..\..\mailbox\bcm2836</INCLUDES>
+    <TARGETLIBS Condition="'$(OVERRIDE_TARGETLIBS)'!='true'">$(TARGETLIBS)      $(DDK_LIB_PATH)\wpprecorder.lib</TARGETLIBS>
+    <SOURCES Condition="'$(OVERRIDE_SOURCES)'!='true'">device.c      driver.c      file.c      init.c      interrupt.c      ioctl.c      memory.c      slots.c      trace.c      transfer.c</SOURCES>
+  </PropertyGroup>
+</Project>
