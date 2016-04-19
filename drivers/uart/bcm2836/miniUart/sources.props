@@ -11,6 +11,5 @@
     <INCLUDES Condition="'$(OVERRIDE_INCLUDES)'!='true'">$(INCLUDES);      $(DDK_INC_PATH);      $(MINWIN_PRIV_SDK_INC_PATH);</INCLUDES>
     <TARGETLIBS Condition="'$(OVERRIDE_TARGETLIBS)'!='true'">$(TARGETLIBS)      $(DDK_LIB_PATH)\wpprecorder.lib</TARGETLIBS>
     <SOURCES Condition="'$(OVERRIDE_SOURCES)'!='true'">error.c      flush.c      immediat.c      initunlo.c      ioctl.c      isr.c      modmflow.c      openclos.c      pnp.c      power.c      purge.c      qsfile.c      read.c      registry.c      utils.c      waitmask.c      wmi.c      write.c      serial.rc</SOURCES>
-    <RUN_WPP Condition="'$(OVERRIDE_RUN_WPP)'!='true'">$(SOURCES)      -km      -p:pi_miniuart      -DENABLE_WPP_RECORDER=1      -DWPP_EMIT_FUNC_NAME      -scan:trace.h</RUN_WPP>
   </PropertyGroup>
 </Project>

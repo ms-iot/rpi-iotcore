@@ -7,14 +7,9 @@
     <MSC_WARNING_LEVEL Condition="'$(OVERRIDE_MSC_WARNING_LEVEL)'!='true'">/W4 /WX</MSC_WARNING_LEVEL>
     <KMDF_VERSION_MAJOR Condition="'$(OVERRIDE_KMDF_VERSION_MAJOR)'!='true'">1</KMDF_VERSION_MAJOR>
     <MUI_VERIFY_NO_LOC_RESOURCE Condition="'$(OVERRIDE_MUI_VERIFY_NO_LOC_RESOURCE)'!='true'">1</MUI_VERIFY_NO_LOC_RESOURCE>
-    <LOC_DRIVER_INFS Condition="'$(OVERRIDE_LOC_DRIVER_INFS)'!='true'">SerPL011.inf</LOC_DRIVER_INFS>
-    <PRECOMPILED_CXX Condition="'$(OVERRIDE_PRECOMPILED_CXX)'!='true'">1</PRECOMPILED_CXX>
-    <PRECOMPILED_INCLUDE Condition="'$(OVERRIDE_PRECOMPILED_INCLUDE)'!='true'">precomp.h</PRECOMPILED_INCLUDE>
-    <PRECOMPILED_PCH Condition="'$(OVERRIDE_PRECOMPILED_PCH)'!='true'">precomp.pch</PRECOMPILED_PCH>
-    <PRECOMPILED_OBJ Condition="'$(OVERRIDE_PRECOMPILED_OBJ)'!='true'">precomp.obj</PRECOMPILED_OBJ>
+    <LOC_DRIVER_INFS Condition="'$(OVERRIDE_LOC_DRIVER_INFS)'!='true'">SerPL011.inf</LOC_DRIVER_INFS>    
     <INCLUDES Condition="'$(OVERRIDE_INCLUDES)'!='true'">$(INCLUDES);      $(DDK_INC_PATH)\sercx\2.0;      $(MINWIN_PRIV_SDK_INC_PATH);</INCLUDES>
     <TARGETLIBS Condition="'$(OVERRIDE_TARGETLIBS)'!='true'">$(TARGETLIBS)      $(DDK_LIB_PATH)\sercx\2.0\SerCxStubs.lib      $(DDK_LIB_PATH)\wpprecorder.lib</TARGETLIBS>
     <SOURCES Condition="'$(OVERRIDE_SOURCES)'!='true'">PL011driver.cpp      PL011device.cpp      PL011ioctl.cpp      PL011interrupt.cpp      PL011uart.cpp      PL011rx.cpp      PL011tx.cpp      PL011hw.cpp      PL011common.cpp      PL011.rc</SOURCES>
-    <RUN_WPP Condition="'$(OVERRIDE_RUN_WPP)'!='true'">$(SOURCES)      -km      -p:SerPL011      -DENABLE_WPP_RECORDER=1      -DWPP_EMIT_FUNC_NAME      -scan:.\PL011logging.h</RUN_WPP>
   </PropertyGroup>
 </Project>

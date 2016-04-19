@@ -10,5 +10,8 @@
       <DisableSpecificWarnings>4595;%(DisableSpecificWarnings)</DisableSpecificWarnings>
     </ClCompile>
    </ItemDefinitionGroup>
+   <PropertyGroup>
+    <SignMode>Off</SignMode>
+   </PropertyGroup>
    <ItemGroup />
 </Project>

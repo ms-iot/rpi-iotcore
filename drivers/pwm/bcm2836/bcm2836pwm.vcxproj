@@ -64,14 +64,18 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM'">
     <ClCompile>
       <WppEnabled>true</WppEnabled>
+      <WppKernelMode>true</WppKernelMode>
       <WppRecorderEnabled>true</WppRecorderEnabled>
+      <WppPreprocessorDefinitions>ENABLE_WPP_RECORDER=1;WPP_EMIT_FUNC_NAME</WppPreprocessorDefinitions>
       <WppScanConfigurationData>trace.h</WppScanConfigurationData>
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM'">
     <ClCompile>
       <WppEnabled>true</WppEnabled>
+      <WppKernelMode>true</WppKernelMode>
       <WppRecorderEnabled>true</WppRecorderEnabled>
+      <WppPreprocessorDefinitions>ENABLE_WPP_RECORDER=1;WPP_EMIT_FUNC_NAME</WppPreprocessorDefinitions>
       <WppScanConfigurationData>trace.h</WppScanConfigurationData>
     </ClCompile>
   </ItemDefinitionGroup>
