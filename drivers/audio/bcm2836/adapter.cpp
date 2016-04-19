@@ -7,7 +7,10 @@ Abstract:
 
 --*/
 
+//4127: conditional expression is constant
+//4595: illegal inline operator
 #pragma warning (disable : 4127)
+#pragma warning (disable : 4595)
 
 //
 // All the GUIDS for all the miniports end up in this object.
