@@ -1,0 +1,16 @@
+#include <windows.h>
+
+#include <ntverp.h>
+
+#define	VER_FILETYPE                VFT_DRV
+#define	VER_FILESUBTYPE             VFT2_DRV_SYSTEM
+#define VER_FILEDESCRIPTION_STR     "Broadcom AUX SPI Controller Driver"
+#define VER_INTERNALNAME_STR        "bcmauxspi.sys"
+#define VER_ORIGINALFILENAME_STR    "bcmauxspi.sys"
+
+// Ensure that VS_VERSION_INFO is not defined
+#ifdef VS_VERSION_INFO
+#undef VS_VERSION_INFO
+#endif
+
+#include "common.ver"
