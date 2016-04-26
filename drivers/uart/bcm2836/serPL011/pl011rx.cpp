@@ -617,8 +617,6 @@ PL011pRxPioBufferCopy(
     rxPioPtr->RxBufferOut = rxOut;
     InterlockedAdd(&rxPioPtr->RxBufferCount, -LONG(bytesCopied));
 
-    PL011_ASSERT(PL011pRxPendingByteCount(rxPioPtr) >= 0);
-
     if (bytesCopied != 0) {
 
         PL011_LOG_TRACE(

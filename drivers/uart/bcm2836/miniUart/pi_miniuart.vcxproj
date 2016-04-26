@@ -65,8 +65,11 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM'">
     <ClCompile>
       <WppEnabled>true</WppEnabled>
+      <WppKernelMode>true</WppKernelMode>
       <WppRecorderEnabled>true</WppRecorderEnabled>
-      <WppScanConfigurationData>Trace.h</WppScanConfigurationData>
+      <WppAddAlternateNameToMessageGUID>pi_miniuart</WppAddAlternateNameToMessageGUID>
+      <WppPreprocessorDefinitions>ENABLE_WPP_RECORDER=1;WPP_EMIT_FUNC_NAME</WppPreprocessorDefinitions>
+      <WppScanConfigurationData>trace.h</WppScanConfigurationData>
     </ClCompile>
     <Link>
       <AdditionalDependencies>$(DDK_LIB_PATH)ntstrsafe.lib;%(AdditionalDependencies)</AdditionalDependencies>
@@ -75,8 +78,11 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM'">
     <ClCompile>
       <WppEnabled>true</WppEnabled>
+      <WppKernelMode>true</WppKernelMode>
       <WppRecorderEnabled>true</WppRecorderEnabled>
-      <WppScanConfigurationData>Trace.h</WppScanConfigurationData>
+      <WppAddAlternateNameToMessageGUID>pi_miniuart</WppAddAlternateNameToMessageGUID>
+      <WppPreprocessorDefinitions>ENABLE_WPP_RECORDER=1;WPP_EMIT_FUNC_NAME</WppPreprocessorDefinitions>
+      <WppScanConfigurationData>trace.h</WppScanConfigurationData>
     </ClCompile>
     <Link>
       <AdditionalDependencies>$(DDK_LIB_PATH)ntstrsafe.lib;%(AdditionalDependencies)</AdditionalDependencies>

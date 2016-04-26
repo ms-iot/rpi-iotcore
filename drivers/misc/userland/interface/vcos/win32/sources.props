@@ -1,0 +1,17 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="14.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <TARGETNAME Condition="'$(OVERRIDE_TARGETNAME)'!='true'">vcos_win32_kern</TARGETNAME>
+    <TARGETTYPE Condition="'$(OVERRIDE_TARGETTYPE)'!='true'">EXPORT_DRIVER</TARGETTYPE>
+    <TARGETEXT Condition="'$(OVERRIDE_TARGETEXT)'!='true'">dll</TARGETEXT>
+    <TARGET_DESTINATION Condition="'$(OVERRIDE_TARGET_DESTINATION)'!='true'">retail</TARGET_DESTINATION>
+    <DLLDEF Condition="'$(OVERRIDE_DLLDEF)'!='true'" />
+    <MUI_VERIFY_NO_LOC_RESOURCE Condition="'$(OVERRIDE_MUI_VERIFY_NO_LOC_RESOURCE)'!='true'">1</MUI_VERIFY_NO_LOC_RESOURCE>
+    <KMDF_VERSION_MAJOR Condition="'$(OVERRIDE_KMDF_VERSION_MAJOR)'!='true'">1</KMDF_VERSION_MAJOR>
+    <C_DEFINES Condition="'$(OVERRIDE_C_DEFINES)'!='true'">$(C_DEFINES) -DUNICODE -D_UNICODE -DWIN32_KERN -DWIN32DLL_EXPORTS -DVCOS_PROVIDER</C_DEFINES>
+    <INCLUDES Condition="'$(OVERRIDE_INCLUDES)'!='true'">$(INCLUDES);      ..\..\..\;</INCLUDES>
+    <SOURCES Condition="'$(OVERRIDE_SOURCES)'!='true'">vcos_pthreads.c</SOURCES>
+    <DLLDEF_OBJECTS Condition="'$(OVERRIDE_DLLDEF_OBJECTS)'!='true'">$(OBJ_PATH)\..\generic\$(O)\vcos_abort.obj      $(OBJ_PATH)\..\generic\$(O)\vcos_generic_blockpool.obj      $(OBJ_PATH)\..\generic\$(O)\vcos_generic_named_sem.obj      $(OBJ_PATH)\..\generic\$(O)\vcos_init.obj      $(OBJ_PATH)\..\generic\$(O)\vcos_logcat.obj      $(OBJ_PATH)\..\generic\$(O)\vcos_mem_from_malloc.obj      $(OBJ_PATH)\..\generic\$(O)\vcos_msgqueue.obj</DLLDEF_OBJECTS>
+    <TARGETLIBS Condition="'$(OVERRIDE_TARGETLIBS)'!='true'">$(TARGETLIBS)      $(SDK_LIB_PATH)\onecore.lib      $(DDK_LIB_PATH)\ntoskrnl.lib</TARGETLIBS>
+  </PropertyGroup>
+</Project>
