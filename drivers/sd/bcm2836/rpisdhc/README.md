@@ -1,8 +1,8 @@
 # RaspberryPi SD2.0 Host Controller Driver
-This is a Secure Digital (SD) Host Controller miniport ARM driver for a Broadcom proprietary SD Host Controller refered to in Broadcom BCM2835 datasheet as SDHost. The driver works in conjunction with sdport.sys, which implements SD/SDIO/eMMC protocol and WDM interfaces.
+This is a Secure Digital (SD) Host Controller miniport ARM driver for a Broadcom proprietary SD Host Controller referred to in Broadcom BCM2835 datasheet as SDHost. The driver works in conjunction with sdport.sys, which implements SD/SDIO/eMMC protocol and WDM interfaces.
 The SDHC interfaces to SD memory cards compliant to SD Memory Card Specifications version 2.0 dated May 2006, while this SD Host Controller itself is not SD standard compliant.
 
-This SDHC is available on RPi2 and RPi3, however it is currently enabled only on RPi3 for SD execslusively. Switching between ArasanSD and this SDHC for SD storage is not possible without UEFI firmware changes.
+This SDHC is available on RPi2 and RPi3, however it is currently enabled only on RPi3 for SD exclusively. Switching between ArasanSD and this SDHC for SD storage is not possible without UEFI firmware changes.
 
 ## Workarounds
 Workarounds had to be implemented to fit this non-standard SDHC into Sdhost port/miniport framework, while following the standard SDHC implementation as a guidance. You can refer to Microsoft published standard SDHC sample here: https://github.com/Microsoft/Windows-driver-samples/tree/master/sd/miniport/sdhc.
@@ -26,7 +26,7 @@ Cons | Consume alot of DPCs causing system to choke on heavy load  | High CPU ut
 ## Testing
 The SDHC driver rpisdhc.sys has passed HLK tests for SD Class Storage. SDCards known to work: SanDisk 8GB Class4, SanDisk 16GB Class10, Samsung 32GB/16GB EVO Class10, Transcend 32GB Class10.
 
-Note: Many SDCard brands/models than the ones mentioned have been tested and are all known to work, no single SDCard had problem to boot Windows10 IoT Core and funcitonal correctly on RPi3.
+Note: Many SDCard brands/models than the ones mentioned have been tested and are all known to work, no single SDCard had problem to boot Windows10 IoT Core and functional correctly on RPi3.
 
 #### Benchmarking Tool
 A performance comparison between ArasanSD and this SDHC was performed during RS1 development phase using Diskspd: https://gallery.technet.microsoft.com/DiskSpd-a-robust-storage-6cd2f223.
