@@ -1,4 +1,4 @@
-Raspberry Pi 2 (BCM2836) Auxiliary UART (miniUART) Driver
+# Raspberry Pi 2 (BCM2836) Auxiliary UART (miniUART) Driver
 
 This is Windows 10 device driver for Broadcom proprietory version of 16550 UART. Due to lack of certain features present in standard 16550 UART
 Bradcom versuion is called mini Uart, since it does not support a number of them.
