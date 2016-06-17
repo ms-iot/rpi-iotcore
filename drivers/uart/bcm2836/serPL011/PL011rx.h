@@ -313,6 +313,32 @@ PL011RxGetInQueue(
         ));
 }
 
+//
+// Routine Description:
+//
+//  PL011RxPendingByteCount is called to get the current number of received 
+//  bytes that are waiting in the RX buffer.
+//
+// Arguments:
+//
+//  RxPioPtr - Our PL011_SERCXPIORECEIVE_CONTEXT.
+//
+// Return Value:
+//
+//  The current number received bytes that are waiting in the RX buffer.
+//
+__forceinline
+ULONG
+PL011RxPendingByteCount(
+    _In_ PL011_SERCXPIORECEIVE_CONTEXT* RxPioPtr
+    )
+{
+    LONG rxPendingByteCount = InterlockedAdd(&RxPioPtr->RxBufferCount, 0);
+    NT_ASSERT(rxPendingByteCount >= 0);
+
+    return ULONG(rxPendingByteCount);
+}
+
 
 //
 // PL011rx private methods
@@ -333,32 +359,6 @@ PL011RxGetInQueue(
         _Out_writes_(Length) UCHAR* BufferPtr,
         _In_ ULONG Length
         );
-
-    //
-    // Routine Description:
-    //
-    //  PL011pRxPendingByteCount is called to get the current number of received 
-    //  bytes that are waiting in the RX buffer.
-    //
-    // Arguments:
-    //
-    //  RxPioPtr - Our PL011_SERCXPIORECEIVE_CONTEXT.
-    //
-    // Return Value:
-    //
-    //  The current number received bytes that are waiting in the RX buffer.
-    //
-    __forceinline
-    ULONG
-    PL011pRxPendingByteCount(
-        _In_ PL011_SERCXPIORECEIVE_CONTEXT* RxPioPtr
-        )
-    {
-        LONG rxPendingByteCount = InterlockedAdd(&RxPioPtr->RxBufferCount, 0);
-        NT_ASSERT(rxPendingByteCount >= 0);
-
-        return ULONG(rxPendingByteCount);
-    }
 
 #endif //_PL011_RX_CPP_
 

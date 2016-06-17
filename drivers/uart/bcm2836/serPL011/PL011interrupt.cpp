@@ -99,9 +99,7 @@ PL011EvtInterruptIsr(
 //     - Indicate new data to SerCx2, if RX state allows it.
 //  2) TX interrupt:
 //     - Copy to TX FIFO
-//     - Notify SerCx2 based on RX state:
-//          a) Normal TX mode: TX readiness.
-//          b) Drain FIFO: 'Drain FIFO' status.
+//     - Notify SerCx2 of TX data availability if TX state allows it.
 //  3) Serial port events:
 //      - Notify SerCx2 if it was waiting for those.
 //
@@ -139,29 +137,35 @@ PL011EvtInterruptDpc(
     // not empty, and RX timeout has occurred.
     // Basically if RX FIFO is not empty.
     //
-    // Copy the RX FIFO to our local RX buffer.
-    //
     if ((interruptEventsToHandle & (UARTRIS_RXIS | UARTRIS_RTIS)) != 0) {
+
+        PL011_SERCXPIORECEIVE_CONTEXT* rxPioPtr =
+            PL011SerCxPioReceiveGetContext(devExtPtr->SerCx2PioReceive);
+
         //
         // Copy new data from RX FIFO to PIO RX buffer.
         //
         (void)PL011RxPioFifoCopy(devExtPtr, nullptr);
 
         //
-        // Notify SerCxs if notifications have not been canceled,
-        // or if SerCx2 was already notified.
+        // Notify SerCxs if we have new data, notifications have 
+        // not been canceled, and SerCx2 was not already notified.
         //
-        if (PL011RxPioStateSetCompare(
-                devExtPtr->SerCx2PioReceive, 
-                PL011_RX_PIO_STATE::RX_PIO_STATE__WAIT_READ_DATA,
-                PL011_RX_PIO_STATE::RX_PIO_STATE__WAIT_DATA
-                )) {
-            //
-            // Data is ready, come get it...
-            //
-            SerCx2PioReceiveReady(devExtPtr->SerCx2PioReceive);
+        if (PL011RxPendingByteCount(rxPioPtr) > 0) {
 
-        } // If RX state set to RX_PIO_STATE__WAIT_READ_DATA
+            if (PL011RxPioStateSetCompare(
+                    devExtPtr->SerCx2PioReceive,
+                    PL011_RX_PIO_STATE::RX_PIO_STATE__WAIT_READ_DATA,
+                    PL011_RX_PIO_STATE::RX_PIO_STATE__WAIT_DATA
+                    )) {
+                //
+                // RX Data is ready, come get it...
+                //
+                SerCx2PioReceiveReady(devExtPtr->SerCx2PioReceive);
+
+            } // If RX state set to RX_PIO_STATE__WAIT_READ_DATA
+
+        } // New RX data is ready
 
     } // if (RX interrupt)
 
@@ -170,29 +174,36 @@ PL011EvtInterruptDpc(
     // If TX FIFOs occupancy has gone bellow the configured
     // trigger level.
     //
-    // Copy our local TX buffer to TX FIFO, and check if 
-    // a 'TX Drain' FIFO request is in progress.
-    //
     if ((interruptEventsToHandle & UARTRIS_TXIS) != 0) {
+
+        PL011_SERCXPIOTRANSMIT_CONTEXT* txPioPtr =
+            PL011SerCxPioTransmitGetContext(devExtPtr->SerCx2PioTransmit);
+
         //
         // Copy pending data from PIO TX buffer to TX FIFO, if any...
         //
         (void)PL011TxPioFifoCopy(devExtPtr, nullptr);
 
         //
-        // Notify SerCxs if notifications have not been canceled.
+        // Notify SerCxs if more space is now available, 
+        // notifications have not been canceled, and SerCx2
+        // was not already notified.
         //
-        if (PL011TxPioStateSetCompare(
-                devExtPtr->SerCx2PioTransmit,
-                PL011_TX_PIO_STATE::TX_PIO_STATE__WAIT_SEND_DATA,
-                PL011_TX_PIO_STATE::TX_PIO_STATE__WAIT_DATA_SENT
-                )) {
-            //
-            // Ready for more TX data...
-            //
-            SerCx2PioTransmitReady(devExtPtr->SerCx2PioTransmit);
+        if (PL011TxPendingByteCount(txPioPtr) < PL011_TX_BUFFER_SIZE_BYTES) {
 
-        } // if (TX state set TX_PIO_STATE__WAIT_SEND_DATA)
+            if (PL011TxPioStateSetCompare(
+                    devExtPtr->SerCx2PioTransmit,
+                    PL011_TX_PIO_STATE::TX_PIO_STATE__WAIT_SEND_DATA,
+                    PL011_TX_PIO_STATE::TX_PIO_STATE__WAIT_DATA_SENT
+                    )) {
+                //
+                // Ready for more TX data...
+                //
+                SerCx2PioTransmitReady(devExtPtr->SerCx2PioTransmit);
+
+            } // if TX state set TX_PIO_STATE__WAIT_SEND_DATA
+
+        } // TX space is available
 
     } // if (TX interrupt)
 
@@ -267,9 +278,7 @@ PL011pInterruptIsr(
     // not empty, and RX timeout has occurred.
     // Basically if RX FIFO is not empty.
     //
-    // Copy the RX FIFO to our local RX buffer.
-    //
-    if ((regUARTRIS & (UARTRIS_RXIS|UARTRIS_RTIS)) != 0) {
+    if ((regUARTRIS & (UARTRIS_RXIS | UARTRIS_RTIS)) != 0) {
         //
         // Copy new data from RX FIFO to PIO RX buffer.
         //
@@ -293,13 +302,11 @@ PL011pInterruptIsr(
     // If TX FIFOs occupancy has gone bellow the configured
     // trigger level.
     //
-    // Copy our local TX buffer to TX FIFO.
-    //
     if ((regUARTRIS & UARTRIS_TXIS) != 0) {
         //
         // Copy pending data from PIO TX buffer to TX FIFO.
         //
-        PL011TxPioFifoCopy(DevExtPtr, nullptr);
+        (void)PL011TxPioFifoCopy(DevExtPtr, nullptr);
 
         (void)PL011TxPioStateSetCompare(
             DevExtPtr->SerCx2PioTransmit,
