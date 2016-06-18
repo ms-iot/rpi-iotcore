@@ -311,6 +311,32 @@ PL011TxGetOutQueue(
         ));
 }
 
+//
+// Routine Description:
+//
+//  PL011TxPendingByteCount is called to get the current number of  
+//  bytes that are waiting in the TX buffer.
+//
+// Arguments:
+//
+//  TxPioPtr - Our PL011_SERCXPIOTRANSMIT_CONTEXT.
+//
+// Return Value:
+//
+//  The current number received bytes that are waiting in the RX buffer.
+//
+__forceinline
+ULONG
+PL011TxPendingByteCount(
+    _In_ PL011_SERCXPIOTRANSMIT_CONTEXT* TxPioPtr
+    )
+{
+    LONG txPendingByteCount = InterlockedAdd(&TxPioPtr->TxBufferCount, 0);
+    NT_ASSERT(txPendingByteCount <= PL011_TX_BUFFER_SIZE_BYTES);
+
+    return ULONG(txPendingByteCount);
+}
+
 
 //
 // PL011tx private methods
@@ -321,7 +347,7 @@ PL011TxGetOutQueue(
     ULONG
     PL011pTxPioBufferCopy(
         _In_ PL011_DEVICE_EXTENSION* DevExtPtr,
-        _In_reads_(Length) UCHAR* BufferPtr,
+        _In_reads_(Length) const UCHAR* BufferPtr,
         _In_ ULONG Length
         );
 
@@ -331,32 +357,6 @@ PL011TxGetOutQueue(
         _In_ WDFDEVICE WdfDevice,
         _Out_opt_ ULONG* PurgedBytesPtr
         );
-
-    //
-    // Routine Description:
-    //
-    //  PL011pTxPendingByteCount is called to get the current number of  
-    //  bytes that are waiting in the TX buffer.
-    //
-    // Arguments:
-    //
-    //  TxPioPtr - Our PL011_SERCXPIOTRANSMIT_CONTEXT.
-    //
-    // Return Value:
-    //
-    //  The current number received bytes that are waiting in the RX buffer.
-    //
-    __forceinline
-    ULONG
-    PL011pTxPendingByteCount(
-        _In_ PL011_SERCXPIOTRANSMIT_CONTEXT* TxPioPtr
-        )
-    {
-        LONG txPendingByteCount = InterlockedAdd(&TxPioPtr->TxBufferCount, 0);
-        NT_ASSERT(txPendingByteCount <= PL011_TX_BUFFER_SIZE_BYTES);
-
-        return ULONG(txPendingByteCount);
-    }
 
 #endif //_PL011_TX_CPP_
 
