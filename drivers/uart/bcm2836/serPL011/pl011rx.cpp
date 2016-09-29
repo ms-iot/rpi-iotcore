@@ -244,7 +244,7 @@ PL011SerCx2EvtPioReceiveReadBuffer(
     PL011_DEVICE_EXTENSION* devExtPtr = rxPioPtr->DevExtPtr;
 
     (void)PL011RxPioStateSet(
-        SerCx2PioReceive, 
+        SerCx2PioReceive,
         PL011_RX_PIO_STATE::RX_PIO_STATE__READ_DATA
         );
 
@@ -284,6 +284,8 @@ PL011SerCx2EvtPioReceiveReadBuffer(
             );
     }
 
+    PL011_ASSERT(totalBytesCopied <= Length);
+
     return totalBytesCopied;
 }
 
@@ -312,9 +314,18 @@ PL011SerCx2EvtPioReceiveEnableReadyNotification(
         PL011SerCxPioReceiveGetContext(SerCx2PioReceive);
 
     //
+    // Reset the RX state so we can tell if new RX data 
+    // arrived (through ISR).
+    //
+    (void)PL011RxPioStateSet(
+        SerCx2PioReceive,
+        PL011_RX_PIO_STATE::RX_PIO_STATE__READ_DATA
+        );
+
+    //
     // We may have new data by now...
     //
-    if (PL011pRxPendingByteCount(rxPioPtr) > 0) {
+    if (PL011RxPendingByteCount(rxPioPtr) > 0) {
 
         SerCx2PioReceiveReady(SerCx2PioReceive);
         return;
@@ -337,9 +348,12 @@ PL011SerCx2EvtPioReceiveEnableReadyNotification(
         //
         // More RX data can already be ready...
         //
-        PL011_ASSERT(PL011RxPioStateGet(SerCx2PioReceive) ==
+        PL011_ASSERT(
+            PL011RxPioStateGet(SerCx2PioReceive) ==
             PL011_RX_PIO_STATE::RX_PIO_STATE__DATA_READY
             );
+        PL011_ASSERT(PL011RxPendingByteCount(rxPioPtr) != 0);
+
         SerCx2PioReceiveReady(SerCx2PioReceive);
         return;
     }
@@ -441,6 +455,8 @@ PL011RxPurgeFifo(
 //
 //  STATUS_SUCCESS - Data was successfully copied into RX buffer.
 //  STATUS_NO_MORE_FILES - RX FIFO is empty, no chars were copied.
+//  STATUS_DEVICE_BUSY - A previous call to  PL011RxPioFifoCopy is currently in
+//      progress.
 //  STATUS_BUFFER_OVERFLOW - RX buffer is full, RX was not fully read.
 //
 _Use_decl_annotations_
@@ -462,10 +478,8 @@ PL011RxPioFifoCopy(
     // Verify access to RX buffer
     //
     if (InterlockedExchange(&rxPioPtr->RxBufferLock, 1) != 0) {
-        //
-        // RX buffer is being updated, new data may be available... 
-        //
-        return STATUS_SUCCESS;
+
+        return STATUS_DEVICE_BUSY;
     }
 
     //
@@ -484,7 +498,7 @@ PL011RxPioFifoCopy(
     //
     // Read received words from RX FIFO to RX buffer
     //
-    while (PL011pRxPendingByteCount(rxPioPtr) < PL011_RX_BUFFER_SIZE_BYTES) {
+    while (PL011RxPendingByteCount(rxPioPtr) < PL011_RX_BUFFER_SIZE_BYTES) {
         //
         // Check if RX FIFO is empty
         //
@@ -492,12 +506,18 @@ PL011RxPioFifoCopy(
 
             rxPioPtr->IsLogOverrun = TRUE;
 
-            status = ((charsTransferred == 0) &&
-                      (PL011pRxPendingByteCount(rxPioPtr) == 0)) ?
-                     STATUS_NO_MORE_FILES : 
-                     STATUS_SUCCESS;
+            if ((charsTransferred == 0) &&
+                (PL011RxPendingByteCount(rxPioPtr) == 0)) {
+
+                status = STATUS_NO_MORE_FILES;
+
+            } else {
+
+                status = STATUS_SUCCESS;
+            }
             break;
-        }
+
+        }  // RX FIFO is empty
 
         //
         // Read next word from RX FIFO
@@ -517,7 +537,7 @@ PL011RxPioFifoCopy(
     //
     // Check for buffer overflow
     //
-    if (PL011pRxPendingByteCount(rxPioPtr) >= PL011_RX_BUFFER_SIZE_BYTES) {
+    if (PL011RxPendingByteCount(rxPioPtr) >= PL011_RX_BUFFER_SIZE_BYTES) {
 
         status = STATUS_BUFFER_OVERFLOW;
         if (rxPioPtr->IsLogOverrun) {
@@ -585,7 +605,8 @@ PL011pRxPioBufferCopy(
     // Get number of bytes we can copy.
     // Is RX buffer empty ?
     //
-    ULONG bytesToCopy = min(PL011pRxPendingByteCount(rxPioPtr), Length);
+    ULONG bytesToCopy = PL011RxPendingByteCount(rxPioPtr);
+    bytesToCopy = min(bytesToCopy, Length);
     if (bytesToCopy == 0) {
 
         return 0;
