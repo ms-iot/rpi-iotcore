@@ -1,43 +1,28 @@
-/*++
-
-Copyright (c) Microsoft Corporation
-
-Module Name:
-
-    immediat.c
-
-Abstract:
-
-    This module contains the code that is very specific to transmit
-    immediate character operations in the serial driver
-
-Environment:
-
-    Kernel mode
-
---*/
+// Copyright (c) Microsoft Corporation.  All rights reserved.
+//
+// Module Name:
+//
+//   immediat.c
+//
+// Abstract:
+//
+//    This module contains the code that is very specific to transmit
+//    immediate character operations in the serial driver
 
 #include "precomp.h"
 #include "immediat.tmh"
 
 VOID
 SerialGetNextImmediate(
-    IN WDFREQUEST *CurrentOpRequest,
-    IN WDFQUEUE QueueToProcess,
-    IN WDFREQUEST *NewRequest,
-    IN BOOLEAN CompleteCurrent,
-    IN PSERIAL_DEVICE_EXTENSION Extension
-    );
+    _In_ WDFREQUEST* CurrentOpRequest,
+    _In_ WDFQUEUE QueueToProcess,
+    _In_ WDFREQUEST* NewRequest,
+    _In_ BOOLEAN CompleteCurrent,
+    _In_ PSERIAL_DEVICE_EXTENSION Extension);
 
 EVT_WDF_REQUEST_CANCEL SerialCancelImmediate;
 EVT_WDF_INTERRUPT_SYNCHRONIZE SerialGiveImmediateToIsr;
 EVT_WDF_INTERRUPT_SYNCHRONIZE SerialGrabImmediateFromIsr;
-
-
-VOID
-SerialStartImmediate(
-    IN PSERIAL_DEVICE_EXTENSION Extension
-    )
 
 /*++
 
@@ -56,166 +41,170 @@ Return Value:
     None.
 
 --*/
-
+_Use_decl_annotations_
+VOID
+SerialStartImmediate(
+    PSERIAL_DEVICE_EXTENSION Extension
+    )
 {
-    LARGE_INTEGER TotalTime = {0};
-    BOOLEAN UseATimer;
-    SERIAL_TIMEOUTS Timeouts;
+    LARGE_INTEGER totalTime = {0};
+    BOOLEAN useAtimer;
+    SERIAL_TIMEOUTS timeouts;
     PREQUEST_CONTEXT reqContext;
 
     reqContext = SerialGetRequestContext(Extension->CurrentImmediateRequest);
 
-    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_IOCTLS, "++SerialStartImmediate(%p)\n",
-                     Extension);
+    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_IOCTLS, "++SerialStartImmediate(%p)\r\n",
+                Extension);
 
-    UseATimer = FALSE;
+    useAtimer = FALSE;
     reqContext->Status = STATUS_PENDING;
 
-    //
     // Calculate the timeout value needed for the
     // request.  Note that the values stored in the
     // timeout record are in milliseconds.  Note that
     // if the timeout values are zero then we won't start
     // the timer.
-    //
 
-    Timeouts = Extension->Timeouts;
+    timeouts = Extension->timeouts;
 
-    if (Timeouts.WriteTotalTimeoutConstant ||
-        Timeouts.WriteTotalTimeoutMultiplier) {
+    if (timeouts.WriteTotalTimeoutConstant ||
+        timeouts.WriteTotalTimeoutMultiplier) {
 
-        UseATimer = TRUE;
+        useAtimer = TRUE;
 
-        //
         // We have some timer values to calculate.
-        //
 
-        TotalTime.QuadPart
-           = (LONGLONG)((ULONG)Timeouts.WriteTotalTimeoutMultiplier);
+        totalTime.QuadPart
+           = (LONGLONG)((ULONG)timeouts.WriteTotalTimeoutMultiplier);
 
-        TotalTime.QuadPart += Timeouts.WriteTotalTimeoutConstant;
+        totalTime.QuadPart += timeouts.WriteTotalTimeoutConstant;
 
-        TotalTime.QuadPart *= -10000;
-
+        totalTime.QuadPart *= -10000;
     }
 
-    //
     // As the request might be going to the isr, this is a good time
     // to initialize the reference count.
-    //
 
     SERIAL_INIT_REFERENCE(reqContext);
 
-     //
      // We give the request to to the isr to write out.
      // We set a cancel routine that knows how to
      // grab the current write away from the isr.
-     //
-    SerialSetCancelRoutine(Extension->CurrentImmediateRequest,
-                                    SerialCancelImmediate);
 
-    if (UseATimer) {
+    SerialSetCancelRoutine(Extension->CurrentImmediateRequest,
+                            SerialCancelImmediate);
+
+    if (useAtimer) {
         BOOLEAN result;
 
-        result = SerialSetTimer(
-            Extension->ImmediateTotalTimer,
-            TotalTime
-            );
+        result = SerialSetTimer(Extension->ImmediateTotalTimer,
+                                totalTime);
 
         if(result == FALSE) {
-            //
+
             // Since the timer knows about the request we increment
             // the reference count.
-            //
 
-            SERIAL_SET_REFERENCE(
-                reqContext,
-                SERIAL_REF_TOTAL_TIMER
-                );
+            SERIAL_SET_REFERENCE(reqContext,
+                                SERIAL_REF_TOTAL_TIMER);
         }
     }
 
-    WdfInterruptSynchronize(
-        Extension->WdfInterrupt,
-        SerialGiveImmediateToIsr,
-        Extension
-        );
-
+    WdfInterruptSynchronize(Extension->WdfInterrupt,
+                            SerialGiveImmediateToIsr,
+                            Extension);
 
     TraceEvents(TRACE_LEVEL_INFORMATION, DBG_IOCTLS,
-                     "--SerialStartImmediate\n");
-
+                "--SerialStartImmediate\r\n");
 }
-
+
+/*++
+
+Routine Description:
+
+    This routine completes immediate operation.
+
+Arguments:
+
+    Dpc - A pointer serial DPC.
+
+Return Value:
+
+    None.
+
+--*/
+_Use_decl_annotations_
 VOID
 SerialCompleteImmediate(
-    IN WDFDPC Dpc
+    WDFDPC Dpc
     )
-
 {
-
     PSERIAL_DEVICE_EXTENSION Extension = NULL;
 
     Extension = SerialGetDeviceExtension(WdfDpcGetParentObject(Dpc));
 
-    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_IOCTLS, "++SerialCompleteImmediate(%p)\n",
-                     Extension);
+    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_IOCTLS,
+                "++SerialCompleteImmediate(%p)\r\n",
+                Extension);
 
-    SerialTryToCompleteCurrent(
-        Extension,
-        NULL,
-        STATUS_SUCCESS,
-        &Extension->CurrentImmediateRequest,
-        NULL,
-        NULL,
-        Extension->ImmediateTotalTimer,
-        NULL,
-        SerialGetNextImmediate,
-        SERIAL_REF_ISR
-        );
+    SerialTryToCompleteCurrent(Extension,
+                                NULL,
+                                STATUS_SUCCESS,
+                                &Extension->CurrentImmediateRequest,
+                                NULL,
+                                NULL,
+                                Extension->ImmediateTotalTimer,
+                                NULL,
+                                SerialGetNextImmediate,
+                                SERIAL_REF_ISR);
 
-    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_IOCTLS, "--SerialCompleteImmediate\n");
-
+    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_IOCTLS, "--SerialCompleteImmediate\r\n");
 }
 
+/*++
+
+Routine Description:
+
+    This routine times out immediate operation.
+
+Arguments:
+
+    Timer - A pointer to timer.
+
+Return Value:
+
+    None.
+
+--*/
+_Use_decl_annotations_
 VOID
 SerialTimeoutImmediate(
-    IN WDFTIMER Timer
+    WDFTIMER Timer
     )
 {
+    PSERIAL_DEVICE_EXTENSION extension = NULL;
 
-    PSERIAL_DEVICE_EXTENSION Extension = NULL;
+    extension = SerialGetDeviceExtension(WdfTimerGetParentObject(Timer));
 
-    Extension = SerialGetDeviceExtension(WdfTimerGetParentObject(Timer));
+    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_IOCTLS,
+                "++SerialTimeoutImmediate(%p)\r\n",
+                extension);
 
-    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_IOCTLS, ">SerialTimeoutImmediate(%p)\n",
-                     Extension);
+    SerialTryToCompleteCurrent(extension,
+                               SerialGrabImmediateFromIsr,
+                               STATUS_TIMEOUT,
+                               &extension->CurrentImmediateRequest,
+                               NULL,
+                               NULL,
+                               extension->ImmediateTotalTimer,
+                               NULL,
+                               SerialGetNextImmediate,
+                               SERIAL_REF_TOTAL_TIMER);
 
-    SerialTryToCompleteCurrent(
-        Extension,
-        SerialGrabImmediateFromIsr,
-        STATUS_TIMEOUT,
-        &Extension->CurrentImmediateRequest,
-        NULL,
-        NULL,
-        Extension->ImmediateTotalTimer,
-        NULL,
-        SerialGetNextImmediate,
-        SERIAL_REF_TOTAL_TIMER
-        );
-
-    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_IOCTLS, "<SerialTimeoutImmediate\n");
+    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_IOCTLS, "--SerialTimeoutImmediate\r\n");
 }
 
-VOID
-SerialGetNextImmediate(
-    IN WDFREQUEST *CurrentOpRequest,
-    IN WDFQUEUE QueueToProcess,
-    IN WDFREQUEST *NewRequest,
-    IN BOOLEAN CompleteCurrent,
-    IN PSERIAL_DEVICE_EXTENSION Extension
-    )
-
 /*++
 
 Routine Description:
@@ -244,7 +233,15 @@ Return Value:
     None.
 
 --*/
-
+_Use_decl_annotations_
+VOID
+SerialGetNextImmediate(
+    WDFREQUEST* CurrentOpRequest,
+    WDFQUEUE QueueToProcess,
+    WDFREQUEST* NewRequest,
+    BOOLEAN CompleteCurrent,
+    PSERIAL_DEVICE_EXTENSION Extension
+    )
 {
     WDFREQUEST oldRequest = *CurrentOpRequest;
     PREQUEST_CONTEXT reqContext = SerialGetRequestContext(oldRequest);
@@ -258,20 +255,14 @@ Return Value:
 
     *CurrentOpRequest = NULL;
     *NewRequest = NULL;
-     WdfInterruptSynchronize(
-        Extension->WdfInterrupt,
-        SerialProcessEmptyTransmit,
-        Extension
-        );
+
+     WdfInterruptSynchronize(Extension->WdfInterrupt,
+                             SerialProcessEmptyTransmit,
+                             Extension);
 
     SerialCompleteRequest(oldRequest, reqContext->Status, reqContext->Information);
 }
 
-VOID
-SerialCancelImmediate(
-    IN WDFREQUEST Request
-    )
-
 /*++
 
 Routine Description:
@@ -288,35 +279,31 @@ Return Value:
     None.
 
 --*/
-
+_Use_decl_annotations_
+VOID
+SerialCancelImmediate(
+    WDFREQUEST Request
+    )
 {
-    PSERIAL_DEVICE_EXTENSION Extension = NULL;
-    WDFDEVICE  device = WdfIoQueueGetDevice(WdfRequestGetIoQueue(Request));
+    PSERIAL_DEVICE_EXTENSION extension = NULL;
+    WDFDEVICE device = WdfIoQueueGetDevice(WdfRequestGetIoQueue(Request));
 
     UNREFERENCED_PARAMETER(Request);
 
-    Extension = SerialGetDeviceExtension(device);
+    extension = SerialGetDeviceExtension(device);
 
-    SerialTryToCompleteCurrent(
-        Extension,
-        SerialGrabImmediateFromIsr,
-        STATUS_CANCELLED,
-        &Extension->CurrentImmediateRequest,
-        NULL,
-        NULL,
-        Extension->ImmediateTotalTimer,
-        NULL,
-        SerialGetNextImmediate,
-        SERIAL_REF_CANCEL
-        );
-
+    SerialTryToCompleteCurrent(extension,
+                               SerialGrabImmediateFromIsr,
+                               STATUS_CANCELLED,
+                               &extension->CurrentImmediateRequest,
+                               NULL,
+                               NULL,
+                               extension->ImmediateTotalTimer,
+                               NULL,
+                               SerialGetNextImmediate,
+                               SERIAL_REF_CANCEL);
 }
 
-BOOLEAN
-SerialGiveImmediateToIsr(
-    IN WDFINTERRUPT  Interrupt,
-    IN PVOID         Context
-    )
 /*++
 
 Routine Description:
@@ -341,35 +328,34 @@ Return Value:
     This routine always returns FALSE.
 
 --*/
+_Use_decl_annotations_
+BOOLEAN
+SerialGiveImmediateToIsr(
+    WDFINTERRUPT Interrupt,
+    PVOID Context
+    )
 {
-    PSERIAL_DEVICE_EXTENSION Extension = Context;
-    PREQUEST_CONTEXT         reqContext;
+    PSERIAL_DEVICE_EXTENSION extension = Context;
+    PREQUEST_CONTEXT reqContext;
 
     UNREFERENCED_PARAMETER(Interrupt);
     TraceEvents(TRACE_LEVEL_INFORMATION, DBG_INTERRUPT, "++SerialGiveImmediateToIsr()\r\n");
 
-    reqContext = SerialGetRequestContext(Extension->CurrentImmediateRequest);
+    reqContext = SerialGetRequestContext(extension->CurrentImmediateRequest);
 
-    Extension->TransmitImmediate = TRUE;
-    Extension->ImmediateChar =  *((UCHAR *) (reqContext->SystemBuffer));
+    extension->TransmitImmediate = TRUE;
+    extension->ImmediateChar = *((UCHAR*) (reqContext->SystemBuffer));
 
-    //
     // The isr now has a reference to the request.
-    //
 
-    SERIAL_SET_REFERENCE(
-        reqContext,
-        SERIAL_REF_ISR
-        );
+    SERIAL_SET_REFERENCE(reqContext,
+                         SERIAL_REF_ISR);
 
-    //
     // Check first to see if a write is going on.  If
     // there is then we'll just slip in during the write.
-    //
 
-    if (!Extension->WriteLength) {
+    if (!extension->WriteLength) {
 
-        //
         // If there is no normal write transmitting then we
         // will "re-enable" the transmit holding register empty
         // interrupt.  The 8250 family of devices will always
@@ -381,27 +367,19 @@ Return Value:
         // We've been keeping track of whether the transmit holding
         // register is empty so it we only need to do this
         // if the register is empty.
-        //
 
-        if (Extension->HoldingEmpty) 
-        {
-            DISABLE_ALL_INTERRUPTS(Extension, Extension->Controller);
-            ENABLE_ALL_INTERRUPTS(Extension, Extension->Controller);
-            TraceEvents(TRACE_LEVEL_INFORMATION, DBG_INTERRUPT, "SerialGiveImmediateToIsr() - enable both interrupts\r\n");
+        if (extension->HoldingEmpty) {
+
+            DISABLE_ALL_INTERRUPTS(extension, extension->Controller);
+            ENABLE_ALL_INTERRUPTS(extension, extension->Controller);
+            TraceEvents(TRACE_LEVEL_INFORMATION, DBG_INTERRUPT, 
+                        "SerialGiveImmediateToIsr() - disable-enable both interrupts\r\n");
         }
-
     }
     TraceEvents(TRACE_LEVEL_INFORMATION, DBG_INTERRUPT, "--SerialGiveImmediateToIsr()\r\n");
     return FALSE;
-
 }
 
-BOOLEAN
-SerialGrabImmediateFromIsr(
-    IN WDFINTERRUPT  Interrupt,
-    IN PVOID         Context
-    )
-
 /*++
 
 Routine Description:
@@ -424,33 +402,32 @@ Return Value:
     Always false.
 
 --*/
-
+_Use_decl_annotations_
+BOOLEAN
+SerialGrabImmediateFromIsr(
+    WDFINTERRUPT Interrupt,
+    PVOID Context
+    )
 {
-    PSERIAL_DEVICE_EXTENSION Extension = Context;
-    PREQUEST_CONTEXT         reqContext;
+    PSERIAL_DEVICE_EXTENSION extension = (PSERIAL_DEVICE_EXTENSION)Context;
+    PREQUEST_CONTEXT reqContext;
 
     UNREFERENCED_PARAMETER(Interrupt);
 
-    reqContext = SerialGetRequestContext(Extension->CurrentImmediateRequest);
+    reqContext = SerialGetRequestContext(extension->CurrentImmediateRequest);
 
-    if (Extension->TransmitImmediate) {
+    if (extension->TransmitImmediate) {
 
-        Extension->TransmitImmediate = FALSE;
+        extension->TransmitImmediate = FALSE;
 
-        //
         // Since the isr no longer references this request, we can
         // decrement it's reference count.
-        //
 
-        SERIAL_CLEAR_REFERENCE(
-            reqContext,
-            SERIAL_REF_ISR
-            );
-
+        SERIAL_CLEAR_REFERENCE(reqContext,
+                                SERIAL_REF_ISR);
     }
 
     return FALSE;
-
 }
 
 

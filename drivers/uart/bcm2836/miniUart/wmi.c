@@ -1,21 +1,13 @@
-/*++
-
-Copyright (c) Microsoft Corporation
-
-Module Name:
-
-    wmi.c
-
-Abstract:
-
-    This module contains the code that handles the wmi IRPs for the
-    serial driver.
-
-Environment:
-
-    Kernel mode
-
---*/
+// Copyright (c) Microsoft Corporation.  All rights reserved.
+//
+// Module Name:
+//
+//    wmi.c
+//
+// Abstract:
+//
+//    This module contains the code that handles the wmi IRPs for mini Uart
+//    serial driver.
 
 #include "precomp.h"
 #include <wmistr.h>
@@ -29,11 +21,10 @@ EVT_WDF_WMI_INSTANCE_QUERY_INSTANCE EvtWmiQueryPortPropData;
 
 NTSTATUS
 SerialWmiRegisterInstance(
-    WDFDEVICE Device,
-    const GUID* Guid,
-    ULONG MinInstanceBufferSize,
-    PFN_WDF_WMI_INSTANCE_QUERY_INSTANCE EvtWmiInstanceQueryInstance
-    );
+    _In_ WDFDEVICE Device,
+    _In_ const GUID* Guid,
+    _In_ ULONG MinInstanceBufferSize,
+    _In_ PFN_WDF_WMI_INSTANCE_QUERY_INSTANCE EvtWmiInstanceQueryInstance);
 
 #ifdef ALLOC_PRAGMA
 #pragma alloc_text(PAGESRP0, SerialWmiRegistration)
@@ -45,6 +36,7 @@ SerialWmiRegisterInstance(
 #pragma alloc_text(PAGESRP0, EvtWmiQueryPortPropData)
 #endif
 
+_Use_decl_annotations_
 NTSTATUS
 SerialWmiRegisterInstance(
     WDFDEVICE Device,
@@ -53,14 +45,16 @@ SerialWmiRegisterInstance(
     PFN_WDF_WMI_INSTANCE_QUERY_INSTANCE EvtWmiInstanceQueryInstance
     )
 {
+    NTSTATUS status;
     WDF_WMI_PROVIDER_CONFIG providerConfig;
     WDF_WMI_INSTANCE_CONFIG instanceConfig;
 
     PAGED_CODE();
 
-    //
+    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_WMI, "++SerialWmiRegisterInstance\r\n");
+
     // Create and register WMI providers and instances  blocks
-    //
+
     WDF_WMI_PROVIDER_CONFIG_INIT(&providerConfig, Guid);
     providerConfig.MinInstanceBufferSize = MinInstanceBufferSize;
 
@@ -68,42 +62,58 @@ SerialWmiRegisterInstance(
     instanceConfig.Register = TRUE;
     instanceConfig.EvtWmiInstanceQueryInstance = EvtWmiInstanceQueryInstance;
 
-    return WdfWmiInstanceCreate(Device,
-                                &instanceConfig,
-                                WDF_NO_OBJECT_ATTRIBUTES,
-                                WDF_NO_HANDLE);
+    status = WdfWmiInstanceCreate(Device,
+                                  &instanceConfig,
+                                  WDF_NO_OBJECT_ATTRIBUTES,
+                                  WDF_NO_HANDLE);
+
+    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_WMI, "--SerialWmiRegisterInstance()=%Xh\r\n",status);
+    return status;
 }
 
-NTSTATUS
-SerialWmiRegistration(
-    WDFDEVICE      Device
-)
 /*++
-Routine Description
+
+Routine Description:
 
     Registers with WMI as a data provider for this
     instance of the device
 
+Arguments:
+
+    Device - Handle to the mini Uart device
+
+Return Value:
+    Status
+
 --*/
+_Use_decl_annotations_
+NTSTATUS
+SerialWmiRegistration(
+    WDFDEVICE Device
+)
 {
-    NTSTATUS        status = STATUS_SUCCESS;
-    PSERIAL_DEVICE_EXTENSION pDevExt;
+    NTSTATUS status = STATUS_SUCCESS;
+    PSERIAL_DEVICE_EXTENSION devExt;
 
     PAGED_CODE();
 
-    pDevExt = SerialGetDeviceExtension (Device);
+    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_WMI, "++SerialWmiRegistration\r\n");
 
-    //
+    devExt = SerialGetDeviceExtension (Device);
+
     // Fill in wmi perf data (all zero's)
-    //
-    RtlZeroMemory(&pDevExt->WmiPerfData, sizeof(pDevExt->WmiPerfData));
+
+    RtlZeroMemory(&devExt->WmiPerfData, sizeof(devExt->WmiPerfData));
 
     status = SerialWmiRegisterInstance(Device,
                                        &MSSerial_PortName_GUID,
                                        0,
                                        EvtWmiQueryPortName);
     if (!NT_SUCCESS(status)) {
-        return status;
+        TraceEvents(TRACE_LEVEL_ERROR, DBG_WMI,
+                    "SerialWmiRegistration() SerialWmiRegisterInstance(serGUID) failed. Err=%Xh\r\n",
+                    status);
+        goto EndWmiReg;
     }
 
     status = SerialWmiRegisterInstance(Device,
@@ -111,7 +121,10 @@ Routine Description
                                        sizeof(SERIAL_WMI_COMM_DATA),
                                        EvtWmiQueryPortCommData);
     if (!NT_SUCCESS(status)) {
-        return status;
+        TraceEvents(TRACE_LEVEL_ERROR, DBG_WMI,
+                    "SerialWmiRegistration() SerialWmiRegisterInstance(WMICOMDA) failed. Err=%Xh\r\n",
+                    status);
+        goto EndWmiReg;
     }
 
     status = SerialWmiRegisterInstance(Device,
@@ -119,6 +132,9 @@ Routine Description
                                        sizeof(SERIAL_WMI_HW_DATA),
                                        EvtWmiQueryPortHWData);
     if (!NT_SUCCESS(status)) {
+        TraceEvents(TRACE_LEVEL_ERROR, DBG_WMI,
+                    "SerialWmiRegistration() SerialWmiRegisterInstance(WMIHWDAT) failed. Err=%Xh\r\n",
+                    status);
         return status;
     }
 
@@ -127,7 +143,10 @@ Routine Description
                                        sizeof(SERIAL_WMI_PERF_DATA),
                                        EvtWmiQueryPortPerfData);
     if (!NT_SUCCESS(status)) {
-        return status;
+        TraceEvents(TRACE_LEVEL_ERROR, DBG_WMI,
+                    "SerialWmiRegistration() SerialWmiRegisterInstance(WMIPERF) failed. Err=%Xh\r\n",
+                    status);
+        goto EndWmiReg;
     }
 
     status = SerialWmiRegisterInstance(Device,
@@ -136,157 +155,226 @@ Routine Description
                                        EvtWmiQueryPortPropData);
 
     if (!NT_SUCCESS(status)) {
-        return status;
+        TraceEvents(TRACE_LEVEL_ERROR, DBG_WMI,
+                    "SerialWmiRegistration() SerialWmiRegisterInstance(COMMPRPOP) failed. Err=%Xh\r\n",
+                    status);
     }
 
+EndWmiReg:
+    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_WMI,
+                "--SerialWmiRegistration()=%Xh\r\n",
+                status);
     return status;
 }
 
-//
-// WMI Call back functions
-//
+/*++
 
+Routine Description:
+
+    WMI Call back functions
+
+Arguments:
+
+    WmiInstance
+    OutBufferSize
+    OutBuffer
+    BufferUsed
+
+Return Value:
+    Status
+
+--*/
+_Use_decl_annotations_
 NTSTATUS
 EvtWmiQueryPortName(
-    IN  WDFWMIINSTANCE WmiInstance,
-    IN  ULONG OutBufferSize,
-    IN  PVOID OutBuffer,
-    OUT PULONG BufferUsed
+    WDFWMIINSTANCE WmiInstance,
+    ULONG OutBufferSize,
+    PVOID OutBuffer,
+    PULONG BufferUsed
     )
 {
     WDFDEVICE device;
-    WCHAR pRegName[SYMBOLIC_NAME_LENGTH];
+    WCHAR regName[SYMBOLIC_NAME_LENGTH];
     UNICODE_STRING string;
-    USHORT nameSize = sizeof(pRegName);
+    USHORT nameSize = sizeof(regName);
     NTSTATUS status;
 
     PAGED_CODE();
 
+    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_WMI, "++EvtWmiQueryPortName()\r\n");
+
     device = WdfWmiInstanceGetDevice(WmiInstance);
 
-    status = SerialReadSymName(device, pRegName, &nameSize);
+    status = SerialReadSymName(device, regName, &nameSize);
+
     if (!NT_SUCCESS(status)) {
-        return status;
+        TraceEvents(TRACE_LEVEL_ERROR, DBG_WMI,
+                    "EvtWmiQueryPortName() SerialReadSymName failed. Err=%Xh\r\n",
+                    status);
+        goto EndWmiPortname;
     }
 
-    RtlInitUnicodeString(&string, pRegName);
+    RtlInitUnicodeString(&string, regName);
 
-    return WDF_WMI_BUFFER_APPEND_STRING(OutBuffer,
+    status = WDF_WMI_BUFFER_APPEND_STRING(OutBuffer,
                                         OutBufferSize,
                                         &string,
                                         BufferUsed);
+    if (!NT_SUCCESS(status)) {
+        TraceEvents(TRACE_LEVEL_ERROR, DBG_WMI,
+                    "EvtWmiQueryPortName() WMI_BUFFER_APPEND_STRING failed. Err=%Xh\r\n",
+                    status);
+    }
+
+EndWmiPortname:
+
+    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_WMI, "--EvtWmiQueryPortName()=%Xh\r\n", status);
+    return status;
 }
 
+_Use_decl_annotations_
 NTSTATUS
 EvtWmiQueryPortCommData(
-    IN  WDFWMIINSTANCE WmiInstance,
-    IN  ULONG  OutBufferSize,
-    IN  PVOID  OutBuffer,
-    OUT PULONG BufferUsed
+    WDFWMIINSTANCE WmiInstance,
+    ULONG  OutBufferSize,
+    PVOID  OutBuffer,
+    PULONG BufferUsed
     )
 {
-    PSERIAL_DEVICE_EXTENSION pDevExt;
-
+    PSERIAL_DEVICE_EXTENSION devExt;
     UNREFERENCED_PARAMETER(OutBufferSize);
+    NTSTATUS status;
 
     PAGED_CODE();
 
-    pDevExt = SerialGetDeviceExtension (WdfWmiInstanceGetDevice(WmiInstance));
+    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_WMI, "++EvtWmiQueryPortCommData()\r\n");
+
+    devExt = SerialGetDeviceExtension (WdfWmiInstanceGetDevice(WmiInstance));
 
     *BufferUsed = sizeof(SERIAL_WMI_COMM_DATA);
 
     if (OutBufferSize < *BufferUsed) {
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
 
-    *(PSERIAL_WMI_COMM_DATA)OutBuffer = pDevExt->WmiCommData;
+        status=STATUS_INSUFFICIENT_RESOURCES;
 
-    return STATUS_SUCCESS;
+    } else {
+
+        *(PSERIAL_WMI_COMM_DATA)OutBuffer = devExt->WmiCommData;
+        status=STATUS_SUCCESS;
+    };
+    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_WMI,
+                "--EvtWmiQueryPortCommData()=%Xh\r\n",
+                status);
+    return status;
 }
 
+_Use_decl_annotations_
 NTSTATUS
 EvtWmiQueryPortHWData(
-    IN  WDFWMIINSTANCE WmiInstance,
-    IN  ULONG  OutBufferSize,
-    IN  PVOID  OutBuffer,
-    OUT PULONG BufferUsed
+    WDFWMIINSTANCE WmiInstance,
+    ULONG OutBufferSize,
+    PVOID OutBuffer,
+    PULONG BufferUsed
     )
 {
-    PSERIAL_DEVICE_EXTENSION pDevExt;
-
+    PSERIAL_DEVICE_EXTENSION devExt;
+    NTSTATUS status;
     UNREFERENCED_PARAMETER(OutBufferSize);
 
     PAGED_CODE();
 
-    pDevExt = SerialGetDeviceExtension (WdfWmiInstanceGetDevice(WmiInstance));
+    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_WMI, "++EvtWmiQueryPortHWData()\r\n");
+
+    devExt = SerialGetDeviceExtension(WdfWmiInstanceGetDevice(WmiInstance));
 
     *BufferUsed = sizeof(SERIAL_WMI_HW_DATA);
 
     if (OutBufferSize < *BufferUsed) {
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-    
-    *(PSERIAL_WMI_HW_DATA)OutBuffer = pDevExt->WmiHwData;
+        
+        status = STATUS_INSUFFICIENT_RESOURCES;
 
-    return STATUS_SUCCESS;
+    } else {
+    
+        *(PSERIAL_WMI_HW_DATA)OutBuffer = devExt->WmiHwData;
+        status = STATUS_SUCCESS;
+    }
+
+    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_WMI,
+            "--EvtWmiQueryPortHWData()=%Xh\r\n",
+            status);
+    return status;
 }
 
+_Use_decl_annotations_
 NTSTATUS
 EvtWmiQueryPortPerfData(
-    IN  WDFWMIINSTANCE WmiInstance,
-    IN  ULONG OutBufferSize,
-    IN  PVOID OutBuffer,
-    OUT PULONG BufferUsed
+    WDFWMIINSTANCE WmiInstance,
+    ULONG OutBufferSize,
+    PVOID OutBuffer,
+    PULONG BufferUsed
     )
 {
-    PSERIAL_DEVICE_EXTENSION pDevExt;
-
+    PSERIAL_DEVICE_EXTENSION devExt;
     UNREFERENCED_PARAMETER(OutBufferSize);
+    NTSTATUS status;
 
     PAGED_CODE();
 
-    pDevExt = SerialGetDeviceExtension (WdfWmiInstanceGetDevice(WmiInstance));
+    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_WMI, "++EvtWmiQueryPortPerfData()\r\n");
+
+    devExt = SerialGetDeviceExtension(WdfWmiInstanceGetDevice(WmiInstance));
 
     *BufferUsed = sizeof(SERIAL_WMI_PERF_DATA);
 
     if (OutBufferSize < *BufferUsed) {
-        return STATUS_INSUFFICIENT_RESOURCES;
+
+        status = STATUS_INSUFFICIENT_RESOURCES;
+
+    } else {
+
+        *(PSERIAL_WMI_PERF_DATA)OutBuffer = devExt->WmiPerfData;
+        status = STATUS_SUCCESS;
     }
 
-    *(PSERIAL_WMI_PERF_DATA)OutBuffer = pDevExt->WmiPerfData;
-
-    return STATUS_SUCCESS;
+    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_WMI, "--EvtWmiQueryPortPerfData()=%Xh\r\n", status);
+    return status;
 }
 
+_Use_decl_annotations_
 NTSTATUS
 EvtWmiQueryPortPropData(
-    IN  WDFWMIINSTANCE WmiInstance,
-    IN  ULONG OutBufferSize,
-    IN  PVOID OutBuffer,
-    OUT PULONG BufferUsed
+    WDFWMIINSTANCE WmiInstance,
+    ULONG OutBufferSize,
+    PVOID OutBuffer,
+    PULONG BufferUsed
     )
 {
-    PSERIAL_DEVICE_EXTENSION pDevExt;
-
+    PSERIAL_DEVICE_EXTENSION devExt;
+    NTSTATUS status;
     UNREFERENCED_PARAMETER(OutBufferSize);
 
     PAGED_CODE();
 
-    pDevExt = SerialGetDeviceExtension (WdfWmiInstanceGetDevice(WmiInstance));
+    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_WMI, "++EvtWmiQueryPortPerfData()\r\n");
+
+    devExt = SerialGetDeviceExtension(WdfWmiInstanceGetDevice(WmiInstance));
 
     *BufferUsed = sizeof(SERIAL_COMMPROP) + sizeof(ULONG);
 
     if (OutBufferSize < *BufferUsed) {
-        return STATUS_INSUFFICIENT_RESOURCES;
+
+        status = STATUS_INSUFFICIENT_RESOURCES;
+
+    } else {
+
+        SerialGetProperties(devExt,
+                            (PSERIAL_COMMPROP)OutBuffer);
+
+        *((PULONG)(((PSERIAL_COMMPROP)OutBuffer)->ProvChar)) = 0;
+        status = STATUS_SUCCESS;
     }
 
-    SerialGetProperties(
-            pDevExt,
-            (PSERIAL_COMMPROP)OutBuffer
-            );
-
-    *((PULONG)(((PSERIAL_COMMPROP)OutBuffer)->ProvChar)) = 0;
-
-    return STATUS_SUCCESS;
+    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_WMI, "--EvtWmiQueryPortPerfData()=%Xh\r\n", status);
+    return status;
 }
 

@@ -1,92 +1,21 @@
-/*++
-
-Copyright (c) Microsoft Corporation
-
-Module Name:
-
-    ioctl.c
-
-Abstract:
-
-    This module contains the ioctl dispatcher as well as a couple
-    of routines that are generally just called in response to
-    ioctl calls.
-
-Environment:
-
-    Kernel mode
-
---*/
+// Copyright (c) Microsoft Corporation.  All rights reserved.
+//
+// Module Name:
+//
+//    ioctl.c
+//
+// Abstract:
+//
+//    This module contains the ioctl dispatcher as well as a couple
+//    of routines that are generally just called in response to
+//    ioctl calls.
 
 #include "precomp.h"
 #include "ioctl.tmh"
 
-
 EVT_WDF_INTERRUPT_SYNCHRONIZE SerialGetModemUpdate;
 EVT_WDF_INTERRUPT_SYNCHRONIZE SerialGetCommStatus;
 EVT_WDF_INTERRUPT_SYNCHRONIZE SerialSetEscapeChar;
-
-PCHAR
-SerialGetIoctlName(
-    IN ULONG      IoControlCode
-    )
-/*++
-
-Routine Description:
-    SerialGetIoctlName returns the name of the ioctl
-
---*/
-{
-    switch (IoControlCode)
-    {
-    case IOCTL_SERIAL_SET_BAUD_RATE : return "IOCTL_SERIAL_SET_BAUD_RATE";
-    case IOCTL_SERIAL_GET_BAUD_RATE: return "IOCTL_SERIAL_GET_BAUD_RATE";
-    case IOCTL_SERIAL_GET_MODEM_CONTROL: return "IOCTL_SERIAL_GET_MODEM_CONTROL";
-    case IOCTL_SERIAL_SET_MODEM_CONTROL: return "IOCTL_SERIAL_SET_MODEM_CONTROL";
-    case IOCTL_SERIAL_SET_FIFO_CONTROL: return "IOCTL_SERIAL_SET_FIFO_CONTROL";
-    case IOCTL_SERIAL_SET_LINE_CONTROL: return "IOCTL_SERIAL_SET_LINE_CONTROL";
-    case IOCTL_SERIAL_GET_LINE_CONTROL: return "IOCTL_SERIAL_GET_LINE_CONTROL";
-    case IOCTL_SERIAL_SET_TIMEOUTS: return "IOCTL_SERIAL_SET_TIMEOUTS";
-    case IOCTL_SERIAL_GET_TIMEOUTS: return "IOCTL_SERIAL_GET_TIMEOUTS";
-    case IOCTL_SERIAL_SET_CHARS: return "IOCTL_SERIAL_SET_CHARS";
-    case IOCTL_SERIAL_GET_CHARS: return "IOCTL_SERIAL_GET_CHARS";
-    case IOCTL_SERIAL_SET_DTR: return "IOCTL_SERIAL_SET_DTR";
-    case IOCTL_SERIAL_CLR_DTR: return "IOCTL_SERIAL_SET_DTR";
-    case IOCTL_SERIAL_RESET_DEVICE: return "IOCTL_SERIAL_RESET_DEVICE";
-    case IOCTL_SERIAL_SET_RTS: return "IOCTL_SERIAL_SET_RTS";
-    case IOCTL_SERIAL_CLR_RTS: return "IOCTL_SERIAL_CLR_RTS";
-    case IOCTL_SERIAL_SET_XOFF: return "IOCTL_SERIAL_SET_XOFF";
-    case IOCTL_SERIAL_SET_XON: return "IOCTL_SERIAL_SET_XON";
-    case IOCTL_SERIAL_SET_BREAK_ON: return "IOCTL_SERIAL_SET_BREAK_ON";
-    case IOCTL_SERIAL_SET_BREAK_OFF: return "IOCTL_SERIAL_SET_BREAK_OFF";
-    case IOCTL_SERIAL_SET_QUEUE_SIZE: return "IOCTL_SERIAL_SET_QUEUE_SIZE";
-    case IOCTL_SERIAL_GET_WAIT_MASK: return "IOCTL_SERIAL_GET_WAIT_MASK";
-    case IOCTL_SERIAL_SET_WAIT_MASK: return "IOCTL_SERIAL_SET_WAIT_MASK";
-    case IOCTL_SERIAL_WAIT_ON_MASK: return "IOCTL_SERIAL_WAIT_ON_MASK";
-    case IOCTL_SERIAL_IMMEDIATE_CHAR: return "IOCTL_SERIAL_IMMEDIATE_CHAR";
-    case IOCTL_SERIAL_PURGE: return "IOCTL_SERIAL_PURGE";
-    case IOCTL_SERIAL_GET_HANDFLOW: return "IOCTL_SERIAL_GET_HANDFLOW";
-    case IOCTL_SERIAL_SET_HANDFLOW: return "IOCTL_SERIAL_SET_HANDFLOW";
-    case IOCTL_SERIAL_GET_MODEMSTATUS: return "IOCTL_SERIAL_GET_MODEMSTATUS";
-    case IOCTL_SERIAL_GET_DTRRTS: return "IOCTL_SERIAL_GET_DTRRTS";
-    case IOCTL_SERIAL_GET_COMMSTATUS: return "IOCTL_SERIAL_GET_COMMSTATUS";
-    case IOCTL_SERIAL_GET_PROPERTIES: return "IOCTL_SERIAL_GET_PROPERTIES";
-    case IOCTL_SERIAL_XOFF_COUNTER: return "IOCTL_SERIAL_XOFF_COUNTER";
-    case IOCTL_SERIAL_LSRMST_INSERT: return "IOCTL_SERIAL_LSRMST_INSERT";
-    case IOCTL_SERIAL_CONFIG_SIZE: return "IOCTL_SERIAL_CONFIG_SIZE";
-    case IOCTL_SERIAL_GET_STATS: return "IOCTL_SERIAL_GET_STATS";
-    case IOCTL_SERIAL_CLEAR_STATS: return "IOCTL_SERIAL_CLEAR_STATS";
-    default: return "UnKnown ioctl";
-    }
-}
-
-
-
-BOOLEAN
-SerialGetStats(
-    IN WDFINTERRUPT  Interrupt,
-    IN PVOID         Context
-    )
 
 /*++
 
@@ -105,7 +34,12 @@ Return Value:
     This routine always returns FALSE.
 
 --*/
-
+_Use_decl_annotations_
+BOOLEAN
+SerialGetStats(
+    WDFINTERRUPT Interrupt,
+    PVOID Context
+    )
 {
     PREQUEST_CONTEXT reqContext = (PREQUEST_CONTEXT)Context;
     PSERIAL_DEVICE_EXTENSION extension = SerialGetDeviceExtension(WdfInterruptGetDevice(Interrupt));
@@ -115,15 +49,7 @@ Return Value:
 
     *sp = extension->PerfStats;
     return FALSE;
-
 }
-
-
-BOOLEAN
-SerialClearStats(
-    IN WDFINTERRUPT  Interrupt,
-    IN PVOID         Context
-    )
 
 /*++
 
@@ -142,14 +68,17 @@ Return Value:
     This routine always returns FALSE.
 
 --*/
-
+_Use_decl_annotations_
+BOOLEAN
+SerialClearStats(
+    WDFINTERRUPT Interrupt,
+    PVOID Context
+    )
 {
     UNREFERENCED_PARAMETER(Interrupt);
 
-    RtlZeroMemory(
-        &((PSERIAL_DEVICE_EXTENSION)Context)->PerfStats,
-        sizeof(SERIALPERF_STATS)
-        );
+    RtlZeroMemory(&((PSERIAL_DEVICE_EXTENSION)Context)->PerfStats,
+        sizeof(SERIALPERF_STATS));
 
     RtlZeroMemory(&((PSERIAL_DEVICE_EXTENSION)Context)->WmiPerfData,
                  sizeof(SERIAL_WMI_PERF_DATA));
@@ -157,13 +86,6 @@ Return Value:
     return FALSE;
 }
 
-
-
-BOOLEAN
-SerialSetChars(
-    IN WDFINTERRUPT  Interrupt,
-    IN PVOID         Context
-    )
 
 /*++
 
@@ -183,7 +105,12 @@ Return Value:
     This routine always returns FALSE.
 
 --*/
-
+_Use_decl_annotations_
+BOOLEAN
+SerialSetChars(
+    WDFINTERRUPT Interrupt,
+    PVOID Context
+    )
 {
     UNREFERENCED_PARAMETER(Interrupt);
 
@@ -192,13 +119,6 @@ Return Value:
 
     return FALSE;
 }
-
-
-BOOLEAN
-SerialSetBaud(
-    IN WDFINTERRUPT  Interrupt,
-    IN PVOID         Context
-    )
 
 /*++
 
@@ -218,27 +138,24 @@ Return Value:
 
 --*/
 
+_Use_decl_annotations_
+BOOLEAN
+SerialSetBaud(
+    WDFINTERRUPT Interrupt,
+    PVOID Context
+    )
 {
-    PSERIAL_DEVICE_EXTENSION Extension = ((PSERIAL_IOCTL_SYNC)Context)->Extension;
-    USHORT Appropriate = PtrToUshort(((PSERIAL_IOCTL_SYNC)Context)->Data);
+    PSERIAL_DEVICE_EXTENSION extension = ((PSERIAL_IOCTL_SYNC)Context)->Extension;
+    USHORT appropriate = PtrToUshort(((PSERIAL_IOCTL_SYNC)Context)->Data);
 
     UNREFERENCED_PARAMETER(Interrupt);
 
-    WRITE_DIVISOR_LATCH(
-        Extension,
-        Extension->Controller,
-        Appropriate
-        );
+    WRITE_DIVISOR_LATCH(extension,
+                        extension->Controller,
+                        appropriate);
 
     return FALSE;
 }
-
-
-BOOLEAN
-SerialSetLineControl(
-    IN WDFINTERRUPT  Interrupt,
-    IN PVOID         Context
-    )
 
 /*++
 
@@ -255,26 +172,23 @@ Return Value:
     This routine always returns FALSE.
 
 --*/
-
+_Use_decl_annotations_
+BOOLEAN
+SerialSetLineControl(
+    WDFINTERRUPT Interrupt,
+    PVOID Context
+    )
 {
-    PSERIAL_DEVICE_EXTENSION Extension = Context;
+    PSERIAL_DEVICE_EXTENSION extension = (PSERIAL_DEVICE_EXTENSION)Context;
 
     UNREFERENCED_PARAMETER(Interrupt);
 
-    WRITE_LINE_CONTROL(Extension,
-        Extension->Controller,
-        Extension->LineControl
-        );
+    WRITE_LINE_CONTROL(extension,
+        extension->Controller,
+        extension->LineControl);
 
     return FALSE;
 }
-
-
-BOOLEAN
-SerialGetModemUpdate(
-    IN WDFINTERRUPT  Interrupt,
-    IN PVOID         Context
-    )
 
 /*++
 
@@ -293,28 +207,25 @@ Return Value:
     This routine always returns FALSE.
 
 --*/
-
+_Use_decl_annotations_
+BOOLEAN
+SerialGetModemUpdate(
+    WDFINTERRUPT Interrupt,
+    PVOID Context
+    )
 {
-    PSERIAL_DEVICE_EXTENSION Extension = ((PSERIAL_IOCTL_SYNC)Context)->Extension;
-    ULONG *Result = (ULONG *)(((PSERIAL_IOCTL_SYNC)Context)->Data);
+    PSERIAL_DEVICE_EXTENSION extension = ((PSERIAL_IOCTL_SYNC)Context)->Extension;
+    ULONG* result = (ULONG*)(((PSERIAL_IOCTL_SYNC)Context)->Data);
 
     UNREFERENCED_PARAMETER(Interrupt);
 
-    *Result = SerialHandleModemUpdate(
-                  Extension,
-                  FALSE
-                  );
+    *result = SerialHandleModemUpdate(extension,
+                                    FALSE);
 
     return FALSE;
 }
 
 
-
-BOOLEAN
-SerialSetMCRContents(
-    IN WDFINTERRUPT  Interrupt,
-    IN PVOID         Context
-    )
 /*++
 
 Routine Description:
@@ -331,28 +242,25 @@ Return Value:
     This routine always returns FALSE.
 
 --*/
+_Use_decl_annotations_
+BOOLEAN
+SerialSetMCRContents(
+    WDFINTERRUPT Interrupt,
+    PVOID Context
+    )
 {
-   PSERIAL_DEVICE_EXTENSION Extension = ((PSERIAL_IOCTL_SYNC)Context)->Extension;
-   ULONG *Result = (ULONG *)(((PSERIAL_IOCTL_SYNC)Context)->Data);
+   PSERIAL_DEVICE_EXTENSION extension = ((PSERIAL_IOCTL_SYNC)Context)->Extension;
+   ULONG* result = (ULONG*)(((PSERIAL_IOCTL_SYNC)Context)->Data);
 
    UNREFERENCED_PARAMETER(Interrupt);
 
-   //
-   // This is severe casting abuse!!!
-   //
-   WRITE_MODEM_CONTROL(Extension, Extension->Controller, (UCHAR)PtrToUlong(Result));
+   WRITE_MODEM_CONTROL(extension,
+                        extension->Controller,
+                        (UCHAR)PtrToUlong(result));
 
    return FALSE;
 }
 
-
-
-
-BOOLEAN
-SerialGetMCRContents(
-    IN WDFINTERRUPT  Interrupt,
-    IN PVOID         Context
-    )
 
 /*++
 
@@ -370,26 +278,23 @@ Return Value:
     This routine always returns FALSE.
 
 --*/
-
+_Use_decl_annotations_
+BOOLEAN
+SerialGetMCRContents(
+    WDFINTERRUPT Interrupt,
+    PVOID Context
+    )
 {
-    PSERIAL_DEVICE_EXTENSION Extension = ((PSERIAL_IOCTL_SYNC)Context)->Extension;
-    ULONG *Result = (ULONG *)(((PSERIAL_IOCTL_SYNC)Context)->Data);
+    PSERIAL_DEVICE_EXTENSION extension = ((PSERIAL_IOCTL_SYNC)Context)->Extension;
+    ULONG* result = (ULONG*)(((PSERIAL_IOCTL_SYNC)Context)->Data);
 
     UNREFERENCED_PARAMETER(Interrupt);
 
-    *Result = READ_MODEM_CONTROL(Extension, Extension->Controller);
+    *result = READ_MODEM_CONTROL(extension, extension->Controller);
 
     return FALSE;
 }
 
-
-
-
-BOOLEAN
-SerialSetFCRContents(
-    IN WDFINTERRUPT  Interrupt,
-    IN PVOID         Context
-    )
 /*++
 
 Routine Description:
@@ -406,27 +311,25 @@ Return Value:
     This routine always returns FALSE.
 
 --*/
+_Use_decl_annotations_
+BOOLEAN
+SerialSetFCRContents(
+    WDFINTERRUPT Interrupt,
+    PVOID Context
+    )
 {
-   PSERIAL_DEVICE_EXTENSION Extension = ((PSERIAL_IOCTL_SYNC)Context)->Extension;
-   ULONG *Result = (ULONG *)(((PSERIAL_IOCTL_SYNC)Context)->Data);
+    PSERIAL_DEVICE_EXTENSION extension = ((PSERIAL_IOCTL_SYNC)Context)->Extension;
+    ULONG* result = (ULONG*)(((PSERIAL_IOCTL_SYNC)Context)->Data);
 
-   UNREFERENCED_PARAMETER(Interrupt);
+    UNREFERENCED_PARAMETER(Interrupt);
 
-   //
-   // This is severe casting abuse!!!
-   //
-   WRITE_FIFO_CONTROL(Extension, Extension->Controller, (UCHAR)*Result);
+    WRITE_FIFO_CONTROL(extension,
+                        extension->Controller,
+                        (UCHAR)*result);
 
-   return FALSE;
+    return FALSE;
 }
 
-
-
-BOOLEAN
-SerialGetCommStatus(
-    IN WDFINTERRUPT  Interrupt,
-    IN PVOID         Context
-    )
 
 /*++
 
@@ -445,99 +348,95 @@ Return Value:
     This routine always returns FALSE.
 
 --*/
-
+_Use_decl_annotations_
+BOOLEAN
+SerialGetCommStatus(
+    WDFINTERRUPT Interrupt,
+    PVOID Context
+    )
 {
-    PSERIAL_DEVICE_EXTENSION Extension = ((PSERIAL_IOCTL_SYNC)Context)->Extension;
-    PSERIAL_STATUS Stat = ((PSERIAL_IOCTL_SYNC)Context)->Data;
+    PSERIAL_DEVICE_EXTENSION extension = ((PSERIAL_IOCTL_SYNC)Context)->Extension;
+    PSERIAL_STATUS stat = ((PSERIAL_IOCTL_SYNC)Context)->Data;
 
     UNREFERENCED_PARAMETER(Interrupt);
 
-    Stat->Errors = Extension->ErrorWord;
-    Extension->ErrorWord = 0;
+    stat->Errors = extension->ErrorWord;
+    extension->ErrorWord = 0;
 
-    //
     // Eof isn't supported in binary mode
-    //
-    Stat->EofReceived = FALSE;
 
-    Stat->AmountInInQueue = Extension->CharsInInterruptBuffer;
+    stat->EofReceived = FALSE;
 
-    Stat->AmountInOutQueue = Extension->TotalCharsQueued;
+    stat->AmountInInQueue = extension->CharsInInterruptBuffer;
 
-    if (Extension->WriteLength) {
+    stat->AmountInOutQueue = extension->TotalCharsQueued;
 
-        //
-        // By definition if we have a writelength the we have
-        // a current write request.
-        //
+    if (extension->WriteLength) {
+
+    // By definition if we have a writelength the we have
+    // a current write request.
+
      PREQUEST_CONTEXT reqContext = NULL;
 
-        ASSERT(Extension->CurrentWriteRequest);
-        ASSERT(Stat->AmountInOutQueue >= Extension->WriteLength);
+        ASSERT(extension->CurrentWriteRequest);
+        ASSERT(stat->AmountInOutQueue >= extension->WriteLength);
 
-     reqContext = SerialGetRequestContext(Extension->CurrentWriteRequest);
-        Stat->AmountInOutQueue -= reqContext->Length - (Extension->WriteLength);
-
-    }
-
-    Stat->WaitForImmediate = Extension->TransmitImmediate;
-
-    Stat->HoldReasons = 0;
-    if (Extension->TXHolding) {
-
-        if (Extension->TXHolding & SERIAL_TX_CTS) {
-
-            Stat->HoldReasons |= SERIAL_TX_WAITING_FOR_CTS;
-
-        }
-
-        if (Extension->TXHolding & SERIAL_TX_DSR) {
-
-            Stat->HoldReasons |= SERIAL_TX_WAITING_FOR_DSR;
-
-        }
-
-        if (Extension->TXHolding & SERIAL_TX_DCD) {
-
-            Stat->HoldReasons |= SERIAL_TX_WAITING_FOR_DCD;
-
-        }
-
-        if (Extension->TXHolding & SERIAL_TX_XOFF) {
-
-            Stat->HoldReasons |= SERIAL_TX_WAITING_FOR_XON;
-
-        }
-
-        if (Extension->TXHolding & SERIAL_TX_BREAK) {
-
-            Stat->HoldReasons |= SERIAL_TX_WAITING_ON_BREAK;
-
-        }
+     reqContext = SerialGetRequestContext(extension->CurrentWriteRequest);
+        stat->AmountInOutQueue -= reqContext->Length - (extension->WriteLength);
 
     }
 
-    if (Extension->RXHolding & SERIAL_RX_DSR) {
+    stat->WaitForImmediate = extension->TransmitImmediate;
 
-        Stat->HoldReasons |= SERIAL_RX_WAITING_FOR_DSR;
+    stat->HoldReasons = 0;
+    if (extension->TXHolding) {
+
+        if (extension->TXHolding & SERIAL_TX_CTS) {
+
+            stat->HoldReasons |= SERIAL_TX_WAITING_FOR_CTS;
+
+        }
+
+        if (extension->TXHolding & SERIAL_TX_DSR) {
+
+            stat->HoldReasons |= SERIAL_TX_WAITING_FOR_DSR;
+
+        }
+
+        if (extension->TXHolding & SERIAL_TX_DCD) {
+
+            stat->HoldReasons |= SERIAL_TX_WAITING_FOR_DCD;
+
+        }
+
+        if (extension->TXHolding & SERIAL_TX_XOFF) {
+
+            stat->HoldReasons |= SERIAL_TX_WAITING_FOR_XON;
+
+        }
+
+        if (extension->TXHolding & SERIAL_TX_BREAK) {
+
+            stat->HoldReasons |= SERIAL_TX_WAITING_ON_BREAK;
+
+        }
 
     }
 
-    if (Extension->RXHolding & SERIAL_RX_XOFF) {
+    if (extension->RXHolding & SERIAL_RX_DSR) {
 
-        Stat->HoldReasons |= SERIAL_TX_WAITING_XOFF_SENT;
+        stat->HoldReasons |= SERIAL_RX_WAITING_FOR_DSR;
+
+    }
+
+    if (extension->RXHolding & SERIAL_RX_XOFF) {
+
+        stat->HoldReasons |= SERIAL_TX_WAITING_XOFF_SENT;
 
     }
 
     return FALSE;
 }
-
-
-BOOLEAN
-SerialSetEscapeChar(
-    IN WDFINTERRUPT  Interrupt,
-    IN PVOID         Context
-    )
 
 /*++
 
@@ -559,9 +458,13 @@ Return Value:
     This routine always returns FALSE.
 
 --*/
-
+_Use_decl_annotations_
+BOOLEAN
+SerialSetEscapeChar(
+    WDFINTERRUPT Interrupt,
+    PVOID Context
+    )
 {
-
     PREQUEST_CONTEXT reqContext = (PREQUEST_CONTEXT)Context;
     PSERIAL_DEVICE_EXTENSION extension = SerialGetDeviceExtension(WdfInterruptGetDevice(Interrupt));
 
@@ -571,15 +474,6 @@ Return Value:
 
     return FALSE;
 }
-
-VOID
-SerialEvtIoDeviceControl(
-    IN WDFQUEUE     Queue,
-    IN WDFREQUEST   Request,
-    IN size_t       OutputBufferLength,
-    IN size_t       InputBufferLength,
-    IN ULONG        IoControlCode
-    )
 
 /*++
 
@@ -594,22 +488,21 @@ Arguments:
 
 Return Value:
 
-    The function value is the final status of the call
+    none
 
 --*/
-
+_Use_decl_annotations_
+VOID
+SerialEvtIoDeviceControl(
+     WDFQUEUE Queue,
+     WDFREQUEST Request,
+     size_t OutputBufferLength,
+     size_t InputBufferLength,
+     ULONG IoControlCode
+    )
 {
-    //
-    // The status that gets returned to the caller and
-    // set in the Request.
-    //
-    NTSTATUS Status;
-
-    //
-    // Just what it says.  This is the serial specific device
-    // extension of the device object create for the serial driver.
-    //
-    PSERIAL_DEVICE_EXTENSION Extension = NULL;
+    NTSTATUS status;
+    PSERIAL_DEVICE_EXTENSION extension = NULL;
 
     PVOID buffer;
     PREQUEST_CONTEXT reqContext;
@@ -620,27 +513,23 @@ Return Value:
 
     reqContext = SerialGetRequestContext(Request);
 
-    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_IOCTLS, "++SerialEvtIoDeviceControl(%p)\n", Request);
+    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_IOCTLS, "++SerialEvtIoDeviceControl(%p)\r\n", Request);
 
-    Extension = SerialGetDeviceExtension(WdfIoQueueGetDevice(Queue));
+    extension = SerialGetDeviceExtension(WdfIoQueueGetDevice(Queue));
 
-    //
     // We expect to be open so all our pages are locked down.  This is, after
     // all, an IO operation, so the device should be open first.
-    //
 
-    if (Extension->DeviceIsOpened != TRUE) {
+    if (extension->DeviceIsOpened != TRUE) {
        SerialCompleteRequest(Request, STATUS_INVALID_DEVICE_REQUEST, 0);
        return;
     }
 
-
-    if (SerialCompleteIfError(Extension, Request) != STATUS_SUCCESS) {
+    if (SerialCompleteIfError(extension, Request) != STATUS_SUCCESS) {
 
        TraceEvents(TRACE_LEVEL_ERROR, DBG_IOCTLS,
-                    "--SerialEvtIoDeviceControl (2) %d\n", STATUS_CANCELLED);
+                    "--SerialEvtIoDeviceControl (2) %d\r\n", STATUS_CANCELLED);
        return;
-
     }
 
     reqContext = SerialGetRequestContext(Request);
@@ -648,15 +537,14 @@ Return Value:
     reqContext->Status = STATUS_SUCCESS;
     reqContext->MajorFunction = IRP_MJ_DEVICE_CONTROL;
 
-
-    Status = STATUS_SUCCESS;
+    status = STATUS_SUCCESS;
 
     switch (IoControlCode) {
 
         case IOCTL_SERIAL_SET_BAUD_RATE : {
 
-            ULONG BaudRate;
-            //
+            ULONG baudRate;
+
             // Will hold the value of the appropriate divisor for
             // the requested baud rate.  If the baudrate is invalid
             // (because the device won't support that baud rate) then
@@ -672,46 +560,40 @@ Return Value:
             // really be up to the user to "Know" whether the baud rate
             // is suitable.  So much for theory, *We* only support a given
             // set of baud rates.
-            //
-            SHORT AppropriateDivisor;
 
-            Status = WdfRequestRetrieveInputBuffer (Request, sizeof(SERIAL_BAUD_RATE), &buffer, &bufSize );
-            if( !NT_SUCCESS(Status) ) {
-                TraceEvents(TRACE_LEVEL_ERROR, DBG_IOCTLS, "Could not get request memory buffer %X\n", Status);
+            SHORT appropriateDivisor;
+
+            status = WdfRequestRetrieveInputBuffer (Request, sizeof(SERIAL_BAUD_RATE), 
+                &buffer, &bufSize );
+
+            if( !NT_SUCCESS(status) ) {
+                TraceEvents(TRACE_LEVEL_ERROR, DBG_IOCTLS, "Could not get request memory"
+                    " buffer %X\r\n", status);
                 break;
             }
 
-            BaudRate = ((PSERIAL_BAUD_RATE)(buffer))->BaudRate;
+            baudRate = ((PSERIAL_BAUD_RATE)(buffer))->BaudRate;
 
-
-            //
             // Get the baud rate from the request.  We pass it
             // to a routine which will set the correct divisor.
-            //
 
-            Status = SerialGetDivisorFromBaud(
-                         Extension->ClockRate,
-                         BaudRate,
-                         &AppropriateDivisor
-                         );
+            status = SerialGetDivisorFromBaud(extension->ClockRate,
+                                             baudRate,
+                                             &appropriateDivisor);
 
+            if (NT_SUCCESS(status)) {
 
-            if (NT_SUCCESS(Status)) {
+                SERIAL_IOCTL_SYNC serSync;
 
-                SERIAL_IOCTL_SYNC S;
+                extension->CurrentBaud = baudRate;
+                extension->WmiCommData.BaudRate = baudRate;
 
+                serSync.Extension = extension;
+                serSync.Data = (PVOID)(ULONG_PTR)appropriateDivisor;
 
-                Extension->CurrentBaud = BaudRate;
-                Extension->WmiCommData.BaudRate = BaudRate;
-
-                S.Extension = Extension;
-                S.Data = (PVOID) (ULONG_PTR) AppropriateDivisor;
-                WdfInterruptSynchronize(
-                    Extension->WdfInterrupt,
-                    SerialSetBaud,
-                    &S
-                    );
-
+                WdfInterruptSynchronize(extension->WdfInterrupt,
+                                        SerialSetBaud,
+                                        &serSync);
             }
 
             break;
@@ -719,17 +601,20 @@ Return Value:
 
         case IOCTL_SERIAL_GET_BAUD_RATE: {
 
-            PSERIAL_BAUD_RATE Br;
+            PSERIAL_BAUD_RATE br;
 
-            Status = WdfRequestRetrieveOutputBuffer ( Request, sizeof(SERIAL_BAUD_RATE), &buffer, &bufSize );
-            if( !NT_SUCCESS(Status) ) {
-                TraceEvents(TRACE_LEVEL_ERROR, DBG_IOCTLS, "Could not get request memory buffer %X\n", Status);
+            status = WdfRequestRetrieveOutputBuffer (Request, sizeof(SERIAL_BAUD_RATE),
+                &buffer, &bufSize );
+
+            if( !NT_SUCCESS(status) ) {
+                TraceEvents(TRACE_LEVEL_ERROR, DBG_IOCTLS, "Could not get request memory"
+                    " buffer %X\r\n", status);
                 break;
             }
 
-            Br = (PSERIAL_BAUD_RATE)buffer;
+            br = (PSERIAL_BAUD_RATE)buffer;
 
-            Br->BaudRate = Extension->CurrentBaud;
+            br->BaudRate = extension->CurrentBaud;
 
             reqContext->Information = sizeof(SERIAL_BAUD_RATE);
 
@@ -738,223 +623,227 @@ Return Value:
         }
 
         case IOCTL_SERIAL_GET_MODEM_CONTROL: {
-            SERIAL_IOCTL_SYNC S;
+            SERIAL_IOCTL_SYNC serIoSync;
 
-            Status = WdfRequestRetrieveOutputBuffer ( Request, sizeof(ULONG), &buffer, &bufSize );
-            if( !NT_SUCCESS(Status) ) {
-                TraceEvents(TRACE_LEVEL_ERROR, DBG_IOCTLS, "Could not get request memory buffer %X\n", Status);
+            status = WdfRequestRetrieveOutputBuffer ( Request, sizeof(ULONG), 
+                &buffer, &bufSize );
+
+            if( !NT_SUCCESS(status) ) {
+                TraceEvents(TRACE_LEVEL_ERROR, DBG_IOCTLS, "Could not get request memory"
+                    " buffer %X\r\n", status);
                 break;
             }
 
             reqContext->Information = sizeof(ULONG);
 
-            S.Extension = Extension;
-            S.Data = buffer;
+            serIoSync.Extension = extension;
+            serIoSync.Data = buffer;
 
-            WdfInterruptSynchronize(
-                Extension->WdfInterrupt,
-                SerialGetMCRContents,
-                &S
-                );
+            WdfInterruptSynchronize(extension->WdfInterrupt,
+                                    SerialGetMCRContents,
+                                    &serIoSync);
 
             break;
         }
         case IOCTL_SERIAL_SET_MODEM_CONTROL: {
-            SERIAL_IOCTL_SYNC S;
+            SERIAL_IOCTL_SYNC serIoSync;
 
-            Status = WdfRequestRetrieveInputBuffer (Request, sizeof(ULONG), &buffer, &bufSize );
-            if( !NT_SUCCESS(Status) ) {
-                TraceEvents(TRACE_LEVEL_ERROR, DBG_IOCTLS, "Could not get request memory buffer %X\n", Status);
+            status = WdfRequestRetrieveInputBuffer(Request, sizeof(ULONG),
+                                                    &buffer, &bufSize );
+
+            if( !NT_SUCCESS(status) ) {
+                TraceEvents(TRACE_LEVEL_ERROR, DBG_IOCTLS, "Could not get request "
+                    "memory buffer %X\r\n", status);
                 break;
             }
 
-            S.Extension = Extension;
-            S.Data = buffer;
+            serIoSync.Extension = extension;
+            serIoSync.Data = buffer;
 
-
-            WdfInterruptSynchronize(
-                Extension->WdfInterrupt,
-                SerialSetMCRContents,
-                &S
-                );
+            WdfInterruptSynchronize(extension->WdfInterrupt,
+                                    SerialSetMCRContents,
+                                    &serIoSync);
 
             break;
         }
         case IOCTL_SERIAL_SET_FIFO_CONTROL: {
-            SERIAL_IOCTL_SYNC S;
+            SERIAL_IOCTL_SYNC serIoSync;
 
-            Status = WdfRequestRetrieveInputBuffer (Request, sizeof(ULONG), &buffer, &bufSize );
-            if( !NT_SUCCESS(Status) ) {
-                TraceEvents(TRACE_LEVEL_ERROR, DBG_IOCTLS, "Could not get request memory buffer %X\n", Status);
+            status = WdfRequestRetrieveInputBuffer (Request, sizeof(ULONG), &buffer, 
+                &bufSize );
+
+            if( !NT_SUCCESS(status) ) {
+                TraceEvents(TRACE_LEVEL_ERROR, DBG_IOCTLS, "Could not get request "
+                    "memory buffer %X\r\n", status);
                 break;
             }
 
-            S.Extension = Extension;
-            S.Data = buffer;
+            serIoSync.Extension = extension;
+            serIoSync.Data = buffer;
 
-
-            WdfInterruptSynchronize(
-                Extension->WdfInterrupt,
-                SerialSetFCRContents,
-                &S
-                );
+            WdfInterruptSynchronize(extension->WdfInterrupt,
+                                    SerialSetFCRContents,
+                                    &serIoSync);
 
             break;
         }
         case IOCTL_SERIAL_SET_LINE_CONTROL: {
 
-            PSERIAL_LINE_CONTROL Lc;
-            UCHAR LData;
-            UCHAR LStop;
-            UCHAR LParity;
+            PSERIAL_LINE_CONTROL lc;
+            UCHAR lData;
+            UCHAR lStop;
+            UCHAR lParity;
             UCHAR Mask = 0xff;
 
-            Status = WdfRequestRetrieveInputBuffer (Request, sizeof(SERIAL_LINE_CONTROL), &buffer, &bufSize );
-            if( !NT_SUCCESS(Status) ) {
-                TraceEvents(TRACE_LEVEL_ERROR, DBG_IOCTLS, "Could not get request memory buffer %X\n", Status);
+            status = WdfRequestRetrieveInputBuffer (Request, sizeof(SERIAL_LINE_CONTROL), 
+                &buffer, &bufSize );
+
+            if( !NT_SUCCESS(status) ) {
+                TraceEvents(TRACE_LEVEL_ERROR, DBG_IOCTLS, "Could not get request"
+                    " memory buffer %X\r\n", status);
                 break;
             }
 
-            //
             // Points to the line control record in the Request.
-            //
-            Lc =  (PSERIAL_LINE_CONTROL)buffer;
 
-            switch (Lc->WordLength) {
+            lc =  (PSERIAL_LINE_CONTROL)buffer;
+
+            switch (lc->WordLength) {
                 case 7: {
 
-                    LData = SERIAL_7_DATA;
+                    lData = SERIAL_7_DATA;
                     Mask = 0x7f;
                     break;
 
                 }
                 case 8: {
 
-                    LData = SERIAL_8_DATA;
+                    lData = SERIAL_8_DATA;
                     break;
 
                 }
                 default: {
 
-                    Status = STATUS_INVALID_PARAMETER;
+                    status = STATUS_INVALID_PARAMETER;
                     goto DoneWithIoctl;
 
                 }
 
             }
 
-            Extension->WmiCommData.BitsPerByte = Lc->WordLength;
+            extension->WmiCommData.BitsPerByte = lc->WordLength;
 
-            switch (Lc->Parity) {
+            switch (lc->Parity) {
 
                 case NO_PARITY: {
-                    Extension->WmiCommData.Parity = SERIAL_WMI_PARITY_NONE;
-                    LParity = SERIAL_NONE_PARITY;
+                    extension->WmiCommData.Parity = SERIAL_WMI_PARITY_NONE;
+                    lParity = SERIAL_NONE_PARITY;
                     break;
 
                 }
                 case EVEN_PARITY: {
-                    Extension->WmiCommData.Parity = SERIAL_WMI_PARITY_EVEN;
-                    LParity = SERIAL_EVEN_PARITY;
+                    extension->WmiCommData.Parity = SERIAL_WMI_PARITY_EVEN;
+                    lParity = SERIAL_EVEN_PARITY;
                     break;
 
                 }
                 case ODD_PARITY: {
-                    Extension->WmiCommData.Parity = SERIAL_WMI_PARITY_ODD;
-                    LParity = SERIAL_ODD_PARITY;
+                    extension->WmiCommData.Parity = SERIAL_WMI_PARITY_ODD;
+                    lParity = SERIAL_ODD_PARITY;
                     break;
 
                 }
                 case SPACE_PARITY: {
-                    Extension->WmiCommData.Parity = SERIAL_WMI_PARITY_SPACE;
-                    LParity = SERIAL_SPACE_PARITY;
+                    extension->WmiCommData.Parity = SERIAL_WMI_PARITY_SPACE;
+                    lParity = SERIAL_SPACE_PARITY;
                     break;
 
                 }
                 case MARK_PARITY: {
-                    Extension->WmiCommData.Parity = SERIAL_WMI_PARITY_MARK;
-                    LParity = SERIAL_MARK_PARITY;
+                    extension->WmiCommData.Parity = SERIAL_WMI_PARITY_MARK;
+                    lParity = SERIAL_MARK_PARITY;
                     break;
 
                 }
                 default: {
 
-                    Status = STATUS_INVALID_PARAMETER;
+                    status = STATUS_INVALID_PARAMETER;
                     goto DoneWithIoctl;
                     break;
                 }
 
             }
 
-            switch (Lc->StopBits) {
+            switch (lc->StopBits) {
 
                 case STOP_BIT_1: {
-                    Extension->WmiCommData.StopBits = SERIAL_WMI_STOP_1;
-                    LStop = SERIAL_1_STOP;
+                    extension->WmiCommData.StopBits = SERIAL_WMI_STOP_1;
+                    lStop = SERIAL_1_STOP;
                     break;
                 }
 
                 default: {
 
-                    Status = STATUS_INVALID_PARAMETER;
+                    status = STATUS_INVALID_PARAMETER;
                     goto DoneWithIoctl;
                 }
 
             }
 
-            Extension->LineControl =
-                (UCHAR)((Extension->LineControl & SERIAL_LCR_BREAK) |
-                        (LData | LParity | LStop));
-            Extension->ValidDataMask = Mask;
+            extension->LineControl =
+                (UCHAR)((extension->LineControl & SERIAL_LCR_BREAK) |
+                        (lData | lParity | lStop));
+            extension->ValidDataMask = Mask;
 
-            WdfInterruptSynchronize(
-                Extension->WdfInterrupt,
-                SerialSetLineControl,
-                Extension
-                );
+            WdfInterruptSynchronize(extension->WdfInterrupt,
+                                    SerialSetLineControl,
+                                    extension);
 
             break;
         }
         case IOCTL_SERIAL_GET_LINE_CONTROL: {
 
-            PSERIAL_LINE_CONTROL Lc;
+            PSERIAL_LINE_CONTROL lc;
 
-            Status = WdfRequestRetrieveOutputBuffer ( Request, sizeof(SERIAL_LINE_CONTROL), &buffer, &bufSize );
-            if( !NT_SUCCESS(Status) ) {
-                TraceEvents(TRACE_LEVEL_ERROR, DBG_IOCTLS, "Could not get request memory buffer %X\n", Status);
+            status = WdfRequestRetrieveOutputBuffer ( Request, sizeof(SERIAL_LINE_CONTROL), 
+                &buffer, &bufSize );
+
+            if( !NT_SUCCESS(status) ) {
+                TraceEvents(TRACE_LEVEL_ERROR, DBG_IOCTLS, "Could not get request"
+                    " memory buffer %X\r\n", status);
                 break;
             }
 
-            Lc = (PSERIAL_LINE_CONTROL)buffer;
+            lc = (PSERIAL_LINE_CONTROL)buffer;
 
             RtlZeroMemory(buffer, OutputBufferLength);
 
-           if ((Extension->LineControl & SERIAL_DATA_MASK)
+           if ((extension->LineControl & SERIAL_DATA_MASK)
                         == SERIAL_7_DATA) {
-                Lc->WordLength = 7;
-            } else if ((Extension->LineControl & SERIAL_DATA_MASK)
+                lc->WordLength = 7;
+            } else if ((extension->LineControl & SERIAL_DATA_MASK)
                         == SERIAL_8_DATA) {
-                Lc->WordLength = 8;
+                lc->WordLength = 8;
             }
 
-            if ((Extension->LineControl & SERIAL_PARITY_MASK)
+            if ((extension->LineControl & SERIAL_PARITY_MASK)
                     == SERIAL_NONE_PARITY) {
-                Lc->Parity = NO_PARITY;
-            } else if ((Extension->LineControl & SERIAL_PARITY_MASK)
+                lc->Parity = NO_PARITY;
+            } else if ((extension->LineControl & SERIAL_PARITY_MASK)
                     == SERIAL_ODD_PARITY) {
-                Lc->Parity = ODD_PARITY;
-            } else if ((Extension->LineControl & SERIAL_PARITY_MASK)
+                lc->Parity = ODD_PARITY;
+            } else if ((extension->LineControl & SERIAL_PARITY_MASK)
                     == SERIAL_EVEN_PARITY) {
-                Lc->Parity = EVEN_PARITY;
-            } else if ((Extension->LineControl & SERIAL_PARITY_MASK)
+                lc->Parity = EVEN_PARITY;
+            } else if ((extension->LineControl & SERIAL_PARITY_MASK)
                     == SERIAL_MARK_PARITY) {
-                Lc->Parity = MARK_PARITY;
-            } else if ((Extension->LineControl & SERIAL_PARITY_MASK)
+                lc->Parity = MARK_PARITY;
+            } else if ((extension->LineControl & SERIAL_PARITY_MASK)
                     == SERIAL_SPACE_PARITY) {
-                Lc->Parity = SPACE_PARITY;
+                lc->Parity = SPACE_PARITY;
             }
 
-            Lc->StopBits = STOP_BIT_1;
+            lc->StopBits = STOP_BIT_1;
 
             reqContext->Information = sizeof(SERIAL_LINE_CONTROL);
 
@@ -962,177 +851,161 @@ Return Value:
         }
         case IOCTL_SERIAL_SET_TIMEOUTS: {
 
-            PSERIAL_TIMEOUTS NewTimeouts;
+            PSERIAL_TIMEOUTS newTimeouts;
 
-            Status = WdfRequestRetrieveInputBuffer ( Request, sizeof(SERIAL_TIMEOUTS), &buffer, &bufSize );
-            if( !NT_SUCCESS(Status) ) {
-                TraceEvents(TRACE_LEVEL_ERROR, DBG_IOCTLS, "Could not get request memory buffer %X\n", Status);
+            status = WdfRequestRetrieveInputBuffer(Request, sizeof(SERIAL_TIMEOUTS),
+                                             &buffer, &bufSize);
+
+            if( !NT_SUCCESS(status) ) {
+                TraceEvents(TRACE_LEVEL_ERROR, DBG_IOCTLS, "Could not get request"
+                    " memory buffer %X\r\n", status);
                 break;
             }
 
-            NewTimeouts =(PSERIAL_TIMEOUTS)buffer;
+            newTimeouts =(PSERIAL_TIMEOUTS)buffer;
 
-            if ((NewTimeouts->ReadIntervalTimeout == MAXULONG) &&
-                (NewTimeouts->ReadTotalTimeoutMultiplier == MAXULONG) &&
-                (NewTimeouts->ReadTotalTimeoutConstant == MAXULONG)) {
+            if ((newTimeouts->ReadIntervalTimeout == MAXULONG) &&
+                (newTimeouts->ReadTotalTimeoutMultiplier == MAXULONG) &&
+                (newTimeouts->ReadTotalTimeoutConstant == MAXULONG)) {
 
-                Status = STATUS_INVALID_PARAMETER;
+                status = STATUS_INVALID_PARAMETER;
                 break;
 
             }
 
+            extension->timeouts.ReadIntervalTimeout =
+                newTimeouts->ReadIntervalTimeout;
 
-            Extension->Timeouts.ReadIntervalTimeout =
-                NewTimeouts->ReadIntervalTimeout;
+            extension->timeouts.ReadTotalTimeoutMultiplier =
+                newTimeouts->ReadTotalTimeoutMultiplier;
 
-            Extension->Timeouts.ReadTotalTimeoutMultiplier =
-                NewTimeouts->ReadTotalTimeoutMultiplier;
+            extension->timeouts.ReadTotalTimeoutConstant =
+                newTimeouts->ReadTotalTimeoutConstant;
 
-            Extension->Timeouts.ReadTotalTimeoutConstant =
-                NewTimeouts->ReadTotalTimeoutConstant;
+            extension->timeouts.WriteTotalTimeoutMultiplier =
+                newTimeouts->WriteTotalTimeoutMultiplier;
 
-            Extension->Timeouts.WriteTotalTimeoutMultiplier =
-                NewTimeouts->WriteTotalTimeoutMultiplier;
+            extension->timeouts.WriteTotalTimeoutConstant =
+                newTimeouts->WriteTotalTimeoutConstant;
 
-            Extension->Timeouts.WriteTotalTimeoutConstant =
-                NewTimeouts->WriteTotalTimeoutConstant;
-
-            TraceEvents(TRACE_LEVEL_INFORMATION, DBG_IOCTLS, "SET_TIMEOUTS read: Intrv=%u, TotMul=%lu, TotConst=%lu; write: TotalInterv mul=%lu, const=%lu\r\n",
-                            Extension->Timeouts.ReadIntervalTimeout,
-                            Extension->Timeouts.ReadTotalTimeoutMultiplier,
-                            Extension->Timeouts.ReadTotalTimeoutConstant,
-                            Extension->Timeouts.WriteTotalTimeoutMultiplier,
-                            Extension->Timeouts.WriteTotalTimeoutConstant);
+            TraceEvents(TRACE_LEVEL_INFORMATION, DBG_IOCTLS, 
+                "SET_TIMEOUTS read: Intrv=%u, TotMul=%lu, TotConst=%lu; write: TotalInterv mul=%lu,"
+                " const=%lu\r\n",
+                extension->timeouts.ReadIntervalTimeout,
+                extension->timeouts.ReadTotalTimeoutMultiplier,
+                extension->timeouts.ReadTotalTimeoutConstant,
+                extension->timeouts.WriteTotalTimeoutMultiplier,
+                extension->timeouts.WriteTotalTimeoutConstant);
             break;
         }
         case IOCTL_SERIAL_GET_TIMEOUTS: {
 
-            Status = WdfRequestRetrieveOutputBuffer ( Request, sizeof(SERIAL_TIMEOUTS), &buffer, &bufSize );
-            if( !NT_SUCCESS(Status) ) {
-                TraceEvents(TRACE_LEVEL_ERROR, DBG_IOCTLS, "Could not get request memory buffer %X\n", Status);
+            status = WdfRequestRetrieveOutputBuffer ( Request, sizeof(SERIAL_TIMEOUTS), &buffer, 
+                &bufSize );
+
+            if( !NT_SUCCESS(status) ) {
+                TraceEvents(TRACE_LEVEL_ERROR, DBG_IOCTLS, "Could not get request memory buffer"
+                    " %X\r\n", status);
                 break;
             }
 
-            *((PSERIAL_TIMEOUTS)buffer) = Extension->Timeouts;
+            *((PSERIAL_TIMEOUTS)buffer) = extension->timeouts;
             reqContext->Information = sizeof(SERIAL_TIMEOUTS);
 
-            TraceEvents(TRACE_LEVEL_INFORMATION, DBG_IOCTLS, "GET_TIMEOUTS read: Intrv=%u, TotMul=%lu, TotConst=%lu; write: TotalInterv mul=%lu, const=%lu\r\n",
-                            Extension->Timeouts.ReadIntervalTimeout,
-                            Extension->Timeouts.ReadTotalTimeoutMultiplier,
-                            Extension->Timeouts.ReadTotalTimeoutConstant,
-                            Extension->Timeouts.WriteTotalTimeoutMultiplier,
-                            Extension->Timeouts.WriteTotalTimeoutConstant);
+            TraceEvents(TRACE_LEVEL_INFORMATION, DBG_IOCTLS, 
+                "GET_TIMEOUTS read: Intrv=%u, TotMul=%lu, TotConst=%lu; write: TotalInterv mul=%lu,"
+                " const=%lu\r\n",
+                extension->timeouts.ReadIntervalTimeout,
+                extension->timeouts.ReadTotalTimeoutMultiplier,
+                extension->timeouts.ReadTotalTimeoutConstant,
+                extension->timeouts.WriteTotalTimeoutMultiplier,
+                extension->timeouts.WriteTotalTimeoutConstant);
             break;
         }
         case IOCTL_SERIAL_SET_CHARS: {
 
-            SERIAL_IOCTL_SYNC S;
-            PSERIAL_CHARS NewChars;
+            SERIAL_IOCTL_SYNC serSync;
+            PSERIAL_CHARS newChars;
 
-           Status = WdfRequestRetrieveInputBuffer ( Request, sizeof(SERIAL_CHARS), &buffer, &bufSize );
-            if( !NT_SUCCESS(Status) ) {
-                TraceEvents(TRACE_LEVEL_ERROR, DBG_IOCTLS, "Could not get request memory buffer %X\n", Status);
+           status = WdfRequestRetrieveInputBuffer ( Request, sizeof(SERIAL_CHARS), &buffer, &bufSize );
+            if( !NT_SUCCESS(status) ) {
+                TraceEvents(TRACE_LEVEL_ERROR, DBG_IOCTLS, "Could not get request memory buffer %X\r\n", 
+                        status);
                 break;
             }
 
-            NewChars = (PSERIAL_CHARS)buffer;
+            newChars = (PSERIAL_CHARS)buffer;
 
-            //
-            // The only thing that can be wrong with the chars
-            // is that the xon and xoff characters are the
-            // same.
-            //
-#if 0
-            if (NewChars->XonChar == NewChars->XoffChar) {
-
-                Status = STATUS_INVALID_PARAMETER;
-                break;
-
-            }
-#endif
-
-            //
             // We acquire the control lock so that only
             // one request can GET or SET the characters
             // at a time.  The sets could be synchronized
             // by the interrupt spinlock, but that wouldn't
             // prevent multiple gets at the same time.
-            //
 
-            S.Extension = Extension;
-            S.Data = NewChars;
+            serSync.Extension = extension;
+            serSync.Data = newChars;
 
-            //
             // Under the protection of the lock, make sure that
             // the xon and xoff characters aren't the same as
             // the escape character.
             //
 
-            if (Extension->EscapeChar) {
+            if (extension->EscapeChar) {
 
-                if ((Extension->EscapeChar == NewChars->XonChar) ||
-                    (Extension->EscapeChar == NewChars->XoffChar)) {
+                if ((extension->EscapeChar == newChars->XonChar) ||
+                    (extension->EscapeChar == newChars->XoffChar)) {
 
-                    Status = STATUS_INVALID_PARAMETER;
+                    status = STATUS_INVALID_PARAMETER;
                     break;
-
                 }
-
             }
 
-            Extension->WmiCommData.XonCharacter = NewChars->XonChar;
-            Extension->WmiCommData.XoffCharacter = NewChars->XoffChar;
+            extension->WmiCommData.XonCharacter = newChars->XonChar;
+            extension->WmiCommData.XoffCharacter = newChars->XoffChar;
 
-            WdfInterruptSynchronize(
-                Extension->WdfInterrupt,
-                SerialSetChars,
-                &S
-                );
-
+            WdfInterruptSynchronize(extension->WdfInterrupt,
+                                    SerialSetChars,
+                                    &serSync);
 
             break;
 
         }
         case IOCTL_SERIAL_GET_CHARS: {
 
-            Status = WdfRequestRetrieveOutputBuffer ( Request, sizeof(SERIAL_CHARS), &buffer, &bufSize );
-            if( !NT_SUCCESS(Status) ) {
-                TraceEvents(TRACE_LEVEL_ERROR, DBG_IOCTLS, "Could not get request memory buffer %X\n", Status);
+            status = WdfRequestRetrieveOutputBuffer ( Request, sizeof(SERIAL_CHARS), 
+                &buffer, &bufSize );
+
+            if( !NT_SUCCESS(status) ) {
+                TraceEvents(TRACE_LEVEL_ERROR, DBG_IOCTLS, "Could not get request memory"
+                    " buffer %X\r\n", status);
                 break;
             }
 
-            *((PSERIAL_CHARS)buffer) = Extension->SpecialChars;
+            *((PSERIAL_CHARS)buffer) = extension->SpecialChars;
             reqContext->Information = sizeof(SERIAL_CHARS);
-
 
             break;
         }
         case IOCTL_SERIAL_SET_DTR:
         case IOCTL_SERIAL_CLR_DTR: {
 
-
-            //
             // We acquire the lock so that we can check whether
             // automatic dtr flow control is enabled.  If it is
             // then we return an error since the app is not allowed
             // to touch this if it is automatic.
-            //
 
-            if ((Extension->HandFlow.ControlHandShake & SERIAL_DTR_MASK)
+            if ((extension->HandFlow.ControlHandShake & SERIAL_DTR_MASK)
                 == SERIAL_DTR_HANDSHAKE) {
 
-                Status = STATUS_INVALID_PARAMETER;
+                status = STATUS_INVALID_PARAMETER;
 
             } else {
 
-                WdfInterruptSynchronize(
-                    Extension->WdfInterrupt,
-                    ((IoControlCode ==
-                     IOCTL_SERIAL_SET_DTR)?
-                     (SerialSetDTR):(SerialClrDTR)),
-                    Extension
-                    );
-
+                WdfInterruptSynchronize(extension->WdfInterrupt,
+                                        ((IoControlCode ==
+                                         IOCTL_SERIAL_SET_DTR)?
+                                         (SerialSetDTR):(SerialClrDTR)),
+                                        extension);
             }
 
             break;
@@ -1144,31 +1017,26 @@ Return Value:
         case IOCTL_SERIAL_SET_RTS:
         case IOCTL_SERIAL_CLR_RTS: {
 
-            //
             // We acquire the lock so that we can check whether
             // automatic rts flow control or transmit toggleing
             // is enabled.  If it is then we return an error since
             // the app is not allowed to touch this if it is automatic
             // or toggling.
-            //
 
-            if (((Extension->HandFlow.FlowReplace & SERIAL_RTS_MASK)
+            if (((extension->HandFlow.FlowReplace & SERIAL_RTS_MASK)
                  == SERIAL_RTS_HANDSHAKE) ||
-                ((Extension->HandFlow.FlowReplace & SERIAL_RTS_MASK)
+                ((extension->HandFlow.FlowReplace & SERIAL_RTS_MASK)
                  == SERIAL_TRANSMIT_TOGGLE)) {
 
-                Status = STATUS_INVALID_PARAMETER;
+                status = STATUS_INVALID_PARAMETER;
 
             } else {
 
-                WdfInterruptSynchronize(
-                    Extension->WdfInterrupt,
-                    ((IoControlCode ==
-                     IOCTL_SERIAL_SET_RTS)?
-                     (SerialSetRTS):(SerialClrRTS)),
-                    Extension
-                    );
-
+                WdfInterruptSynchronize(extension->WdfInterrupt,
+                                        ((IoControlCode ==
+                                        IOCTL_SERIAL_SET_RTS)?
+                                        (SerialSetRTS):(SerialClrRTS)),
+                                        extension);
             }
 
             break;
@@ -1176,69 +1044,61 @@ Return Value:
         }
         case IOCTL_SERIAL_SET_XOFF: {
 
-            WdfInterruptSynchronize(
-                Extension->WdfInterrupt,
-                SerialPretendXoff,
-                Extension
-                );
+            WdfInterruptSynchronize(extension->WdfInterrupt,
+                                    SerialPretendXoff,
+                                    extension);
 
             break;
 
         }
         case IOCTL_SERIAL_SET_XON: {
 
-            WdfInterruptSynchronize(
-                Extension->WdfInterrupt,
-                SerialPretendXon,
-                Extension
-                );
+            WdfInterruptSynchronize(extension->WdfInterrupt,
+                                    SerialPretendXon,
+                                    extension);
 
             break;
 
         }
         case IOCTL_SERIAL_SET_BREAK_ON: {
 
-            WdfInterruptSynchronize(
-                Extension->WdfInterrupt,
-                SerialTurnOnBreak,
-                Extension
-                );
+            WdfInterruptSynchronize(extension->WdfInterrupt,
+                                    SerialTurnOnBreak,
+                                    extension);
 
             break;
         }
         case IOCTL_SERIAL_SET_BREAK_OFF: {
 
-            WdfInterruptSynchronize(
-                Extension->WdfInterrupt,
-                SerialTurnOffBreak,
-                Extension
-                );
+            WdfInterruptSynchronize(extension->WdfInterrupt,
+                                    SerialTurnOffBreak,
+                                    extension);
 
             break;
         }
         case IOCTL_SERIAL_SET_QUEUE_SIZE: {
 
-            //
             // Type ahead buffer is fixed, so we just validate
             // the the users request is not bigger that our
             // own internal buffer size.
-            //
 
-            PSERIAL_QUEUE_SIZE Rs;
+            PSERIAL_QUEUE_SIZE rs;
 
-            Status = WdfRequestRetrieveInputBuffer ( Request, sizeof(SERIAL_QUEUE_SIZE), &buffer, &bufSize );
-            if( !NT_SUCCESS(Status) ) {
-                TraceEvents(TRACE_LEVEL_ERROR, DBG_IOCTLS, "Could not get request memory buffer %X\n", Status);
+            status = WdfRequestRetrieveInputBuffer ( Request, sizeof(SERIAL_QUEUE_SIZE), 
+                &buffer, &bufSize );
+
+            if( !NT_SUCCESS(status) ) {
+                TraceEvents(TRACE_LEVEL_ERROR, DBG_IOCTLS, "Could not get request "
+                    "memory buffer %X\r\n", status);
                 break;
             }
 
-            ASSERT(Extension->InterruptReadBuffer);
+            ASSERT(extension->InterruptReadBuffer);
 
-            Rs =   (PSERIAL_QUEUE_SIZE)buffer;
+            rs = (PSERIAL_QUEUE_SIZE)buffer;
 
             reqContext->SystemBuffer = buffer;
 
-            //
             // We have to allocate the memory for the new
             // buffer while we're still in the context of the
             // caller.  We don't even try to protect this
@@ -1246,30 +1106,25 @@ Return Value:
             // as soon as we release the lock - The only time
             // we will know for sure is when we actually try
             // to do the resize.
-            //
 
-            if (Rs->InSize <= Extension->BufferSize) {
+            if (rs->InSize <= extension->BufferSize) {
 
-                Status = STATUS_SUCCESS;
+                status = STATUS_SUCCESS;
                 break;
-
             }
 
             reqContext->Type3InputBuffer =
-                    ExAllocatePoolWithQuotaTag(
-                        NonPagedPool | POOL_QUOTA_FAIL_INSTEAD_OF_RAISE,
-                        Rs->InSize,
-                        POOL_TAG
-                        );
+                    ExAllocatePoolWithQuotaTag(NonPagedPool | POOL_QUOTA_FAIL_INSTEAD_OF_RAISE,
+                                                rs->InSize,
+                                                POOL_TAG);
 
             if (!reqContext->Type3InputBuffer) {
 
-                Status = STATUS_INSUFFICIENT_RESOURCES;
+                status = STATUS_INSUFFICIENT_RESOURCES;
                 break;
 
             }
 
-            //
             // Well the data passed was big enough.  Do the request.
             //
             // There are two reason we place it in the read queue:
@@ -1280,34 +1135,30 @@ Return Value:
             // 2) We want to serialize these requests with reads since
             //    we don't want reads and resizes contending over the
             //    read buffer.
-            //
 
-
-            SerialStartOrQueue(
-                       Extension,
-                       Request,
-                       Extension->ReadQueue,
-                       &Extension->CurrentReadRequest,
-                       SerialStartRead
-                       );
+            SerialStartOrQueue(extension,
+                                Request,
+                                extension->ReadQueue,
+                                &extension->CurrentReadRequest,
+                                SerialStartRead);
 
             return;
         }
         case IOCTL_SERIAL_GET_WAIT_MASK: {
 
-            Status = WdfRequestRetrieveOutputBuffer ( Request, sizeof(ULONG), &buffer, &bufSize );
-            if( !NT_SUCCESS(Status) ) {
-                TraceEvents(TRACE_LEVEL_ERROR, DBG_IOCTLS, "Could not get request memory buffer %X\n", Status);
+            status = WdfRequestRetrieveOutputBuffer ( Request, sizeof(ULONG), &buffer, &bufSize );
+            if( !NT_SUCCESS(status) ) {
+                TraceEvents(TRACE_LEVEL_ERROR, DBG_IOCTLS,
+                            "Could not get request memory buffer %X\r\n",
+                            status);
                 break;
             }
 
-            //
             // Simple scalar read.  No reason to acquire a lock.
-            //
 
             reqContext->Information = sizeof(ULONG);
 
-            *((ULONG *)buffer) = Extension->IsrWaitMask;
+            *((ULONG*)buffer) = extension->IsrWaitMask;
 
             break;
 
@@ -1316,21 +1167,21 @@ Return Value:
 
             ULONG NewMask;
 
-            TraceEvents(TRACE_LEVEL_VERBOSE, DBG_IOCTLS, "In Ioctl processing for set mask\n");
+            TraceEvents(TRACE_LEVEL_VERBOSE, DBG_IOCTLS, "In Ioctl processing for set mask\r\n");
 
-            Status = WdfRequestRetrieveInputBuffer ( Request, sizeof(ULONG), &buffer, &bufSize );
-            if( !NT_SUCCESS(Status) ) {
-                TraceEvents(TRACE_LEVEL_ERROR, DBG_IOCTLS, "Could not get request memory buffer %X\n", Status);
+            status = WdfRequestRetrieveInputBuffer ( Request, sizeof(ULONG), &buffer, &bufSize );
+            if( !NT_SUCCESS(status) ) {
+                TraceEvents(TRACE_LEVEL_ERROR, DBG_IOCTLS,
+                            "Could not get request memory buffer %X\r\n",
+                            status);
                 break;
             }
 
-            NewMask = *((ULONG *)buffer);
+            NewMask = *((ULONG*)buffer);
             reqContext->SystemBuffer = buffer;
 
-            //
             // Make sure that the mask only contains valid
             // waitable events.
-            //
 
             if (NewMask & ~(SERIAL_EV_RXCHAR   |
                             SERIAL_EV_RXFLAG   |
@@ -1346,84 +1197,83 @@ Return Value:
                             SERIAL_EV_EVENT1   |
                             SERIAL_EV_EVENT2)) {
 
-                TraceEvents(TRACE_LEVEL_VERBOSE, DBG_IOCTLS, "Unknown mask %x\n", NewMask);
+                TraceEvents(TRACE_LEVEL_VERBOSE, DBG_IOCTLS, "Unknown mask %x\r\n", NewMask);
 
-                Status = STATUS_INVALID_PARAMETER;
+                status = STATUS_INVALID_PARAMETER;
                 break;
-
             }
 
-            //
             // Either start this request or put it on the
             // queue.
-            //
 
-            TraceEvents(TRACE_LEVEL_VERBOSE, DBG_IOCTLS, "Starting or queuing set mask request %p"
-                             "\n", Request);
+            TraceEvents(TRACE_LEVEL_VERBOSE, DBG_IOCTLS,
+                        "Starting or queuing set mask request %p\r\n",
+                        Request);
 
-            SerialStartOrQueue(Extension, Request, Extension->MaskQueue,
-                                      &Extension->CurrentMaskRequest,
-                                      SerialStartMask);
+            SerialStartOrQueue(extension,
+                            Request,
+                            extension->MaskQueue,
+                            &extension->CurrentMaskRequest,
+                            SerialStartMask);
             return;
 
         }
         case IOCTL_SERIAL_WAIT_ON_MASK: {
 
-            TraceEvents(TRACE_LEVEL_VERBOSE, DBG_IOCTLS, "In Ioctl processing for wait mask\n");
+            TraceEvents(TRACE_LEVEL_VERBOSE, DBG_IOCTLS, "In Ioctl processing for wait mask\r\n");
 
-            Status = WdfRequestRetrieveOutputBuffer ( Request, sizeof(ULONG), &buffer, &bufSize );
-            if( !NT_SUCCESS(Status) ) {
-                TraceEvents(TRACE_LEVEL_ERROR, DBG_IOCTLS, "Could not get request memory buffer %X\n", Status);
+            status = WdfRequestRetrieveOutputBuffer ( Request, sizeof(ULONG), &buffer, &bufSize );
+
+            if( !NT_SUCCESS(status) ) {
+                TraceEvents(TRACE_LEVEL_ERROR, DBG_IOCTLS,
+                            "Could not get request memory buffer %X\r\n",
+                            status);
                 break;
             }
 
             reqContext->SystemBuffer = buffer;
 
-            //
             // Either start this request or put it on the
             // queue.
-            //
 
-            TraceEvents(TRACE_LEVEL_VERBOSE, DBG_IOCTLS, "Starting or queuing wait mask request"
-                             "%p\n", Request);
+            TraceEvents(TRACE_LEVEL_VERBOSE, DBG_IOCTLS,
+                        "Starting or queuing wait mask request %p\r\n", 
+                        Request);
 
-            SerialStartOrQueue(
-                       Extension,
-                       Request,
-                       Extension->MaskQueue,
-                       &Extension->CurrentMaskRequest,
-                       SerialStartMask
-                       );
+            SerialStartOrQueue(extension,
+                               Request,
+                               extension->MaskQueue,
+                               &extension->CurrentMaskRequest,
+                               SerialStartMask);
             return;
         }
         case IOCTL_SERIAL_IMMEDIATE_CHAR: {
 
-            Status = WdfRequestRetrieveInputBuffer ( Request, sizeof(UCHAR), &buffer, &bufSize );
-            if( !NT_SUCCESS(Status) ) {
-                TraceEvents(TRACE_LEVEL_ERROR, DBG_IOCTLS, "Could not get request memory buffer %X\n", Status);
+            status = WdfRequestRetrieveInputBuffer ( Request, sizeof(UCHAR), &buffer, &bufSize );
+            if( !NT_SUCCESS(status) ) {
+                TraceEvents(TRACE_LEVEL_ERROR, DBG_IOCTLS,
+                            "Could not get request memory buffer %X\r\n",
+                            status);
                 break;
             }
 
             reqContext->SystemBuffer = buffer;
 
-            if (Extension->CurrentImmediateRequest) {
+            if (extension->CurrentImmediateRequest) {
 
-                Status = STATUS_INVALID_PARAMETER;
+                status = STATUS_INVALID_PARAMETER;
 
             } else {
 
-                //
                 // We can queue the char.  We need to set
                 // a cancel routine because flow control could
                 // keep the char from transmitting.  Make sure
                 // that the request hasn't already been canceled.
-                //
 
-                Extension->CurrentImmediateRequest = Request;
-                Extension->TotalCharsQueued++;
-                SerialStartImmediate(Extension);
+                extension->CurrentImmediateRequest = Request;
+                extension->TotalCharsQueued++;
+                SerialStartImmediate(extension);
                 return;
-
             }
 
             break;
@@ -1431,265 +1281,242 @@ Return Value:
         }
         case IOCTL_SERIAL_PURGE: {
 
-            ULONG Mask;
+            ULONG mask;
 
-            Status = WdfRequestRetrieveInputBuffer ( Request, sizeof(ULONG), &buffer, &bufSize );
-            if( !NT_SUCCESS(Status) ) {
-                TraceEvents(TRACE_LEVEL_ERROR, DBG_IOCTLS, "Could not get request memory buffer %X\n", Status);
+            status = WdfRequestRetrieveInputBuffer ( Request, sizeof(ULONG), &buffer, &bufSize );
+            if( !NT_SUCCESS(status) ) {
+                TraceEvents(TRACE_LEVEL_ERROR, DBG_IOCTLS,
+                            "Could not get request memory buffer %X\r\n",
+                            status);
                 break;
             }
 
-            //
             // Check to make sure that the mask only has
             // 0 or the other appropriate values.
-            //
 
-            Mask = *((ULONG *)(buffer));
+            mask = *((ULONG*)(buffer));
 
-            if ((!Mask) || (Mask & (~(SERIAL_PURGE_TXABORT |
+            if ((!mask) || (mask & (~(SERIAL_PURGE_TXABORT |
                                       SERIAL_PURGE_RXABORT |
                                       SERIAL_PURGE_TXCLEAR |
-                                      SERIAL_PURGE_RXCLEAR
-                                     )
-                                   )
+                                      SERIAL_PURGE_RXCLEAR))
                            )) {
 
-                Status = STATUS_INVALID_PARAMETER;
+                status = STATUS_INVALID_PARAMETER;
                 break;
-
             }
 
             reqContext->SystemBuffer = buffer;
 
-            //
             // Either start this request or put it on the
             // queue.
-            //
 
-            SerialStartOrQueue(
-                       Extension,
-                       Request,
-                       Extension->PurgeQueue,
-                       &Extension->CurrentPurgeRequest,
-                       SerialStartPurge
-                       );
+            SerialStartOrQueue(extension,
+                                Request,
+                                extension->PurgeQueue,
+                                &extension->CurrentPurgeRequest,
+                                SerialStartPurge);
             return;
         }
         case IOCTL_SERIAL_GET_HANDFLOW: {
 
-            Status = WdfRequestRetrieveOutputBuffer ( Request, sizeof(SERIAL_HANDFLOW), &buffer, &bufSize );
-            if( !NT_SUCCESS(Status) ) {
-                TraceEvents(TRACE_LEVEL_ERROR, DBG_IOCTLS, "Could not get request memory buffer %X\n", Status);
+            status = WdfRequestRetrieveOutputBuffer ( Request, sizeof(SERIAL_HANDFLOW), 
+                &buffer, &bufSize );
+
+            if( !NT_SUCCESS(status) ) {
+                TraceEvents(TRACE_LEVEL_ERROR, DBG_IOCTLS,
+                            "Could not get request memory buffer %X\r\n",
+                            status);
                 break;
             }
 
             reqContext->Information = sizeof(SERIAL_HANDFLOW);
 
-            *((PSERIAL_HANDFLOW)buffer) = Extension->HandFlow;
+            *((PSERIAL_HANDFLOW)buffer) = extension->HandFlow;
 
             break;
-
         }
         case IOCTL_SERIAL_SET_HANDFLOW: {
 
-            SERIAL_IOCTL_SYNC S;
-            PSERIAL_HANDFLOW HandFlow;
+            SERIAL_IOCTL_SYNC syn;
+            PSERIAL_HANDFLOW handFlow;
 
-            //
             // Make sure that the hand shake and control is the
             // right size.
-            //
 
-            Status = WdfRequestRetrieveInputBuffer ( Request, sizeof(SERIAL_HANDFLOW), &buffer, &bufSize );
-            if( !NT_SUCCESS(Status) ) {
-                TraceEvents(TRACE_LEVEL_ERROR, DBG_IOCTLS, "Could not get request memory buffer %X\n", Status);
+            status = WdfRequestRetrieveInputBuffer ( Request, sizeof(SERIAL_HANDFLOW), 
+                &buffer, &bufSize );
+
+            if( !NT_SUCCESS(status) ) {
+                TraceEvents(TRACE_LEVEL_ERROR, DBG_IOCTLS,
+                            "Could not get request memory buffer %X\r\n",
+                            status);
                 break;
             }
 
-            HandFlow = (PSERIAL_HANDFLOW)buffer;
+            handFlow = (PSERIAL_HANDFLOW)buffer;
 
-            //
             // Make sure that there are no invalid bits set in
             // the control and handshake.
-            //
 
-            if (HandFlow->ControlHandShake & SERIAL_CONTROL_INVALID) {
+            if (handFlow->ControlHandShake & SERIAL_CONTROL_INVALID) {
 
-                Status = STATUS_INVALID_PARAMETER;
+                status = STATUS_INVALID_PARAMETER;
                 break;
 
             }
 
-            if (HandFlow->FlowReplace & SERIAL_FLOW_INVALID) {
+            if (handFlow->FlowReplace & SERIAL_FLOW_INVALID) {
 
-                Status = STATUS_INVALID_PARAMETER;
+                status = STATUS_INVALID_PARAMETER;
                 break;
 
             }
 
-            //
             // Make sure that the app hasn't set an invlid DTR mode.
-            //
 
-            if ((HandFlow->ControlHandShake & SERIAL_DTR_MASK) ==
+            if ((handFlow->ControlHandShake & SERIAL_DTR_MASK) ==
                 SERIAL_DTR_MASK) {
 
-                Status = STATUS_INVALID_PARAMETER;
+                status = STATUS_INVALID_PARAMETER;
                 break;
-
             }
 
-            //
             // Make sure that haven't set totally invalid xon/xoff
             // limits.
-            //
 
-            if ((HandFlow->XonLimit < 0) ||
-                ((ULONG)HandFlow->XonLimit > Extension->BufferSize)) {
+            if ((handFlow->XonLimit < 0) ||
+                ((ULONG)handFlow->XonLimit > extension->BufferSize)) {
 
-                Status = STATUS_INVALID_PARAMETER;
+                status = STATUS_INVALID_PARAMETER;
                 break;
-
             }
 
-            if ((HandFlow->XoffLimit < 0) ||
-                ((ULONG)HandFlow->XoffLimit > Extension->BufferSize)) {
+            if ((handFlow->XoffLimit < 0) ||
+                ((ULONG)handFlow->XoffLimit > extension->BufferSize)) {
 
-                Status = STATUS_INVALID_PARAMETER;
+                status = STATUS_INVALID_PARAMETER;
                 break;
-
             }
 
-            S.Extension = Extension;
-            S.Data = HandFlow;
+            syn.Extension = extension;
+            syn.Data = handFlow;
 
-            //
             // Under the protection of the lock, make sure that
             // we aren't turning on error replacement when we
             // are doing line status/modem status insertion.
-            //
 
-            if (Extension->EscapeChar) {
+            if (extension->EscapeChar) {
 
-                if (HandFlow->FlowReplace & SERIAL_ERROR_CHAR) {
+                if (handFlow->FlowReplace & SERIAL_ERROR_CHAR) {
 
-                    Status = STATUS_INVALID_PARAMETER;
+                    status = STATUS_INVALID_PARAMETER;
                     break;
 
                 }
 
             }
 
-            WdfInterruptSynchronize(
-                Extension->WdfInterrupt,
-                SerialSetHandFlow,
-                &S
-                );
+            WdfInterruptSynchronize(extension->WdfInterrupt,
+                                    SerialSetHandFlow,
+                                    &syn);
 
             break;
-
         }
         case IOCTL_SERIAL_GET_MODEMSTATUS: {
 
-            SERIAL_IOCTL_SYNC S;
+            SERIAL_IOCTL_SYNC syn;
 
-            Status = WdfRequestRetrieveOutputBuffer ( Request, sizeof(ULONG), &buffer, &bufSize );
-            if( !NT_SUCCESS(Status) ) {
-                TraceEvents(TRACE_LEVEL_ERROR, DBG_IOCTLS, "Could not get request memory buffer %X\n", Status);
+            status = WdfRequestRetrieveOutputBuffer ( Request, sizeof(ULONG), &buffer, 
+                &bufSize );
+
+            if( !NT_SUCCESS(status) ) {
+                TraceEvents(TRACE_LEVEL_ERROR, DBG_IOCTLS,
+                            "Could not get request memory buffer %X\r\n",
+                            status);
                 break;
             }
 
             reqContext->Information = sizeof(ULONG);
 
-            S.Extension = Extension;
-            S.Data = buffer;
+            syn.Extension = extension;
+            syn.Data = buffer;
 
-            WdfInterruptSynchronize(
-                Extension->WdfInterrupt,
-                SerialGetModemUpdate,
-                &S
-                );
+            WdfInterruptSynchronize(extension->WdfInterrupt,
+                                    SerialGetModemUpdate,
+                                    &syn);
 
             break;
 
         }
         case IOCTL_SERIAL_GET_DTRRTS: {
 
-            ULONG ModemControl;
+            ULONG modemControl;
 
-            Status = WdfRequestRetrieveOutputBuffer ( Request, sizeof(ULONG), &buffer, &bufSize );
-            if( !NT_SUCCESS(Status) ) {
-                TraceEvents(TRACE_LEVEL_ERROR, DBG_IOCTLS, "Could not get request memory buffer %X\n", Status);
+            status = WdfRequestRetrieveOutputBuffer ( Request, sizeof(ULONG), &buffer, &bufSize );
+            if( !NT_SUCCESS(status) ) {
+                TraceEvents(TRACE_LEVEL_ERROR, DBG_IOCTLS,
+                            "Could not get request memory buffer %X\r\n",
+                            status);
                 break;
             }
 
             reqContext->Information = sizeof(ULONG);
             reqContext->Status = STATUS_SUCCESS;
 
-            //
             // Reading this hardware has no effect on the device.
-            //
 
-            ModemControl = READ_MODEM_CONTROL(Extension, Extension->Controller);
+            modemControl = READ_MODEM_CONTROL(extension, extension->Controller);
 
-            ModemControl &= SERIAL_DTR_STATE | SERIAL_RTS_STATE;
+            modemControl &= SERIAL_DTR_STATE | SERIAL_RTS_STATE;
 
-            *(PULONG)buffer = ModemControl;
+            *(PULONG)buffer = modemControl;
 
             break;
 
         }
         case IOCTL_SERIAL_GET_COMMSTATUS: {
 
-            SERIAL_IOCTL_SYNC S;
+            SERIAL_IOCTL_SYNC syn;
 
-            Status = WdfRequestRetrieveOutputBuffer ( Request, sizeof(SERIAL_STATUS), &buffer, &bufSize );
-            if( !NT_SUCCESS(Status) ) {
-                TraceEvents(TRACE_LEVEL_ERROR, DBG_IOCTLS, "Could not get request memory buffer %X\n", Status);
+            status = WdfRequestRetrieveOutputBuffer ( Request, sizeof(SERIAL_STATUS), &buffer, 
+                &bufSize );
+
+            if( !NT_SUCCESS(status) ) {
+                TraceEvents(TRACE_LEVEL_ERROR, DBG_IOCTLS,
+                            "Could not get request memory buffer %X\r\n",
+                            status);
                 break;
             }
 
             reqContext->Information = sizeof(SERIAL_STATUS);
 
-            S.Extension = Extension;
-            S.Data =  buffer;
+            syn.Extension = extension;
+            syn.Data =  buffer;
 
-            //
-            // Acquire the cancel spin lock so nothing much
-            // changes while were getting the state.
-            //
-
-            //IoAcquireCancelSpinLock(&OldIrql);
-
-            WdfInterruptSynchronize(
-                Extension->WdfInterrupt,
-                SerialGetCommStatus,
-                &S
-                );
-
-            //IoReleaseCancelSpinLock(OldIrql);
+            WdfInterruptSynchronize(extension->WdfInterrupt,
+                                    SerialGetCommStatus,
+                                    &syn);
 
             break;
-
         }
         case IOCTL_SERIAL_GET_PROPERTIES: {
 
+            status = WdfRequestRetrieveOutputBuffer ( Request, sizeof(SERIAL_COMMPROP), &buffer, 
+                &bufSize );
 
-            Status = WdfRequestRetrieveOutputBuffer ( Request, sizeof(SERIAL_COMMPROP), &buffer, &bufSize );
-            if( !NT_SUCCESS(Status) ) {
-                TraceEvents(TRACE_LEVEL_ERROR, DBG_IOCTLS, "Could not get request memory buffer %X\n", Status);
+            if( !NT_SUCCESS(status) ) {
+                TraceEvents(TRACE_LEVEL_ERROR, DBG_IOCTLS,
+                            "Could not get request memory buffer %X\r\n",
+                            status);
                 break;
             }
 
-            //
             // No synchronization is required since this information
             // is "static".
-            //
 
-            SerialGetProperties(
-                Extension,
-                buffer
-                );
+            SerialGetProperties(extension,
+                                buffer);
 
             reqContext->Information = sizeof(SERIAL_COMMPROP);
             reqContext->Status = STATUS_SUCCESS;
@@ -1698,55 +1525,56 @@ Return Value:
         }
         case IOCTL_SERIAL_XOFF_COUNTER: {
 
-            PSERIAL_XOFF_COUNTER Xc;
+            PSERIAL_XOFF_COUNTER xc;
 
-            Status = WdfRequestRetrieveInputBuffer ( Request, sizeof(SERIAL_XOFF_COUNTER), &buffer, &bufSize );
-            if( !NT_SUCCESS(Status) ) {
-                TraceEvents(TRACE_LEVEL_ERROR, DBG_IOCTLS, "Could not get request memory buffer %X\n", Status);
+            status = WdfRequestRetrieveInputBuffer ( Request, sizeof(SERIAL_XOFF_COUNTER), 
+                &buffer, &bufSize );
+
+            if( !NT_SUCCESS(status) ) {
+                TraceEvents(TRACE_LEVEL_ERROR, DBG_IOCTLS,
+                            "Could not get request memory buffer %X\r\n",
+                            status);
                 break;
             }
 
-            Xc = (PSERIAL_XOFF_COUNTER)buffer;
+            xc = (PSERIAL_XOFF_COUNTER)buffer;
 
-            if (Xc->Counter <= 0) {
+            if (xc->Counter <= 0) {
 
-                Status = STATUS_INVALID_PARAMETER;
+                status = STATUS_INVALID_PARAMETER;
                 break;
 
             }
             reqContext->SystemBuffer = buffer;
 
-            //
             // There is no output, so make that clear now
-            //
 
             reqContext->Information = 0;
 
-            //
             // So far so good.  Put the request onto the write queue.
-            //
 
-            SerialStartOrQueue(
-                       Extension,
-                       Request,
-                       Extension->WriteQueue,
-                       &Extension->CurrentWriteRequest,
-                       SerialStartWrite
-                       );
+            SerialStartOrQueue(extension,
+                               Request,
+                               extension->WriteQueue,
+                               &extension->CurrentWriteRequest,
+                               SerialStartWrite);
             return;
 
         }
         case IOCTL_SERIAL_LSRMST_INSERT: {
 
             PUCHAR escapeChar;
-            SERIAL_IOCTL_SYNC S;
+            SERIAL_IOCTL_SYNC syn;
 
-            //
             // Make sure we get a byte.
-            //
-            Status = WdfRequestRetrieveInputBuffer ( Request, sizeof(UCHAR), &buffer, &bufSize );
-            if( !NT_SUCCESS(Status) ) {
-                TraceEvents(TRACE_LEVEL_ERROR, DBG_IOCTLS, "Could not get request memory buffer %X\n", Status);
+
+            status = WdfRequestRetrieveInputBuffer ( Request, sizeof(UCHAR), &buffer, 
+                &bufSize );
+
+            if( !NT_SUCCESS(status) ) {
+                TraceEvents(TRACE_LEVEL_ERROR, DBG_IOCTLS,
+                            "Could not get request memory buffer %X\r\n",
+                            status);
                 break;
             }
 
@@ -1756,41 +1584,39 @@ Return Value:
 
             if (*escapeChar) {
 
-                //
                 // We've got some escape work to do.  We will make sure that
                 // the character is not the same as the Xon or Xoff character,
                 // or that we are already doing error replacement.
-                //
 
-                if ((*escapeChar == Extension->SpecialChars.XoffChar) ||
-                    (*escapeChar == Extension->SpecialChars.XonChar) ||
-                    (Extension->HandFlow.FlowReplace & SERIAL_ERROR_CHAR)) {
+                if ((*escapeChar == extension->SpecialChars.XoffChar) ||
+                    (*escapeChar == extension->SpecialChars.XonChar) ||
+                    (extension->HandFlow.FlowReplace & SERIAL_ERROR_CHAR)) {
 
-                    Status = STATUS_INVALID_PARAMETER;
+                    status = STATUS_INVALID_PARAMETER;
 
                     break;
-
                 }
-
             }
 
-            S.Extension = Extension;
-            S.Data = buffer;
+            syn.Extension = extension;
+            syn.Data = buffer;
 
-            WdfInterruptSynchronize(
-                Extension->WdfInterrupt,
-                SerialSetEscapeChar,
-                reqContext
-                );
+            WdfInterruptSynchronize(extension->WdfInterrupt,
+                                    SerialSetEscapeChar,
+                                    reqContext);
 
             break;
 
         }
         case IOCTL_SERIAL_CONFIG_SIZE: {
 
-            Status = WdfRequestRetrieveOutputBuffer ( Request, sizeof(ULONG), &buffer, &bufSize );
-            if( !NT_SUCCESS(Status) ) {
-                TraceEvents(TRACE_LEVEL_ERROR, DBG_IOCTLS, "Could not get request memory buffer %X\n", Status);
+            status = WdfRequestRetrieveOutputBuffer ( Request, sizeof(ULONG), &buffer, 
+                &bufSize );
+
+            if( !NT_SUCCESS(status) ) {
+                TraceEvents(TRACE_LEVEL_ERROR, DBG_IOCTLS,
+                            "Could not get request memory buffer %X\r\n",
+                            status);
                 break;
             }
 
@@ -1803,9 +1629,13 @@ Return Value:
         }
         case IOCTL_SERIAL_GET_STATS: {
 
-            Status = WdfRequestRetrieveOutputBuffer ( Request, sizeof(SERIALPERF_STATS), &buffer, &bufSize );
-            if( !NT_SUCCESS(Status) ) {
-                TraceEvents(TRACE_LEVEL_ERROR, DBG_IOCTLS, "Could not get request memory buffer %X\n", Status);
+            status = WdfRequestRetrieveOutputBuffer ( Request, sizeof(SERIALPERF_STATS), 
+                &buffer, &bufSize );
+
+            if( !NT_SUCCESS(status) ) {
+                TraceEvents(TRACE_LEVEL_ERROR, DBG_IOCTLS,
+                            "Could not get request memory buffer %X\r\n",
+                            status);
                 break;
             }
 
@@ -1814,47 +1644,36 @@ Return Value:
             reqContext->Information = sizeof(SERIALPERF_STATS);
             reqContext->Status = STATUS_SUCCESS;
 
-            WdfInterruptSynchronize(
-                Extension->WdfInterrupt,
-                SerialGetStats,
-                reqContext
-                );
+            WdfInterruptSynchronize(extension->WdfInterrupt,
+                                    SerialGetStats,
+                                    reqContext);
 
             break;
         }
         case IOCTL_SERIAL_CLEAR_STATS: {
 
-            WdfInterruptSynchronize(
-                Extension->WdfInterrupt,
-                SerialClearStats,
-                Extension
-                );
+            WdfInterruptSynchronize(extension->WdfInterrupt,
+                                    SerialClearStats,
+                                    extension);
             break;
         }
         default: {
 
-            Status = STATUS_INVALID_PARAMETER;
+            status = STATUS_INVALID_PARAMETER;
             break;
         }
     }
 
-DoneWithIoctl:;
+DoneWithIoctl:
 
-    reqContext->Status = Status;
+    reqContext->Status = status;
+    SerialCompleteRequest(Request, status, reqContext->Information);
 
-    SerialCompleteRequest(Request, Status, reqContext->Information);
-    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_IOCTLS, "--SerialEvtIoDeviceControl(%p)=%Xh\r\n", Request,Status);
+    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_IOCTLS, "--SerialEvtIoDeviceControl(%p)="
+        "%Xh\r\n", Request,status);
 
     return;
-
 }
-
-
-VOID
-SerialGetProperties(
-    IN PSERIAL_DEVICE_EXTENSION Extension,
-    IN PSERIAL_COMMPROP Properties
-    )
 
 /*++
 
@@ -1874,14 +1693,16 @@ Return Value:
     None.
 
 --*/
-
+_Use_decl_annotations_
+VOID
+SerialGetProperties(
+     PSERIAL_DEVICE_EXTENSION Extension,
+     PSERIAL_COMMPROP Properties
+    )
 {
-
-
     RtlZeroMemory(
         Properties,
-        sizeof(SERIAL_COMMPROP)
-        );
+        sizeof(SERIAL_COMMPROP));
 
     Properties->PacketLength = sizeof(SERIAL_COMMPROP);
     Properties->PacketVersion = 2;
@@ -1902,10 +1723,6 @@ Return Value:
                                  SERIAL_SP_BAUD |
                                  SERIAL_SP_DATABITS |
                                  SERIAL_SP_STOPBITS ;
-//                                 SERIAL_SP_HANDSHAKING |
-//                                 SERIAL_SP_PARITY_CHECK |
-//                                 SERIAL_SP_CARRIER_DETECT;
-
 
     Properties->SettableData = SERIAL_DATABITS_7 |
                                SERIAL_DATABITS_8;
@@ -1914,17 +1731,8 @@ Return Value:
                                      SERIAL_PARITY_NONE ;
     Properties->CurrentTxQueue = 0;
     Properties->CurrentRxQueue = Extension->BufferSize;
-
 }
 
-VOID
-SerialEvtIoInternalDeviceControl(
-    IN WDFQUEUE     Queue,
-    IN WDFREQUEST Request,
-    IN size_t      OutputBufferLength,
-    IN size_t      InputBufferLength,
-    IN ULONG      IoControlCode
-)
 /*++
 
 Routine Description:
@@ -1943,10 +1751,18 @@ Return Value:
     The function value is the final status of the call
 
 --*/
-
+_Use_decl_annotations_
+VOID
+SerialEvtIoInternalDeviceControl (
+     WDFQUEUE Queue,
+     WDFREQUEST Request,
+     size_t OutputBufferLength,
+     size_t InputBufferLength,
+     ULONG IoControlCode
+)
 {
     NTSTATUS status;
-    PSERIAL_DEVICE_EXTENSION pDevExt = NULL;
+    PSERIAL_DEVICE_EXTENSION pDevExt;
     PVOID buffer;
     PREQUEST_CONTEXT reqContext;
     WDF_DEVICE_POWER_POLICY_WAKE_SETTINGS wakeSettings;
@@ -1955,16 +1771,19 @@ Return Value:
     UNREFERENCED_PARAMETER(OutputBufferLength);
     UNREFERENCED_PARAMETER(InputBufferLength);
 
-    TraceEvents(TRACE_LEVEL_VERBOSE, DBG_IOCTLS, "++SerialEvtIoInternalDeviceControl(req=%ph, IOCtrlCode=%Xh)\r\n", Request,IoControlCode);
+    TraceEvents(TRACE_LEVEL_VERBOSE, DBG_IOCTLS,
+                "++SerialEvtIoInternalDeviceControl(req=%ph, IOCtrlCode=%Xh)\r\n",
+                Request,
+                IoControlCode);
 
     pDevExt = SerialGetDeviceExtension(WdfIoQueueGetDevice(Queue));
 
     if (SerialCompleteIfError(pDevExt, Request) != STATUS_SUCCESS) {
 
        TraceEvents(TRACE_LEVEL_INFORMATION, DBG_IOCTLS,
-                    "<SerialEvtIoDeviceControl (2) %d\n", STATUS_CANCELLED);
+                    "--SerialEvtIoDeviceControl()=%Xh\r\n",
+                    (ULONG)STATUS_CANCELLED);
        return;
-
     }
 
     reqContext = SerialGetRequestContext(Request);
@@ -1975,17 +1794,20 @@ Return Value:
     switch (IoControlCode) {
 
     case IOCTL_SERIAL_INTERNAL_DO_WAIT_WAKE:
-        //
+
         // Init wait-wake policy structure.
-        //
+
         WDF_DEVICE_POWER_POLICY_WAKE_SETTINGS_INIT(&wakeSettings);
-        //
+
         // Override the default settings from allow user control to do not allow.
-        //
+
         wakeSettings.UserControlOfWakeSettings = IdleDoNotAllowUserControl;
         status = WdfDeviceAssignSxWakeSettings(pDevExt->WdfDevice, &wakeSettings);
+
         if (!NT_SUCCESS(status)) {
-            TraceEvents(TRACE_LEVEL_ERROR, DBG_PNP, "WdfDeviceAssignSxWakeSettings failed %x \n", status);
+            TraceEvents(TRACE_LEVEL_ERROR, DBG_PNP,
+                        "WdfDeviceAssignSxWakeSettings failed %Xh\r\n",
+                        status);
             break;
         }
 
@@ -1996,14 +1818,18 @@ Return Value:
     case IOCTL_SERIAL_INTERNAL_CANCEL_WAIT_WAKE:
 
        WDF_DEVICE_POWER_POLICY_WAKE_SETTINGS_INIT(&wakeSettings);
-       //
+
        // Override the default settings.
-       //
-       wakeSettings.Enabled = WdfFalse; // Disables wait-wake
+       // Disable wait-wake
+
+       wakeSettings.Enabled = WdfFalse;
        wakeSettings.UserControlOfWakeSettings = IdleDoNotAllowUserControl;
        status = WdfDeviceAssignSxWakeSettings(pDevExt->WdfDevice, &wakeSettings);
+
        if (!NT_SUCCESS(status)) {
-           TraceEvents(TRACE_LEVEL_ERROR, DBG_PNP, "WdfDeviceAssignSxWakeSettings failed %x \n", status);
+           TraceEvents(TRACE_LEVEL_ERROR, DBG_PNP,
+                        "WdfDeviceAssignSxWakeSettings failed %Xh\r\n",
+                        status);
            break;
        }
 
@@ -2011,8 +1837,6 @@ Return Value:
        status = STATUS_SUCCESS;
        break;
 
-
-    //
     // Put the serial port in a "filter-driver" appropriate state
     //
     // WARNING: This code assumes it is being called by a trusted kernel
@@ -2020,34 +1844,33 @@ Return Value:
     // passed to IOCTL_SERIAL_INTERNAL_RESTORE_SETTINGS
     //
     // If validity checking is desired, the regular ioctl's should be used
-    //
 
     case IOCTL_SERIAL_INTERNAL_BASIC_SETTINGS:
     case IOCTL_SERIAL_INTERNAL_RESTORE_SETTINGS: {
 
        SERIAL_BASIC_SETTINGS   basic;
        PSERIAL_BASIC_SETTINGS  pBasic;
-       SERIAL_IOCTL_SYNC       S;
+       SERIAL_IOCTL_SYNC       s;
 
        if (IoControlCode == IOCTL_SERIAL_INTERNAL_BASIC_SETTINGS) {
 
-
-         //
          // Check the buffer size
-         //
-         status = WdfRequestRetrieveOutputBuffer ( Request, sizeof(SERIAL_BASIC_SETTINGS), &buffer, &bufSize );
+
+         status = WdfRequestRetrieveOutputBuffer ( Request, sizeof(SERIAL_BASIC_SETTINGS), 
+            &buffer, &bufSize );
+
          if( !NT_SUCCESS(status) ) {
-            TraceEvents(TRACE_LEVEL_ERROR, DBG_IOCTLS, "Could not get request memory buffer %X\n", status);
+            TraceEvents(TRACE_LEVEL_ERROR, DBG_IOCTLS,
+                        "Could not get request memory buffer %X\r\n",
+                        status);
             break;
          }
 
          reqContext->SystemBuffer = buffer;
 
-          //
           // Everything is 0 -- timeouts and flow control and fifos.  If
           // We add additional features, this zero memory method
           // may not work.
-          //
 
           RtlZeroMemory(&basic, sizeof(SERIAL_BASIC_SETTINGS));
 
@@ -2057,11 +1880,9 @@ Return Value:
           reqContext->Information = sizeof(SERIAL_BASIC_SETTINGS);
           pBasic = (PSERIAL_BASIC_SETTINGS)buffer;
 
-          //
           // Save off the old settings
-          //
 
-          RtlCopyMemory(&pBasic->Timeouts, &pDevExt->Timeouts,
+          RtlCopyMemory(&pBasic->Timeouts, &pDevExt->timeouts,
                         sizeof(SERIAL_TIMEOUTS));
 
           RtlCopyMemory(&pBasic->HandFlow, &pDevExt->HandFlow,
@@ -2070,36 +1891,36 @@ Return Value:
           pBasic->RxFifo = pDevExt->RxFifoTrigger;
           pBasic->TxFifo = pDevExt->TxFifoAmount;
 
-          //
           // Point to our new settings
-          //
 
           pBasic = &basic;
-       } else { // restoring settings
+       } else {
 
-          status = WdfRequestRetrieveInputBuffer ( Request, sizeof(SERIAL_BASIC_SETTINGS), &buffer, &bufSize );
-          if( !NT_SUCCESS(status) ) {
-              TraceEvents(TRACE_LEVEL_ERROR, DBG_IOCTLS, "Could not get request memory buffer %X\n", status);
-              break;
-          }
+            // restoring settings
+
+            status = WdfRequestRetrieveInputBuffer ( Request, sizeof(SERIAL_BASIC_SETTINGS), 
+            &buffer, &bufSize );
+
+            if( !NT_SUCCESS(status) ) {
+                TraceEvents(TRACE_LEVEL_ERROR, DBG_IOCTLS,
+                            "Could not get request memory buffer %X\r\n",
+                            status);
+                break;
+            }
 
           pBasic = (PSERIAL_BASIC_SETTINGS)buffer;
        }
 
-       //
        // Set the timeouts
-       //
 
-       RtlCopyMemory(&pDevExt->Timeouts, &pBasic->Timeouts,
+       RtlCopyMemory(&pDevExt->timeouts, &pBasic->Timeouts,
                      sizeof(SERIAL_TIMEOUTS));
 
-       //
        // Set flowcontrol
-       //
 
-       S.Extension = pDevExt;
-       S.Data = &pBasic->HandFlow;
-       WdfInterruptSynchronize(pDevExt->WdfInterrupt, SerialSetHandFlow, &S);
+       s.Extension = pDevExt;
+       s.Data = &pBasic->HandFlow;
+       WdfInterruptSynchronize(pDevExt->WdfInterrupt, SerialSetHandFlow, &s);
 
        if (pDevExt->FifoPresent) {
           pDevExt->TxFifoAmount = pBasic->TxFifo;
@@ -2115,8 +1936,6 @@ Return Value:
           pDevExt->TxFifoAmount = pDevExt->RxFifoTrigger = 0;
           WRITE_FIFO_CONTROL(pDevExt, pDevExt->Controller, (UCHAR)0);
        }
-
-
        break;
     }
 
@@ -2130,7 +1949,8 @@ Return Value:
 
     SerialCompleteRequest(Request, reqContext->Status, reqContext->Information);
 
-    TraceEvents(TRACE_LEVEL_VERBOSE, DBG_IOCTLS, "--SerialEvtIoInternalDeviceControl(req=%ph, IOCtrlCode=%Xh)=%Xh\r\n", Request,IoControlCode,status);
+    TraceEvents(TRACE_LEVEL_VERBOSE, DBG_IOCTLS, "--SerialEvtIoInternalDeviceControl(req=%ph,"
+        " IOCtrlCode=%Xh)=%Xh\r\n", Request,IoControlCode,status);
 
     return;
 }

@@ -1,29 +1,16 @@
-/*++
-Copyright (c) Microsoft Corporation
-
-Module Name:
-
-    error.c
-
-Abstract:
-
-    This module contains the code that is very specific to error
-    operations in the serial driver
-
-Environment:
-
-    Kernel mode
-
---*/
+// Copyright (c) Microsoft Corporation.  All rights reserved.
+//
+// Module Name:
+//
+//    error.c
+// Abstract:
+//
+//    This module contains the code that is very specific to error
+//    operations in the serial driver
 
 #include "precomp.h"
 #include "error.tmh"
 
-
-VOID
-SerialCommError(
-    IN WDFDPC Dpc
-    )
 /*++
 
 Routine Description:
@@ -33,32 +20,33 @@ Routine Description:
 
 Arguments:
 
-
 Return Value:
 
     None.
 
 --*/
+_Use_decl_annotations_
+VOID
+SerialCommError(
+    WDFDPC Dpc
+    )
 {
-    PSERIAL_DEVICE_EXTENSION Extension = NULL;
+    PSERIAL_DEVICE_EXTENSION extension = NULL;
 
-    Extension = SerialGetDeviceExtension(WdfDpcGetParentObject(Dpc));
-
-    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_INIT,
-                     ">SerialCommError(%p)\n", Extension);
-
-    SerialFlushRequests(
-        Extension->WriteQueue,
-        &Extension->CurrentWriteRequest
-        );
-
-    SerialFlushRequests(
-        Extension->ReadQueue,
-        &Extension->CurrentReadRequest
-        );
+    extension = SerialGetDeviceExtension(WdfDpcGetParentObject(Dpc));
 
     TraceEvents(TRACE_LEVEL_INFORMATION, DBG_INIT,
-                     "<SerialCommError\n");
+                "++SerialCommError(%p)\r\n",
+                extension);
+
+    SerialFlushRequests(extension->WriteQueue,
+                        &extension->CurrentWriteRequest);
+
+    SerialFlushRequests(extension->ReadQueue,
+                        &extension->CurrentReadRequest);
+
+    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_INIT,
+                "--SerialCommError\r\n");
 }
 
 

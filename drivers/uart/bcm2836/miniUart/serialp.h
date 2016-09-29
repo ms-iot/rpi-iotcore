@@ -1,38 +1,27 @@
-/*++
-
-Copyright (c) Microsoft Corporation
-
-Module Name :
-
-    serialp.h
-
-Abstract:
-
-    Prototypes and macros that are used throughout the driver.
-
---*/
-
-//-----------------------------------------------------------------------------
-// 4127 -- Conditional Expression is Constant warning
-//-----------------------------------------------------------------------------
-#define WHILE(constant) \
-__pragma(warning(suppress: 4127)) while(constant)
+//
+// Copyright (c) Microsoft Corporation.  All rights reserved.
+//
+// Module Name:
+//
+//    serialp.h
+//
+// Abstract:
+//
+//    Prototypes and macros that are used throughout RPi3 mini Uart driver.
+//
 
 typedef
 VOID
-(*PSERIAL_START_ROUTINE) (
-    IN PSERIAL_DEVICE_EXTENSION
-    );
+(*PSERIAL_START_ROUTINE) (_In_ PSERIAL_DEVICE_EXTENSION);
 
 typedef
 VOID
 (*PSERIAL_GET_NEXT_ROUTINE) (
-    IN WDFREQUEST *CurrentOpRequest,
-    IN WDFQUEUE QueueToProcess,
-    OUT WDFREQUEST *NewRequest,
-    IN BOOLEAN CompleteCurrent,
-    PSERIAL_DEVICE_EXTENSION Extension
-    );
+    _In_ WDFREQUEST* CurrentOpRequest,
+    _In_ WDFQUEUE QueueToProcess,
+    _Out_ WDFREQUEST* NewRequest,
+    _In_ BOOLEAN CompleteCurrent,
+    _In_ PSERIAL_DEVICE_EXTENSION Extension);
 
 DRIVER_INITIALIZE DriverEntry;
 
@@ -78,41 +67,30 @@ EVT_WDF_TIMER SerialInvokePerhapsLowerRTS;
 
 _Check_return_
 _IRQL_requires_max_(PASSIVE_LEVEL)
-NTSTATUS SerialSetPortNameDevInterfProp(WDFDEVICE Device, PCWSTR SerPortName);
+NTSTATUS SerialSetPortNameDevInterfProp(_In_ WDFDEVICE Device, _Inout_ PCWSTR SerPortName);
 
 VOID
-SerialStartRead(
-    IN PSERIAL_DEVICE_EXTENSION Extension
-    );
+SerialStartRead(_In_ PSERIAL_DEVICE_EXTENSION Extension);
 
 VOID
-SerialStartWrite(
-    IN PSERIAL_DEVICE_EXTENSION Extension
-    );
+SerialStartWrite(_In_ PSERIAL_DEVICE_EXTENSION Extension);
 
 VOID
-SerialStartMask(
-    IN PSERIAL_DEVICE_EXTENSION Extension
-    );
+SerialStartMask(_In_ PSERIAL_DEVICE_EXTENSION Extension);
 
 VOID
-SerialStartImmediate(
-    IN PSERIAL_DEVICE_EXTENSION Extension
-    );
+SerialStartImmediate(_In_ PSERIAL_DEVICE_EXTENSION Extension);
 
 VOID
-SerialStartPurge(
-    IN PSERIAL_DEVICE_EXTENSION Extension
-    );
+SerialStartPurge(_In_ PSERIAL_DEVICE_EXTENSION Extension);
 
 VOID
 SerialGetNextWrite(
-    IN WDFREQUEST *CurrentOpRequest,
-    IN WDFQUEUE QueueToProcess,
-    IN WDFREQUEST *NewRequest,
-    IN BOOLEAN CompleteCurrent,
-    IN PSERIAL_DEVICE_EXTENSION Extension
-    );
+    _In_ WDFREQUEST* CurrentOpRequest,
+    _In_ WDFQUEUE QueueToProcess,
+    _In_ WDFREQUEST* NewRequest,
+    _In_ BOOLEAN CompleteCurrent,
+    _In_ PSERIAL_DEVICE_EXTENSION Extension);
 
 EVT_WDFDEVICE_WDM_IRP_PREPROCESS SerialWdmDeviceFileCreate;
 EVT_WDFDEVICE_WDM_IRP_PREPROCESS SerialWdmFileClose;
@@ -122,15 +100,15 @@ EVT_WDFDEVICE_WDM_IRP_PREPROCESS SerialQueryInformationFile;
 EVT_WDFDEVICE_WDM_IRP_PREPROCESS SerialSetInformationFile;
 
 NTSTATUS
-SerialDeviceFileCreateWorker (
-    IN WDFDEVICE Device
-    );
-
+SerialDeviceFileCreateWorker (_In_ WDFDEVICE Device);
 
 VOID
-SerialFileCloseWorker(
-    IN WDFDEVICE Device
-    );
+SerialFileCloseWorker(_In_ WDFDEVICE Device);
+
+NTSTATUS
+SerialReserveFunctionConfig(
+    _In_ WDFDEVICE Device,
+    _In_ BOOLEAN IsCommit);
 
 EVT_WDF_INTERRUPT_SYNCHRONIZE SerialProcessEmptyTransmit;
 EVT_WDF_INTERRUPT_SYNCHRONIZE SerialSetDTR;
@@ -157,367 +135,246 @@ EVT_WDF_INTERRUPT_SYNCHRONIZE SerialSetFCRContents;
 
 BOOLEAN
 SerialSetupNewHandFlow(
-    IN PSERIAL_DEVICE_EXTENSION Extension,
-    IN PSERIAL_HANDFLOW NewHandFlow
-    );
+    _In_ PSERIAL_DEVICE_EXTENSION Extension,
+    _In_ PSERIAL_HANDFLOW NewHandFlow);
 
 
 VOID
-SerialHandleReducedIntBuffer(
-    IN PSERIAL_DEVICE_EXTENSION Extension
-    );
+SerialHandleReducedIntBuffer(_In_ PSERIAL_DEVICE_EXTENSION Extension);
 
+_IRQL_requires_min_(DISPATCH_LEVEL)
 VOID
 SerialProdXonXoff(
-    IN PSERIAL_DEVICE_EXTENSION Extension,
-    IN BOOLEAN SendXon
-    );
+    _In_ PSERIAL_DEVICE_EXTENSION Extension,
+    _In_ BOOLEAN SendXon);
 
 EVT_WDF_REQUEST_CANCEL SerialCancelWait;
-
 
 EVT_WDF_INTERRUPT_SYNCHRONIZE SerialPurgeInterruptBuff;
     
 VOID
 SerialPurgeRequests(
-    IN WDFQUEUE QueueToClean,
-    IN WDFREQUEST *CurrentOpRequest
-    );
+    _In_ WDFQUEUE QueueToClean,
+    _In_ WDFREQUEST* CurrentOpRequest);
 
 VOID
 SerialFlushRequests(
-    IN WDFQUEUE QueueToClean,
-    IN WDFREQUEST *CurrentOpRequest
-    );
+    _In_ WDFQUEUE QueueToClean,
+    _In_ WDFREQUEST* CurrentOpRequest);
 
 VOID
 SerialGetNextRequest(
-    IN WDFREQUEST *CurrentOpRequest,
-    IN WDFQUEUE QueueToProcess,
-    OUT WDFREQUEST *NextIrp,
-    IN BOOLEAN CompleteCurrent,
-    IN PSERIAL_DEVICE_EXTENSION extension
-    );
+    _In_ WDFREQUEST* CurrentOpRequest,
+    _In_ WDFQUEUE QueueToProcess,
+    _Out_ WDFREQUEST* NextIrp,
+    _In_ BOOLEAN CompleteCurrent,
+    _In_ PSERIAL_DEVICE_EXTENSION extension);
 
 
 VOID
 SerialTryToCompleteCurrent(
-    IN PSERIAL_DEVICE_EXTENSION Extension,
-    IN PFN_WDF_INTERRUPT_SYNCHRONIZE  SynchRoutine OPTIONAL,
-    IN NTSTATUS StatusToUse,
-    IN WDFREQUEST *CurrentOpRequest,
-    IN WDFQUEUE QueueToProcess,
-    IN WDFTIMER IntervalTimer,
-    IN WDFTIMER TotalTimer,
-    IN PSERIAL_START_ROUTINE Starter,
-    IN PSERIAL_GET_NEXT_ROUTINE GetNextIrp,
-    IN LONG RefType
-    );
+    _In_ PSERIAL_DEVICE_EXTENSION Extension,
+    _In_ PFN_WDF_INTERRUPT_SYNCHRONIZE SynchRoutine OPTIONAL,
+    _In_ NTSTATUS StatusToUse,
+    _In_ WDFREQUEST* CurrentOpRequest,
+    _In_ WDFQUEUE QueueToProcess,
+    _In_ WDFTIMER IntervalTimer,
+    _In_ WDFTIMER TotalTimer,
+    _In_ PSERIAL_START_ROUTINE Starter,
+    _In_ PSERIAL_GET_NEXT_ROUTINE GetNextIrp,
+    _In_ LONG RefType);
 
 VOID
 SerialStartOrQueue(
-    IN PSERIAL_DEVICE_EXTENSION Extension,
-    IN WDFREQUEST Request,
-    IN WDFQUEUE QueueToExamine,
-    IN WDFREQUEST *CurrentOpRequest,
-    IN PSERIAL_START_ROUTINE Starter
-    );
+    _In_ PSERIAL_DEVICE_EXTENSION Extension,
+    _In_ WDFREQUEST Request,
+    _In_ WDFQUEUE QueueToExamine,
+    _In_ WDFREQUEST* CurrentOpRequest,
+    _In_ PSERIAL_START_ROUTINE Starter);
 
 NTSTATUS
 SerialCompleteIfError(
-    PSERIAL_DEVICE_EXTENSION extension,
-    WDFREQUEST Request
-    );
+    _In_ PSERIAL_DEVICE_EXTENSION extension,
+    _Inout_ WDFREQUEST Request);
 
+_IRQL_requires_min_(DISPATCH_LEVEL)
 ULONG
 SerialHandleModemUpdate(
-    IN PSERIAL_DEVICE_EXTENSION Extension,
-    IN BOOLEAN DoingTX
-    );
-
+    _In_ PSERIAL_DEVICE_EXTENSION Extension,
+    _In_ BOOLEAN DoingTX);
 
 EVT_WDF_INTERRUPT_ISR SerialISR;
 
 NTSTATUS
 SerialGetDivisorFromBaud(
-    IN ULONG ClockRate,
-    IN LONG DesiredBaud,
-    OUT PSHORT AppropriateDivisor
-    );
+    _In_ ULONG ClockRate,
+    _In_ LONG DesiredBaud,
+    _Out_ PSHORT AppropriateDivisor);
 
 VOID
-SerialCleanupDevice(
-    IN PSERIAL_DEVICE_EXTENSION Extension
-    );
+SerialCleanupDevice(_In_ PSERIAL_DEVICE_EXTENSION Extension);
 
 UCHAR
-SerialProcessLSR(
-    IN PSERIAL_DEVICE_EXTENSION Extension
-    );
+SerialProcessLSR(_In_ PSERIAL_DEVICE_EXTENSION Extension);
 
 LARGE_INTEGER
-SerialGetCharTime(
-    IN PSERIAL_DEVICE_EXTENSION Extension
-    );
+SerialGetCharTime(_In_ PSERIAL_DEVICE_EXTENSION Extension);
 
 
 VOID
 SerialPutChar(
-    IN PSERIAL_DEVICE_EXTENSION Extension,
-    IN UCHAR CharToPut
-    );
+    _In_ PSERIAL_DEVICE_EXTENSION Extension,
+    _In_ UCHAR CharToPut);
 
 NTSTATUS
 SerialGetConfigDefaults(
-    IN PSERIAL_FIRMWARE_DATA DriverDefaultsPtr,
-    IN WDFDRIVER          Driver
-    );
+    _In_ PSERIAL_FIRMWARE_DATA DriverDefaultsPtr,
+    _In_ WDFDRIVER Driver);
 
 VOID
 SerialGetProperties(
-    IN PSERIAL_DEVICE_EXTENSION Extension,
-    IN PSERIAL_COMMPROP Properties
-    );
-
-VOID
-SerialLogError(
-    _In_                             PDRIVER_OBJECT DriverObject,
-    _In_opt_                         PDEVICE_OBJECT DeviceObject,
-    _In_                             PHYSICAL_ADDRESS P1,
-    _In_                             PHYSICAL_ADDRESS P2,
-    _In_                             ULONG SequenceNumber,
-    _In_                             UCHAR MajorFunctionCode,
-    _In_                             UCHAR RetryCount,
-    _In_                             ULONG UniqueErrorValue,
-    _In_                             NTSTATUS FinalStatus,
-    _In_                             NTSTATUS SpecificIOStatus,
-    _In_                             ULONG LengthOfInsert1,
-    _In_reads_bytes_opt_(LengthOfInsert1) PWCHAR Insert1,
-    _In_                             ULONG LengthOfInsert2,
-    _In_reads_bytes_opt_(LengthOfInsert2) PWCHAR Insert2
-    );
+    _In_ PSERIAL_DEVICE_EXTENSION Extension,
+    _In_ PSERIAL_COMMPROP Properties);
 
 NTSTATUS
 SerialMapHWResources(
-    IN WDFDEVICE Device,
-    IN WDFCMRESLIST PResList,
-    IN WDFCMRESLIST PTrResList,
-    OUT PCONFIG_DATA PConfig
-    );
+    _In_ WDFDEVICE Device,
+    _In_ WDFCMRESLIST ResListRaw,
+    _In_ WDFCMRESLIST ResListTran,
+    _Out_ PCONFIG_DATA Config);
 
 VOID
-SerialUnmapHWResources(
-    IN PSERIAL_DEVICE_EXTENSION PDevExt
-    );
+SerialUnmapHWResources(_In_ PSERIAL_DEVICE_EXTENSION DevExt);
 
 BOOLEAN
 SerialGetRegistryKeyValue (
-    IN  WDFDEVICE  WdfDevice,
-    _In_  PCWSTR   Name,
-    OUT PULONG     Value
-    );
+    _In_  WDFDEVICE WdfDevice,
+    _In_ PCWSTR Name,
+    _Out_ PULONG Value);
 
 
 BOOLEAN
 SerialPutRegistryKeyValue (
-    IN WDFDEVICE  WdfDevice,
-    _In_ PCWSTR   Name,
-    IN ULONG      Value
-    );
+    _In_ WDFDEVICE WdfDevice,
+    _In_ PCWSTR Name,
+    _In_ ULONG Value);
 
 NTSTATUS
 SerialInitController(
-    IN PSERIAL_DEVICE_EXTENSION pDevExt,
-    IN PCONFIG_DATA PConfigData
-    );
+    _In_ PSERIAL_DEVICE_EXTENSION DevExt,
+    _In_ PCONFIG_DATA ConfigData);
 
-BOOLEAN bPrintMiniUartregs(PSERIAL_DEVICE_EXTENSION pDevExt);
-
-BOOLEAN
-SerialCIsrSw(
-    IN WDFINTERRUPT Interrupt,
-    IN ULONG        MessageID
-    );
+BOOLEAN PrintMiniUartregs(_In_ PSERIAL_DEVICE_EXTENSION DevExt);
 
 NTSTATUS
-SerialDoExternalNaming(
-    IN PSERIAL_DEVICE_EXTENSION PDevExt
-    );
+SerialDoExternalNaming(_In_ PSERIAL_DEVICE_EXTENSION PDevExt);
 
 PVOID
 SerialGetMappedAddress(
-    PHYSICAL_ADDRESS IoAddress,
-    ULONG NumberOfBytes,
-    ULONG AddressSpace,
-    PBOOLEAN MappedAddress
-    );
+    _In_ PHYSICAL_ADDRESS IoAddress,
+    _In_ ULONG NumberOfBytes,
+    _In_ ULONG AddressSpace,
+    _Out_ PBOOLEAN MappedAddress);
 
+PVOID LocalMmMapIoSpace(
+    _In_ PHYSICAL_ADDRESS PhysicalAddress,
+    _In_ SIZE_T NumberOfBytes);
+
+_IRQL_requires_same_
 BOOLEAN
 SerialDoesPortExist(
-    IN PSERIAL_DEVICE_EXTENSION Extension,
-    PUNICODE_STRING InsertString,
-    IN ULONG ForceFifo,
-    IN ULONG LogFifo
-    );
-
-SERIAL_MEM_COMPARES
-SerialMemCompare(
-    IN PHYSICAL_ADDRESS A,
-    IN ULONG SpanOfA,
-    IN PHYSICAL_ADDRESS B,
-    IN ULONG SpanOfB
-    );
+    _In_ PSERIAL_DEVICE_EXTENSION Extension,
+    _In_ ULONG ForceFifo);
 
 VOID
-SerialUndoExternalNaming(
-    IN PSERIAL_DEVICE_EXTENSION Extension
-    );
+SerialUndoExternalNaming(_In_ PSERIAL_DEVICE_EXTENSION Extension);
 
 VOID
-SerialReleaseResources(
-    IN PSERIAL_DEVICE_EXTENSION PDevExt
-    );
+SerialPurgePendingRequests(_In_ PSERIAL_DEVICE_EXTENSION PDevExt);
 
 VOID
-SerialPurgePendingRequests(
-    PSERIAL_DEVICE_EXTENSION pDevExt
-    );
-
-VOID
-SerialDisableUART(
-    IN PVOID Context
-    );
+SerialDisableUART(_In_ PVOID Context);
 
 VOID
 SerialDrainUART(
-    IN PSERIAL_DEVICE_EXTENSION PDevExt,
-    IN PLARGE_INTEGER PDrainTime
-    );
+    _In_ PSERIAL_DEVICE_EXTENSION PDevExt,
+    _In_ PLARGE_INTEGER PDrainTime);
 
 VOID
-SerialSaveDeviceState(
-    IN PSERIAL_DEVICE_EXTENSION PDevExt
-    );
+SerialSaveDeviceState(_In_ PSERIAL_DEVICE_EXTENSION PDevExt);
 
 NTSTATUS
-SerialSetPowerPolicy(
-    IN PSERIAL_DEVICE_EXTENSION DeviceExtension
-    );
+SerialSetPowerPolicy(_In_ PSERIAL_DEVICE_EXTENSION DeviceExtension);
 
 UINT32
-SerialReportMaxBaudRate(
-    ULONG Bauds
-    );
+SerialReportMaxBaudRate(_In_ ULONG Bauds);
 
 BOOLEAN
-SerialInsertQueueDpc(
-    IN WDFDPC Dpc
-    );
+SerialInsertQueueDpc(_In_ WDFDPC Dpc);
 
 BOOLEAN
 SerialSetTimer(
-    IN WDFTIMER Timer,
-    IN LARGE_INTEGER DueTime
-    );
+    _In_ WDFTIMER Timer,
+    _In_ LARGE_INTEGER DueTime);
 
 BOOLEAN
 SerialCancelTimer(
-    IN WDFTIMER Timer,
-    IN PSERIAL_DEVICE_EXTENSION PDevExt
-    );
-
-VOID
-SerialUnlockPages(
-    IN WDFDPC PDpc,
-    IN PVOID PDeferredContext,
-    IN PVOID PSysContext1,
-    IN PVOID PSysContext2)
-    ;
+    _In_ WDFTIMER Timer,
+    _In_ PSERIAL_DEVICE_EXTENSION PDevExt);
 
 VOID
 SerialMarkHardwareBroken(
-    IN PSERIAL_DEVICE_EXTENSION PDevExt
+    _In_ PSERIAL_DEVICE_EXTENSION PDevExt
     );
-
-VOID
-SerialDisableInterfacesResources(
-    IN PSERIAL_DEVICE_EXTENSION PDevExt,
-    IN BOOLEAN DisableUART
-    );
-
-VOID
-SerialSetDeviceFlags(
-    IN  PSERIAL_DEVICE_EXTENSION PDevExt,
-    OUT PULONG PFlags,
-    IN  ULONG Value,
-    IN  BOOLEAN Set
-    );
-
 
 VOID
 SetDeviceIsOpened(
-    IN PSERIAL_DEVICE_EXTENSION PDevExt,
-    IN BOOLEAN DeviceIsOpened,
-    IN BOOLEAN Reopen
-    );
+    _In_ PSERIAL_DEVICE_EXTENSION PDevExt,
+    _In_ BOOLEAN DeviceIsOpened,
+    _In_ BOOLEAN Reopen);
 
 BOOLEAN
-IsQueueEmpty(
-    IN WDFQUEUE Queue
-    );
+IsQueueEmpty(_In_ WDFQUEUE Queue);
 
 NTSTATUS
-SerialCreateTimersAndDpcs(
-    IN PSERIAL_DEVICE_EXTENSION PDevExt
-    );
+SerialCreateTimersAndDpcs(_In_ PSERIAL_DEVICE_EXTENSION DevExt);
 
 VOID
-SerialDrainTimersAndDpcs(
-    IN PSERIAL_DEVICE_EXTENSION PDevExt
-    );
+SerialDrainTimersAndDpcs(_In_ PSERIAL_DEVICE_EXTENSION DevExt);
 
 VOID
 SerialSetCancelRoutine(
-    IN WDFREQUEST Request,
-    IN PFN_WDF_REQUEST_CANCEL CancelRoutine
-    );
+    _In_ WDFREQUEST Request,
+    _In_ PFN_WDF_REQUEST_CANCEL CancelRoutine);
 
 NTSTATUS
 SerialClearCancelRoutine(
-    IN WDFREQUEST Request,
-    IN BOOLEAN ClearReference
-    );
+    _In_ WDFREQUEST Request,
+    _In_ BOOLEAN ClearReference);
 
 NTSTATUS
-SerialWmiRegistration(
-    WDFDEVICE      Device
-    );
+SerialWmiRegistration(_In_ WDFDEVICE Device);
 
 NTSTATUS
 SerialReadSymName(
-    IN                           WDFDEVICE Device,
+    _In_ WDFDEVICE Device,
     _Out_writes_bytes_(*SizeOfRegName) PWSTR RegName,
-    _Inout_                      PUSHORT SizeOfRegName
-    );
+    _Inout_ PUSHORT SizeOfRegName);
 
 VOID
 SerialCompleteRequest(
-    IN WDFREQUEST    Request,
-    IN NTSTATUS      Status,
-    IN ULONG_PTR     Info
-    );
+    _In_ WDFREQUEST Request,
+    _In_ NTSTATUS Status,
+    _In_ ULONG_PTR Info);
 
 BOOLEAN
 SerialGetFdoRegistryKeyValue(
-    IN PWDFDEVICE_INIT  DeviceInit,
-    _In_ PCWSTR         Name,
-    OUT PULONG          Value
-    );
+    _In_ PWDFDEVICE_INIT  DeviceInit,
+    _In_ PCWSTR Name,
+    _Out_ PULONG Value);
 
 VOID
-SerialSetInterruptPolicy(
-   _In_ WDFINTERRUPT WdfInterrupt
-   );
+SerialSetInterruptPolicy(_In_ WDFINTERRUPT WdfInterrupt);
 
 typedef struct _SERIAL_UPDATE_CHAR {
     PSERIAL_DEVICE_EXTENSION Extension;
@@ -525,31 +382,26 @@ typedef struct _SERIAL_UPDATE_CHAR {
     BOOLEAN Completed;
     } SERIAL_UPDATE_CHAR,*PSERIAL_UPDATE_CHAR;
 
-//
 // The following simple structure is used to send a pointer
 // the device extension and an ioctl specific pointer
 // to data.
-//
+
 typedef struct _SERIAL_IOCTL_SYNC {
     PSERIAL_DEVICE_EXTENSION Extension;
     PVOID Data;
     } SERIAL_IOCTL_SYNC,*PSERIAL_IOCTL_SYNC;
 
-
-//
 // The following three macros are used to initialize, set
 // and clear references in IRPs that are used by
 // this driver.  The reference is stored in the fourth
 // argument of the request, which is never used by any operation
 // accepted by this driver.
-//
 
 #define SERIAL_REF_ISR         (0x00000001)
 #define SERIAL_REF_CANCEL      (0x00000002)
 #define SERIAL_REF_TOTAL_TIMER (0x00000004)
 #define SERIAL_REF_INT_TIMER   (0x00000008)
 #define SERIAL_REF_XOFF_REF    (0x00000010)
-
 
 #define SERIAL_INIT_REFERENCE(ReqContext) { \
     (ReqContext)->RefCount = NULL; \
@@ -561,7 +413,7 @@ typedef struct _SERIAL_IOCTL_SYNC {
        PULONG_PTR _arg4 = (PVOID)&(ReqContext)->RefCount; \
        ASSERT(!(*_arg4 & _refType)); \
        *_arg4 |= _refType; \
-   } WHILE (0)
+   } while (0)
 
 #define SERIAL_CLEAR_REFERENCE(ReqContext, RefType) \
    do { \
@@ -569,34 +421,10 @@ typedef struct _SERIAL_IOCTL_SYNC {
        PULONG_PTR _arg4 = (PVOID)&(ReqContext)->RefCount; \
        ASSERT(*_arg4 & _refType); \
        *_arg4 &= ~_refType; \
-   } WHILE (0)
+   } while (0)
 
 #define SERIAL_REFERENCE_COUNT(ReqContext) \
     ((ULONG_PTR)(((ReqContext)->RefCount)))
 
 #define SERIAL_TEST_REFERENCE(ReqContext, RefType) ((ULONG_PTR)ReqContext ->RefCount & RefType)
-
-//
-// Prototypes and defines to handle processor groups.
-//
-typedef
-USHORT  
-(*PFN_KE_GET_ACTIVE_GROUP_COUNT)(
-    VOID
-    );
-
-typedef
-KAFFINITY
-(*PFN_KE_QUERY_GROUP_AFFINITY) (
-    _In_ USHORT GroupNumber
-    );
-
-//
-// Force the serial interrupt to run on the last interrupt group.
-//
-//#define SERIAL_SELECT_INTERRUPT_GROUP       1
-#define SERIAL_LAST_INTERRUPT_GROUP         0xFFFF
-#define SERIAL_PREFERRED_INTERRUPT_GROUP    SERIAL_LAST_INTERRUPT_GROUP
-
-
 
