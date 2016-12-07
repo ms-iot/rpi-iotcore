@@ -1,21 +1,15 @@
-/*++
+// Copyright (c) Microsoft Corporation.  All rights reserved.
+//
+// Module Name:
+//
+//
+//    flush.c
+//
+// Abstract:
+//
+//    This module contains the code that is very specific to flush
+//    operations in the serial driver
 
-Copyright (c) Microsoft Corporation
-
-Module Name:
-
-    flush.c
-
-Abstract:
-
-    This module contains the code that is very specific to flush
-    operations in the serial driver
-
-Environment:
-
-    Kernel mode
-
---*/
 
 #include "precomp.h"
 #include "flush.tmh"
@@ -23,15 +17,6 @@ Environment:
 #ifdef ALLOC_PRAGMA
 #pragma alloc_text(PAGE, SerialFlush)
 #endif
-
-#pragma warning(push)
-#pragma warning(disable:28118) // this callback will run at IRQL=PASSIVE_LEVEL
-_Use_decl_annotations_
-NTSTATUS
-SerialFlush(
-    WDFDEVICE Device,
-    PIRP Irp
-    )
 
 /*++
 
@@ -53,31 +38,36 @@ Return Value:
     Could return status success, cancelled, or pending.
 
 --*/
-
+_Use_decl_annotations_
+NTSTATUS
+SerialFlush(
+    WDFDEVICE Device,
+    PIRP Irp
+    )
 {
-
     PSERIAL_DEVICE_EXTENSION extension;
 
     extension = SerialGetDeviceExtension(Device);
 
-    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_WRITE, ">SerialFlush(%p, %p)\n", Device, Irp);
+    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_WRITE,
+                "++SerialFlush(%p, %p)\r\n",
+                Device,
+                Irp);
 
     PAGED_CODE();
 
     WdfIoQueueStopSynchronously(extension->WriteQueue);
-    //
+    
     // Flush is done - restart the queue
-    //
+    
     WdfIoQueueStart(extension->WriteQueue);
 
     Irp->IoStatus.Information = 0L;
     Irp->IoStatus.Status = STATUS_SUCCESS;
     IoCompleteRequest(Irp, IO_NO_INCREMENT);
 
-
-    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_WRITE, "<SerialFlush\n");
+    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_WRITE, "--SerialFlush\r\n");
 
     return STATUS_SUCCESS;
  }
-#pragma warning(pop) // enable 28118 again
 

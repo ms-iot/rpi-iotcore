@@ -1,21 +1,14 @@
-/*++
-
-Copyright (c) Microsoft Corporation
-
-Module Name:
-
-    qsfile.c
-
-Abstract:
-
-    This module contains the code that is very specific to query/set file
-    operations in the serial driver.
-
-Environment:
-
-    Kernel mode
-
---*/
+// Copyright (c) Microsoft Corporation.  All rights reserved.
+//
+// Module Name:
+//
+//    qsfile.c
+//
+// Abstract:
+//
+//   This module contains the code that is very specific to query/set file
+//    operations in the serial driver.
+//
 
 #include "precomp.h"
 #include "qsfile.tmh"
@@ -24,13 +17,6 @@ Environment:
 #pragma alloc_text(PAGESRP0,SerialQueryInformationFile)
 #pragma alloc_text(PAGESRP0,SerialSetInformationFile)
 #endif
-
-
-NTSTATUS
-SerialQueryInformationFile(
-    IN WDFDEVICE Device,
-    IN PIRP Irp
-    )
 
 /*++
 
@@ -53,19 +39,26 @@ Return Value:
     The function value is the final status of the call
 
 --*/
-
+_Use_decl_annotations_
+NTSTATUS
+SerialQueryInformationFile(
+    WDFDEVICE Device,
+    PIRP Irp
+    )
 {
-    NTSTATUS Status;
+    NTSTATUS status;
     PIO_STACK_LOCATION IrpSp;
 
-    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_PNP, ">SerialQueryInformationFile(%p, %p)\n", Device, Irp);
+    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_PNP,
+                "++SerialQueryInformationFile(%p, %p)\r\n",
+                Device,
+                Irp);
 
     PAGED_CODE();
 
-
     IrpSp = IoGetCurrentIrpStackLocation(Irp);
     Irp->IoStatus.Information = 0L;
-    Status = STATUS_SUCCESS;
+    status = STATUS_SUCCESS;
 
     if (IrpSp->Parameters.QueryFile.FileInformationClass ==
         FileStandardInformation) {
@@ -73,17 +66,17 @@ Return Value:
         if (IrpSp->Parameters.DeviceIoControl.OutputBufferLength <
                 sizeof(FILE_STANDARD_INFORMATION))
         {
-                Status = STATUS_BUFFER_TOO_SMALL;
-        }
-        else
-        {
-            PFILE_STANDARD_INFORMATION Buf = Irp->AssociatedIrp.SystemBuffer;
+                status = STATUS_BUFFER_TOO_SMALL;
 
-            Buf->AllocationSize.QuadPart = 0;
-            Buf->EndOfFile = Buf->AllocationSize;
-            Buf->NumberOfLinks = 0;
-            Buf->DeletePending = FALSE;
-            Buf->Directory = FALSE;
+        } else {
+
+            PFILE_STANDARD_INFORMATION buf = Irp->AssociatedIrp.SystemBuffer;
+
+            buf->AllocationSize.QuadPart = 0;
+            buf->EndOfFile = buf->AllocationSize;
+            buf->NumberOfLinks = 0;
+            buf->DeletePending = FALSE;
+            buf->Directory = FALSE;
             Irp->IoStatus.Information = sizeof(FILE_STANDARD_INFORMATION);
         }
 
@@ -91,12 +84,11 @@ Return Value:
                FilePositionInformation) {
 
         if (IrpSp->Parameters.DeviceIoControl.OutputBufferLength <
-                sizeof(FILE_POSITION_INFORMATION))
-        {
-                Status = STATUS_BUFFER_TOO_SMALL;
-        }
-        else
-        {
+                sizeof(FILE_POSITION_INFORMATION)) {
+
+                status = STATUS_BUFFER_TOO_SMALL;
+
+        } else {
 
             ((PFILE_POSITION_INFORMATION)Irp->AssociatedIrp.SystemBuffer)->
                 CurrentByteOffset.QuadPart = 0;
@@ -104,22 +96,20 @@ Return Value:
         }
 
     } else {
-        Status = STATUS_INVALID_PARAMETER;
+        status = STATUS_INVALID_PARAMETER;
     }
 
-    Irp->IoStatus.Status = Status;
+    Irp->IoStatus.Status = status;
 
     IoCompleteRequest(Irp, IO_NO_INCREMENT);
 
-    return Status;
-
+    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_PNP,
+                "--SerialQueryInformationFile(%p, %p)=%Xh\r\n",
+                Device,
+                Irp,
+                status);
+    return status;
 }
-
-NTSTATUS
-SerialSetInformationFile(
-    IN WDFDEVICE Device,
-    IN PIRP Irp
-    )
 
 /*++
 
@@ -143,15 +133,24 @@ Return Value:
 The function value is the final status of the call
 
 --*/
-
+_Use_decl_annotations_
+NTSTATUS
+SerialSetInformationFile(
+    WDFDEVICE Device,
+    PIRP Irp
+    )
 {
-    NTSTATUS Status;
+    NTSTATUS status;
 
     PAGED_CODE();
 
-    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_PNP, ">SerialSetInformationFile(%p, %p)\n", Device, Irp);
+    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_PNP,
+                "++SerialSetInformationFile(%p, %p)\r\n",
+                Device,
+                Irp);
 
     Irp->IoStatus.Information = 0L;
+
     if ((IoGetCurrentIrpStackLocation(Irp)->
             Parameters.SetFile.FileInformationClass ==
          FileEndOfFileInformation) ||
@@ -159,19 +158,23 @@ The function value is the final status of the call
             Parameters.SetFile.FileInformationClass ==
          FileAllocationInformation)) {
 
-        Status = STATUS_SUCCESS;
+        status = STATUS_SUCCESS;
 
     } else {
 
-        Status = STATUS_INVALID_PARAMETER;
+        status = STATUS_INVALID_PARAMETER;
 
     }
 
-    Irp->IoStatus.Status = Status;
+    Irp->IoStatus.Status = status;
 
     IoCompleteRequest(Irp, IO_NO_INCREMENT);
 
-    return Status;
-
+    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_PNP,
+                "--SerialSetInformationFile(%p, %p)=%Xh\r\n",
+                Device,
+                Irp,
+                status);
+    return status;
 }
 
