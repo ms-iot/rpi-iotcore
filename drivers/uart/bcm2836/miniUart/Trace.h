@@ -1,23 +1,19 @@
-/*++
-
-Module Name:
-
-    Trace.h
-
-Abstract:
-
-    Header file for the debug tracing related function defintions and macros.
-
-Environment:
-
-    Kernel mode
-
---*/
+//
+// Copyright (c) Microsoft Corporation.  All rights reserved.
+//
+// Module Name:
+//
+//     trace.h
+//
+// Abstract:
+//
+//     Header file for WPP tracing related function defintions and macros.
+//
 
 //
 // Define the tracing flags.
 //
-// Tracing GUID - 22bf0db9-1111-4c9d-b478-9988857bd94b
+// mini Uart Tracing GUID - 22bf0db9-1111-4c9d-b478-9988857bd94b
 //
 
 #define WPP_CONTROL_GUIDS                                              \
@@ -38,11 +34,11 @@ Environment:
         WPP_DEFINE_BIT(DBG_HW_ACCESS)        /* bit 12 = 0x00001000 */ \
         )                             
 
-#define WPP_FLAG_LEVEL_LOGGER(flag, level)                                  \
+#define WPP_FLAG_LEVEL_LOGGER(flag, level)                             \
     WPP_LEVEL_LOGGER(flag)
 
-#define WPP_FLAG_LEVEL_ENABLED(flag, level)                                 \
-    (WPP_LEVEL_ENABLED(flag) &&                                             \
+#define WPP_FLAG_LEVEL_ENABLED(flag, level)                            \
+    (WPP_LEVEL_ENABLED(flag) &&                                        \
      WPP_CONTROL(WPP_BIT_ ## flag).Level >= level)
 
 #define WPP_LEVEL_FLAGS_LOGGER(lvl,flags) \

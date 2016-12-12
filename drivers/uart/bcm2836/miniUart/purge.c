@@ -1,30 +1,17 @@
-/*++
-
-Copyright (c) Microsoft Corporation
-
-Module Name:
-
-    purge.c
-
-Abstract:
-
-    This module contains the code that is very specific to purge
-    operations in the serial driver
-
-Environment:
-
-    Kernel mode
-
---*/
+// Copyright (c) Microsoft Corporation.  All rights reserved.
+//
+// Module Name:
+//
+//   purge.c
+//
+// Abstract:
+//
+//    This module contains the code that is very specific to purge
+//    operations in the serial driver
+//
 
 #include "precomp.h"
 #include "purge.tmh"
-
-
-VOID
-SerialStartPurge(
-    IN PSERIAL_DEVICE_EXTENSION Extension
-    )
 
 /*++
 
@@ -45,9 +32,12 @@ Return Value:
     once it's started.
 
 --*/
-
+_Use_decl_annotations_
+VOID
+SerialStartPurge(
+    PSERIAL_DEVICE_EXTENSION Extension
+    )
 {
-
     WDFREQUEST NewRequest;
     PREQUEST_CONTEXT reqContext;
 
@@ -55,74 +45,53 @@ Return Value:
 
         ULONG Mask;
         reqContext = SerialGetRequestContext(Extension->CurrentPurgeRequest);
-        Mask = *((ULONG *) (reqContext->SystemBuffer));
+        Mask = *((ULONG*) (reqContext->SystemBuffer));
 
         if (Mask & SERIAL_PURGE_TXABORT) {
 
-            SerialFlushRequests(
-                Extension->WriteQueue,
-                &Extension->CurrentWriteRequest
-                );
+            SerialFlushRequests(Extension->WriteQueue,
+                                &Extension->CurrentWriteRequest);
 
-            SerialFlushRequests(
-                Extension->WriteQueue,
-                &Extension->CurrentXoffRequest
-                );
+            SerialFlushRequests(Extension->WriteQueue,
+                                &Extension->CurrentXoffRequest);
 
         }
 
         if (Mask & SERIAL_PURGE_RXABORT) {
 
-            SerialFlushRequests(
-                Extension->ReadQueue,
-                &Extension->CurrentReadRequest
-                );
+            SerialFlushRequests(Extension->ReadQueue,
+                                &Extension->CurrentReadRequest);
 
         }
 
         if (Mask & SERIAL_PURGE_RXCLEAR) {
 
-            //
             // Clean out the interrupt buffer.
             //
             // Note that we do this under protection of the
             // the drivers control lock so that we don't hose
             // the pointers if there is currently a read that
             // is reading out of the buffer.
-            //
 
-
-            WdfInterruptSynchronize(
-                Extension->WdfInterrupt,
-                SerialPurgeInterruptBuff,
-                Extension
-                );
-
+            WdfInterruptSynchronize(Extension->WdfInterrupt,
+                                    SerialPurgeInterruptBuff,
+                                    Extension);
         }
 
         reqContext->Status = STATUS_SUCCESS;
         reqContext->Information = 0;
 
-        SerialGetNextRequest(
-            &Extension->CurrentPurgeRequest,
-            Extension->PurgeQueue,
-            &NewRequest,
-            TRUE,
-            Extension
-            );
+        SerialGetNextRequest(&Extension->CurrentPurgeRequest,
+                            Extension->PurgeQueue,
+                            &NewRequest,
+                            TRUE,
+                            Extension);
 
     } while (NewRequest);
 
     return;
-
 }
 
-BOOLEAN
-SerialPurgeInterruptBuff(
-    IN WDFINTERRUPT  Interrupt,
-    IN PVOID Context
-    )
-
 /*++
 
 Routine Description:
@@ -140,33 +109,33 @@ Return Value:
     Always false.
 
 --*/
-
+_Use_decl_annotations_
+BOOLEAN
+SerialPurgeInterruptBuff(
+    WDFINTERRUPT Interrupt,
+    PVOID Context
+    )
 {
-
-    PSERIAL_DEVICE_EXTENSION Extension = Context;
+    PSERIAL_DEVICE_EXTENSION extension = Context;
 
     UNREFERENCED_PARAMETER(Interrupt);
 
-    //
     // The typeahead buffer is by definition empty if there
     // currently is a read owned by the isr.
-    //
 
+    if (extension->ReadBufferBase == extension->InterruptReadBuffer) {
 
-    if (Extension->ReadBufferBase == Extension->InterruptReadBuffer) {
+        extension->CurrentCharSlot = extension->InterruptReadBuffer;
+        extension->FirstReadableChar = extension->InterruptReadBuffer;
+        extension->LastCharSlot = extension->InterruptReadBuffer +
+                                      (extension->BufferSize - 1);
+        extension->CharsInInterruptBuffer = 0;
 
-        Extension->CurrentCharSlot = Extension->InterruptReadBuffer;
-        Extension->FirstReadableChar = Extension->InterruptReadBuffer;
-        Extension->LastCharSlot = Extension->InterruptReadBuffer +
-                                      (Extension->BufferSize - 1);
-        Extension->CharsInInterruptBuffer = 0;
-
-        SerialHandleReducedIntBuffer(Extension);
+        SerialHandleReducedIntBuffer(extension);
 
     }
 
     return FALSE;
-
 }
 
 

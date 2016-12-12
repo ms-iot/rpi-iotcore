@@ -1,21 +1,13 @@
-/*++
-
-Copyright (c) Microsoft Corporation
-
-Module Name:
-
-    write.c
-
-Abstract:
-
-    This module contains the code that is very specific to write
-    operations in the serial driver
-
-Environment:
-
-    Kernel mode
-
---*/
+// Copyright (c) Microsoft Corporation.  All rights reserved.
+//
+// Module Name:
+//
+//    write.c
+//
+// Abstract:
+//
+//   This module contains the code that is very specific to write
+//   operations in RPi mini Uart serial driver
 
 #include "precomp.h"
 #include "write.tmh"
@@ -26,14 +18,6 @@ EVT_WDF_INTERRUPT_SYNCHRONIZE SerialGiveWriteToIsr;
 EVT_WDF_INTERRUPT_SYNCHRONIZE SerialGiveXoffToIsr;
 EVT_WDF_INTERRUPT_SYNCHRONIZE SerialGrabWriteFromIsr;
 EVT_WDF_INTERRUPT_SYNCHRONIZE SerialGrabXoffFromIsr;
-
-
-VOID
-SerialEvtIoWrite(
-    IN WDFQUEUE         Queue,
-    IN WDFREQUEST       Request,
-    IN size_t            Length
-    )
 
 /*++
 
@@ -58,74 +42,78 @@ Arguments:
 Return Value:
 
 --*/
-
+_Use_decl_annotations_
+VOID
+SerialEvtIoWrite(
+    WDFQUEUE Queue,
+    WDFREQUEST Request,
+    size_t Length
+    )
 {
-
     PSERIAL_DEVICE_EXTENSION extension;
     NTSTATUS status;
     WDFDEVICE hDevice;
     WDF_REQUEST_PARAMETERS params;
     PREQUEST_CONTEXT reqContext;
     size_t bufLen;
-    UCHAR uchTempIER=0x00;
+    UCHAR tempIER=0x00;
 
     hDevice = WdfIoQueueGetDevice(Queue);
     extension = SerialGetDeviceExtension(hDevice);
 
     TraceEvents(TRACE_LEVEL_INFORMATION, DBG_WRITE,
-                    "++SerialEvtIoWrite(%p, 0x%I64x)\n", Request,  Length);
+                "++SerialEvtIoWrite(%p, 0x%I64x)\r\n", 
+                Request,
+                Length);
 
     if (SerialCompleteIfError(extension, Request) != STATUS_SUCCESS) {
 
-        TraceEvents(TRACE_LEVEL_INFORMATION, DBG_WRITE, "--SerialEvtIoWrite (2) %d\n", STATUS_CANCELLED);
+        TraceEvents(TRACE_LEVEL_INFORMATION, DBG_WRITE,
+                    "--SerialEvtIoWrite 1 %Xh\r\n",
+                    (ULONG)STATUS_CANCELLED);
         return;
-
     }
-
 
     WDF_REQUEST_PARAMETERS_INIT(&params);
 
-    WdfRequestGetParameters(
-          Request,
-          &params
-          );
+    WdfRequestGetParameters(Request, &params);
 
-    //
     // Initialize the scratch area of the request.
-    //
+
     reqContext = SerialGetRequestContext(Request);
     reqContext->MajorFunction = params.Type;
     reqContext->Length = (ULONG) Length;
 
-    status = WdfRequestRetrieveInputBuffer (Request, Length, &reqContext->SystemBuffer, &bufLen);
+    status = WdfRequestRetrieveInputBuffer (Request,
+                                            Length,
+                                            &reqContext->SystemBuffer,
+                                            &bufLen);
 
     if (!NT_SUCCESS (status)) {
 
         SerialCompleteRequest(Request , status, 0);
-        TraceEvents(TRACE_LEVEL_INFORMATION, DBG_WRITE, "--SerialEvtIoWrite (4) %X\n", status);
+        TraceEvents(TRACE_LEVEL_INFORMATION, DBG_WRITE,
+                    "--SerialEvtIoWrite 2 %Xh\r\n", 
+                    status);
         return;
     }
 
-   SerialStartOrQueue(extension, Request, extension->WriteQueue,
-                               &extension->CurrentWriteRequest,
-                               SerialStartWrite);
+   SerialStartOrQueue(extension,
+                        Request,
+                        extension->WriteQueue,
+                        &extension->CurrentWriteRequest,
+                        SerialStartWrite);
 
-    // enable miniuart Tx interrupt
+    // enable mini Uart Tx interrupt
+
     TraceEvents(TRACE_LEVEL_INFORMATION, DBG_INTERRUPT, "SerialEvtIoWrite() - enable Tx interrupt\r\n");
 
-    uchTempIER=READ_INTERRUPT_ENABLE(extension, extension->Controller);
-    WRITE_INTERRUPT_ENABLE(extension, extension->Controller, (uchTempIER | SERIAL_IER_THR)); // 0x2
+    tempIER=READ_INTERRUPT_ENABLE(extension, extension->Controller);
+    WRITE_INTERRUPT_ENABLE(extension, extension->Controller, (tempIER | SERIAL_IER_THR));
 
-   TraceEvents(TRACE_LEVEL_INFORMATION, DBG_WRITE, "--SerialEvtIoWrite (5) %X\n", status);
-
-   return ;
-
+   TraceEvents(TRACE_LEVEL_INFORMATION, DBG_WRITE, "--SerialEvtIoWrite()=%X\r\n", status);
+   return;
 }
-
-VOID
-SerialStartWrite(
-    IN PSERIAL_DEVICE_EXTENSION Extension
-    )
 
 /*++
 
@@ -142,29 +130,30 @@ Arguments:
 Return Value:
 
 --*/
-
+_Use_decl_annotations_
+VOID
+SerialStartWrite(
+    PSERIAL_DEVICE_EXTENSION Extension
+    )
 {
 
-    LARGE_INTEGER    TotalTime;
-    BOOLEAN          UseATimer;
-    SERIAL_TIMEOUTS  Timeouts;
+    LARGE_INTEGER    totalTime;
+    BOOLEAN          useAtimer;
+    SERIAL_TIMEOUTS  timeouts;
     PREQUEST_CONTEXT reqContext;
     PREQUEST_CONTEXT reqContextXoff;
 
     TraceEvents(TRACE_LEVEL_INFORMATION, DBG_WRITE,
-                     "++SerialStartWrite(%p)\n", Extension);
+                     "++SerialStartWrite(%p)\r\n", Extension);
 
-    TotalTime.QuadPart = 0;
+    totalTime.QuadPart = 0;
 
     do {
 
         reqContext = SerialGetRequestContext(Extension->CurrentWriteRequest);
 
-        //
         // If there is an xoff counter then complete it.
-        //
 
-        //
         // We see if there is a actually an Xoff counter request.
         //
         // If there is, we put the write request back on the head
@@ -173,7 +162,6 @@ Return Value:
         // xoff counter back into the current write request, and
         // in the course of completing the xoff (which is now
         // the current write) we will restart this request.
-        //
 
         if (Extension->CurrentXoffRequest) {
 
@@ -182,138 +170,101 @@ Return Value:
 
             if (SERIAL_REFERENCE_COUNT(reqContextXoff)) {
 
-                //
                 // The reference count is non-zero.  This implies that
                 // the xoff request has not made it through the completion
                 // path yet.  We will increment the reference count
                 // and attempt to complete it ourseleves.
-                //
 
-                SERIAL_SET_REFERENCE(
-                    reqContextXoff,
-                    SERIAL_REF_XOFF_REF
-                    );
+                SERIAL_SET_REFERENCE(reqContextXoff, SERIAL_REF_XOFF_REF);
 
                 reqContextXoff->Information = 0;
 
-                //
                 // The following call will actually release the
                 // cancel spin lock.
-                //
 
-                SerialTryToCompleteCurrent(
-                    Extension,
-                    SerialGrabXoffFromIsr,
-                    STATUS_SERIAL_MORE_WRITES,
-                    &Extension->CurrentXoffRequest,
-                    NULL,
-                    NULL,
-                    Extension->XoffCountTimer,
-                    NULL,
-                    NULL,
-                    SERIAL_REF_XOFF_REF
-                    );
+                SerialTryToCompleteCurrent(Extension,
+                                            SerialGrabXoffFromIsr,
+                                            STATUS_SERIAL_MORE_WRITES,
+                                            &Extension->CurrentXoffRequest,
+                                            NULL,
+                                            NULL,
+                                            Extension->XoffCountTimer,
+                                            NULL,
+                                            NULL,
+                                            SERIAL_REF_XOFF_REF);
 
             } else {
 
-                //
                 // The request is well on its way to being finished.
                 // We can let the regular completion code do the
                 // work.  Just release the spin lock.
-                //
 
             }
 
         }
 
-        UseATimer = FALSE;
+        useAtimer = FALSE;
 
-        //
         // Calculate the timeout value needed for the
         // request.  Note that the values stored in the
         // timeout record are in milliseconds.  Note that
         // if the timeout values are zero then we won't start
         // the timer.
-        //
 
-        Timeouts = Extension->Timeouts;
+        timeouts = Extension->timeouts;
 
-        if (Timeouts.WriteTotalTimeoutConstant ||
-            Timeouts.WriteTotalTimeoutMultiplier) {
+        if (timeouts.WriteTotalTimeoutConstant ||
+            timeouts.WriteTotalTimeoutMultiplier) {
 
-            UseATimer = TRUE;
+            useAtimer = TRUE;
 
-            //
             // We have some timer values to calculate.
             //
             // Take care, we might have an xoff counter masquerading
             // as a write.
-            //
 
-            TotalTime.QuadPart =
-                ((LONGLONG)((UInt32x32To64(
-                                 (reqContext->MajorFunction == IRP_MJ_WRITE)?
-                                     (reqContext->Length) : (1),
-                                 Timeouts.WriteTotalTimeoutMultiplier
-                                 )
-                                 + Timeouts.WriteTotalTimeoutConstant)))
-                * -10000;
-
+            totalTime.QuadPart =((LONGLONG)((UInt32x32To64((reqContext->MajorFunction == IRP_MJ_WRITE)?
+                                                    (reqContext->Length) : (1),
+                                                    timeouts.WriteTotalTimeoutMultiplier)
+                                                    + timeouts.WriteTotalTimeoutConstant)))
+                                                    * -10000;
         }
 
-        //
         // The request may be going to the isr shortly.  Now
         // is a good time to initialize its reference counts.
-        //
 
         SERIAL_INIT_REFERENCE(reqContext);
 
-         //
          // We give the request to to the isr to write out.
          // We set a cancel routine that knows how to
          // grab the current write away from the isr.
-         //
-         SerialSetCancelRoutine(Extension->CurrentWriteRequest,
-                                         SerialCancelCurrentWrite);
 
-        if (UseATimer) {
+         SerialSetCancelRoutine(Extension->CurrentWriteRequest,
+                                 SerialCancelCurrentWrite);
+
+        if (useAtimer) {
             BOOLEAN result;
 
-            result = SerialSetTimer(
-                Extension->WriteRequestTotalTimer,
-                TotalTime
-                );
-            if(result == FALSE) {
-                //
-                // This timer now has a reference to the request.
-                //
+            result = SerialSetTimer(Extension->WriteRequestTotalTimer,
+                                    totalTime);
 
-                SERIAL_SET_REFERENCE( reqContext, SERIAL_REF_TOTAL_TIMER );
+            if(result == FALSE) {
+                
+                // This timer now has a reference to the request.
+
+                SERIAL_SET_REFERENCE(reqContext, SERIAL_REF_TOTAL_TIMER );
             }
         }
 
-        WdfInterruptSynchronize(
-            Extension->WdfInterrupt,
-            SerialGiveWriteToIsr,
-            Extension
-            );
+        WdfInterruptSynchronize(Extension->WdfInterrupt,
+                                SerialGiveWriteToIsr,
+                                Extension);
 
-    } WHILE (FALSE);
+    } while (FALSE);
 
-    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_WRITE, "--SerialStartWrite \n");
-
+    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_WRITE, "--SerialStartWrite\r\n");
     return;
 }
-
-
-VOID
-SerialGetNextWrite(
-    IN WDFREQUEST *CurrentOpRequest,
-    IN WDFQUEUE QueueToProcess,
-    IN WDFREQUEST *NewRequest,
-    IN BOOLEAN CompleteCurrent,
-    PSERIAL_DEVICE_EXTENSION Extension
-    )
 
 /*++
 
@@ -351,20 +302,25 @@ Return Value:
     None.
 
 --*/
-
+_Use_decl_annotations_
+VOID
+SerialGetNextWrite(
+    WDFREQUEST* CurrentOpRequest,
+    WDFQUEUE QueueToProcess,
+    WDFREQUEST* NewRequest,
+    BOOLEAN CompleteCurrent,
+    PSERIAL_DEVICE_EXTENSION Extension
+    )
 {
     PREQUEST_CONTEXT reqContext;
 
-   TraceEvents(TRACE_LEVEL_INFORMATION, DBG_WRITE, "++SerialGetNextWrite\n");
-
+    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_WRITE, "++SerialGetNextWrite\r\n");
 
     do {
 
         reqContext = SerialGetRequestContext(*CurrentOpRequest);
 
-        //
         // We could be completing a flush.
-        //
 
         if (reqContext->MajorFunction == IRP_MJ_WRITE) {
 
@@ -375,131 +331,98 @@ Return Value:
         } else if (reqContext->MajorFunction == IRP_MJ_DEVICE_CONTROL) {
 
             WDFREQUEST request = *CurrentOpRequest;
-            PSERIAL_XOFF_COUNTER Xc;
+            PSERIAL_XOFF_COUNTER xc;
 
-            Xc = reqContext->SystemBuffer;
+            xc = reqContext->SystemBuffer;
 
-            //
             // We should never have a xoff counter when we
             // get to this point.
-            //
 
             ASSERT(!Extension->CurrentXoffRequest);
 
-            //
             // This could only be a xoff counter masquerading as
             // a write request.
-            //
 
             Extension->TotalCharsQueued--;
 
-            //
             // Check to see of the xoff request has been set with success.
             // This means that the write completed normally.  If that
             // is the case, and it hasn't been set to cancel in the
             // meanwhile, then go on and make it the CurrentXoffRequest.
-            //
 
             if (reqContext->Status != STATUS_SUCCESS || reqContext->Cancelled) {
 
-                // TODO: I see Xoff request getting abandoned due to loss of
+                // If Xoff request getting abandoned due to loss of
                 // Total timer - SERIAL_REF_TOTAL_TIMER
-                //
-                // Oh well, we can just finish it off.
-                //
-                NOTHING;
+                // we can just finish it off.
 
             } else {
 
                 SerialSetCancelRoutine(request, SerialCancelCurrentXoff);
 
-                //
                 // We don't want to complete the current request now.  This
                 // will now get completed by the Xoff counter code.
-                //
 
                 CompleteCurrent = FALSE;
 
-                //
                 // Give the counter to the isr.
-                //
 
                 Extension->CurrentXoffRequest = request;
-                WdfInterruptSynchronize(
-                    Extension->WdfInterrupt,
-                    SerialGiveXoffToIsr,
-                    Extension
-                    );
 
-                //
+                WdfInterruptSynchronize(Extension->WdfInterrupt,
+                                        SerialGiveXoffToIsr,
+                                        Extension);
+
                 // Start the timer for the counter and increment
                 // the reference count since the timer has a
                 // reference to the request.
-                //
 
-                if (Xc->Timeout) {
+                if (xc->Timeout) {
 
                     LARGE_INTEGER delta;
                     BOOLEAN result;
 
-                    delta.QuadPart = -((LONGLONG)UInt32x32To64(
-                                                     1000,
-                                                     Xc->Timeout
-                                                     ));
+                    delta.QuadPart = -((LONGLONG)UInt32x32To64(1000,
+                                                                xc->Timeout));
 
-                    result = SerialSetTimer(
-                        Extension->XoffCountTimer,
-                        delta
+                    result = SerialSetTimer(Extension->XoffCountTimer,
+                                            delta);
 
-                        );
                     if(result == FALSE) {
-                        SERIAL_SET_REFERENCE(
-                            reqContext,
-                            SERIAL_REF_TOTAL_TIMER
-                            );
+
+                        SERIAL_SET_REFERENCE(reqContext,
+                                            SERIAL_REF_TOTAL_TIMER);
+
                     }
                 }
-
             }
-
-
         }
 
-        //
         // Note that the following call will (probably) also cause
         // the current request to be completed.
-        //
 
-        SerialGetNextRequest(
-            CurrentOpRequest,
-            QueueToProcess,
-            NewRequest,
-            CompleteCurrent,
-            Extension
-            );
+        SerialGetNextRequest(CurrentOpRequest,
+                            QueueToProcess,
+                            NewRequest,
+                            CompleteCurrent,
+                            Extension);
 
         if (!*NewRequest) {
 
-
-            WdfInterruptSynchronize(
-                Extension->WdfInterrupt,
-                SerialProcessEmptyTransmit,
-                Extension
-                );
+            WdfInterruptSynchronize(Extension->WdfInterrupt,
+                                    SerialProcessEmptyTransmit,
+                                    Extension);
 
             break;
 
         } else if (SerialGetRequestContext(*NewRequest)->MajorFunction
                    == IRP_MJ_FLUSH_BUFFERS) {
 
-            //
             // If we encounter a flush request we just want to get
             // the next request and complete the flush.
             //
             // Note that if NewRequest is non-null then it is also
             // equal to CurrentWriteRequest.
-            //
-
 
             ASSERT((*NewRequest) == (*CurrentOpRequest));
             SerialGetRequestContext(*NewRequest)->Status = STATUS_SUCCESS;
@@ -507,20 +430,12 @@ Return Value:
         } else {
 
             break;
-
         }
 
-    } WHILE (TRUE);
+    } while (TRUE);
 
-    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_WRITE, "--SerialGetNextWrite\n");
-
+    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_WRITE, "--SerialGetNextWrite\r\n");
 }
-
-
-VOID
-SerialCompleteWrite(
-    IN WDFDPC Dpc
-    )
 
 /*++
 
@@ -545,34 +460,32 @@ Return Value:
     None.
 
 --*/
-
+_Use_decl_annotations_
+VOID
+SerialCompleteWrite(
+    WDFDPC Dpc
+    )
 {
-
     PSERIAL_DEVICE_EXTENSION Extension = NULL;
 
     Extension = SerialGetDeviceExtension(WdfDpcGetParentObject(Dpc));
 
-    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_WRITE, "++SerialCompleteWrite(%p) DPC\n",
+    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_WRITE, "++SerialCompleteWrite(%p) DPC\r\n",
                      Extension);
 
-
-    SerialTryToCompleteCurrent(Extension, NULL, STATUS_SUCCESS,
+    SerialTryToCompleteCurrent(Extension,
+                               NULL,
+                               STATUS_SUCCESS,
                                &Extension->CurrentWriteRequest,
-                               Extension->WriteQueue, NULL,
+                               Extension->WriteQueue,
+                               NULL,
                                Extension->WriteRequestTotalTimer,
-                               SerialStartWrite, SerialGetNextWrite,
+                               SerialStartWrite,
+                               SerialGetNextWrite,
                                SERIAL_REF_ISR);
 
-    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_WRITE, "--SerialCompleteWrite DPC\n");
-
+    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_WRITE, "--SerialCompleteWrite DPC\r\n");
 }
-
-
-BOOLEAN
-SerialProcessEmptyTransmit(
-    IN WDFINTERRUPT  Interrupt,
-    IN PVOID Context
-    )
 
 /*++
 
@@ -598,46 +511,39 @@ Return Value:
     This routine always returns FALSE.
 
 --*/
-
+_Use_decl_annotations_
+BOOLEAN
+SerialProcessEmptyTransmit(
+    WDFINTERRUPT Interrupt,
+    PVOID Context
+    )
 {
-
-    PSERIAL_DEVICE_EXTENSION Extension = Context;
+    PSERIAL_DEVICE_EXTENSION extension = Context;
 
     UNREFERENCED_PARAMETER(Interrupt);
 
-    if (Extension->IsrWaitMask && (Extension->IsrWaitMask & SERIAL_EV_TXEMPTY) &&
-        Extension->EmptiedTransmit && (!Extension->TransmitImmediate) &&
-        (!Extension->CurrentWriteRequest) && IsQueueEmpty(Extension->WriteQueue)) {
+    if (extension->IsrWaitMask && (extension->IsrWaitMask & SERIAL_EV_TXEMPTY) &&
+        extension->EmptiedTransmit && (!extension->TransmitImmediate) &&
+        (!extension->CurrentWriteRequest) && IsQueueEmpty(extension->WriteQueue)) {
 
-        Extension->HistoryMask |= SERIAL_EV_TXEMPTY;
-        if (Extension->IrpMaskLocation) {
+        extension->HistoryMask |= SERIAL_EV_TXEMPTY;
+        if (extension->IrpMaskLocation) {
 
-            *Extension->IrpMaskLocation = Extension->HistoryMask;
-            Extension->IrpMaskLocation = NULL;
-            Extension->HistoryMask = 0;
+            *extension->IrpMaskLocation = extension->HistoryMask;
+            extension->IrpMaskLocation = NULL;
+            extension->HistoryMask = 0;
 
-            SerialGetRequestContext(Extension->CurrentWaitRequest)->Information = sizeof(ULONG);
-            SerialInsertQueueDpc(
-                Extension->CommWaitDpc
-                );
+            SerialGetRequestContext(extension->CurrentWaitRequest)->Information = sizeof(ULONG);
 
+            SerialInsertQueueDpc(extension->CommWaitDpc);
         }
 
-        Extension->CountOfTryingToLowerRTS++;
-        SerialPerhapsLowerRTS(Extension->WdfInterrupt, Extension);
-
+        extension->CountOfTryingToLowerRTS++;
+        SerialPerhapsLowerRTS(extension->WdfInterrupt, extension);
     }
 
     return FALSE;
-
 }
-
-
-BOOLEAN
-SerialGiveWriteToIsr(
-    IN WDFINTERRUPT Interrupt,
-    IN PVOID Context
-    )
 
 /*++
 
@@ -663,66 +569,54 @@ Return Value:
     This routine always returns FALSE.
 
 --*/
-
+_Use_decl_annotations_
+BOOLEAN
+SerialGiveWriteToIsr(
+    WDFINTERRUPT Interrupt,
+    PVOID Context
+    )
 {
+    PSERIAL_DEVICE_EXTENSION extension = Context;
 
-    PSERIAL_DEVICE_EXTENSION Extension = Context;
-
-    //
     // The current stack location.  This contains all of the
     // information we need to process this particular request.
-    //
+
     PREQUEST_CONTEXT reqContext;
 
     UNREFERENCED_PARAMETER(Interrupt);
 
-    reqContext = SerialGetRequestContext(Extension->CurrentWriteRequest);
+    reqContext = SerialGetRequestContext(extension->CurrentWriteRequest);
 
-    //
     // We might have a xoff counter request masquerading as a
     // write.  The length of these requests will always be one
     // and we can get a pointer to the actual character from
     // the data supplied by the user.
-    //
 
     if (reqContext->MajorFunction == IRP_MJ_WRITE) {
 
-        Extension->WriteLength = reqContext->Length;
-        Extension->WriteCurrentChar = reqContext->SystemBuffer;
+        extension->WriteLength = reqContext->Length;
+        extension->WriteCurrentChar = reqContext->SystemBuffer;
 
     } else {
 
-        Extension->WriteLength = 1;
-        Extension->WriteCurrentChar =
+        extension->WriteLength = 1;
+        extension->WriteCurrentChar =
             ((PUCHAR)reqContext->SystemBuffer) +
-            FIELD_OFFSET(
-                SERIAL_XOFF_COUNTER,
-                XoffChar
-                );
-
+            FIELD_OFFSET(SERIAL_XOFF_COUNTER, XoffChar);
     }
 
-    //
     // The isr now has a reference to the request.
-    //
 
-    SERIAL_SET_REFERENCE(
-        reqContext,
-        SERIAL_REF_ISR
-        );
+    SERIAL_SET_REFERENCE(reqContext, SERIAL_REF_ISR);
 
-    //
     // Check first to see if an immediate char is transmitting.
-    // If it is then we'll just slip in behind it when its
-    // done.
-    //
+    // If it is then we'll just slip in behind it when its done.
 
-    if (!Extension->TransmitImmediate) {
+    if (!extension->TransmitImmediate) {
 
-        //
         // If there is no immediate char transmitting then we
         // will "re-enable" the transmit holding register empty
-        // interrupt.  The 8250 family of devices will always
+        // interrupt.  The 16550 family of devices will always
         // signal a transmit holding register empty interrupt
         // *ANY* time this bit is set to one.  By doing things
         // this way we can simply use the normal interrupt code
@@ -731,39 +625,26 @@ Return Value:
         // We've been keeping track of whether the transmit holding
         // register is empty so it we only need to do this
         // if the register is empty.
-        //
 
-        if (Extension->HoldingEmpty) {
+        if (extension->HoldingEmpty) {
 
-            DISABLE_ALL_INTERRUPTS(Extension, Extension->Controller);
-            ENABLE_ALL_INTERRUPTS(Extension, Extension->Controller);
-
+            DISABLE_ALL_INTERRUPTS(extension, extension->Controller);
+            ENABLE_ALL_INTERRUPTS(extension, extension->Controller);
         }
-
     }
 
-    //
     // The rts line may already be up from previous writes,
     // however, it won't take much additional time to turn
     // on the RTS line if we are doing transmit toggling.
-    //
 
-    if ((Extension->HandFlow.FlowReplace & SERIAL_RTS_MASK) ==
+    if ((extension->HandFlow.FlowReplace & SERIAL_RTS_MASK) ==
         SERIAL_TRANSMIT_TOGGLE) {
 
-        SerialSetRTS(Extension->WdfInterrupt, Extension);
-
+        SerialSetRTS(extension->WdfInterrupt, extension);
     }
 
     return FALSE;
-
 }
-
-
-VOID
-SerialCancelCurrentWrite(
-    IN WDFREQUEST Request
-    )
 
 /*++
 
@@ -782,36 +663,30 @@ Return Value:
     None.
 
 --*/
-
+_Use_decl_annotations_
+VOID
+SerialCancelCurrentWrite(
+    WDFREQUEST Request
+    )
 {
-
-    PSERIAL_DEVICE_EXTENSION Extension;
-    WDFDEVICE  device = WdfIoQueueGetDevice(WdfRequestGetIoQueue(Request));
+    PSERIAL_DEVICE_EXTENSION extension;
+    WDFDEVICE device = WdfIoQueueGetDevice(WdfRequestGetIoQueue(Request));
 
     UNREFERENCED_PARAMETER(Request);
 
-    Extension = SerialGetDeviceExtension(device);
+    extension = SerialGetDeviceExtension(device);
 
-    SerialTryToCompleteCurrent(
-        Extension,
-        SerialGrabWriteFromIsr,
-        STATUS_CANCELLED,
-        &Extension->CurrentWriteRequest,
-        Extension->WriteQueue,
-        NULL,
-        Extension->WriteRequestTotalTimer,
-        SerialStartWrite,
-        SerialGetNextWrite,
-        SERIAL_REF_CANCEL
-        );
-
+    SerialTryToCompleteCurrent(extension,
+                                SerialGrabWriteFromIsr,
+                                STATUS_CANCELLED,
+                                &extension->CurrentWriteRequest,
+                                extension->WriteQueue,
+                                NULL,
+                                extension->WriteRequestTotalTimer,
+                                SerialStartWrite,
+                                SerialGetNextWrite,
+                                SERIAL_REF_CANCEL);
 }
-
-
-VOID
-SerialWriteTimeout(
-    IN WDFTIMER Timer
-    )
 
 /*++
 
@@ -826,38 +701,36 @@ Return Value:
     None.
 
 --*/
-
-{
-
-    PSERIAL_DEVICE_EXTENSION Extension = NULL;
-
-    Extension = SerialGetDeviceExtension(WdfTimerGetParentObject(Timer));
-
-    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_WRITE, ">SerialWriteTimeout(%p)\n",
-                     Extension);
-
-    SerialTryToCompleteCurrent(Extension, SerialGrabWriteFromIsr,
-                               STATUS_TIMEOUT, &Extension->CurrentWriteRequest,
-                               Extension->WriteQueue, NULL,
-                               Extension->WriteRequestTotalTimer,
-                               SerialStartWrite, SerialGetNextWrite,
-                               SERIAL_REF_TOTAL_TIMER);
-
-
-    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_WRITE, "<SerialWriteTimeout\n");
-}
-
-
-BOOLEAN
-SerialGrabWriteFromIsr(
-    IN WDFINTERRUPT Interrupt,
-    IN PVOID Context
+_Use_decl_annotations_
+VOID
+SerialWriteTimeout(
+    WDFTIMER Timer
     )
+{
+    PSERIAL_DEVICE_EXTENSION extension = NULL;
+
+    extension = SerialGetDeviceExtension(WdfTimerGetParentObject(Timer));
+
+    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_WRITE, "++SerialWriteTimeout(%p)\r\n",
+                     extension);
+
+    SerialTryToCompleteCurrent(extension,
+                                SerialGrabWriteFromIsr,
+                                STATUS_TIMEOUT,
+                                &extension->CurrentWriteRequest,
+                                extension->WriteQueue,
+                                NULL,
+                                extension->WriteRequestTotalTimer,
+                                SerialStartWrite,
+                                SerialGetNextWrite,
+                                SERIAL_REF_TOTAL_TIMER);
+
+    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_WRITE, "--SerialWriteTimeout\r\n");
+}
 
 /*++
 
 Routine Description:
-
 
     This routine is used to grab the current request, which could be timing
     out or canceling, from the ISR
@@ -876,66 +749,53 @@ Return Value:
     Always false.
 
 --*/
-
+_Use_decl_annotations_
+BOOLEAN
+SerialGrabWriteFromIsr(
+    WDFINTERRUPT Interrupt,
+    PVOID Context
+    )
 {
 
-    PSERIAL_DEVICE_EXTENSION Extension = Context;
+    PSERIAL_DEVICE_EXTENSION extension = Context;
 
     PREQUEST_CONTEXT reqContext;
 
     UNREFERENCED_PARAMETER(Interrupt);
 
-    reqContext = SerialGetRequestContext(Extension->CurrentWriteRequest);
+    reqContext = SerialGetRequestContext(extension->CurrentWriteRequest);
 
-    //
     // Check if the write length is non-zero.  If it is non-zero
     // then the ISR still owns the request. We calculate the the number
     // of characters written and update the information field of the
     // request with the characters written.  We then clear the write length
     // the isr sees.
-    //
 
-    if (Extension->WriteLength) {
+    if (extension->WriteLength) {
 
-        //
         // We could have an xoff counter masquerading as a
         // write request.  If so, don't update the write length.
-        //
 
         if (reqContext->MajorFunction == IRP_MJ_WRITE) {
 
-            reqContext->Information = reqContext->Length -Extension->WriteLength;
+            reqContext->Information = reqContext->Length -extension->WriteLength;
 
         } else {
 
             reqContext->Information = 0;
-
         }
 
-        //
         // Since the isr no longer references this request, we can
         // decrement it's reference count.
-        //
 
-        SERIAL_CLEAR_REFERENCE(
-            reqContext,
-            SERIAL_REF_ISR
-            );
+        SERIAL_CLEAR_REFERENCE(reqContext, SERIAL_REF_ISR);
 
-        Extension->WriteLength = 0;
-
+        extension->WriteLength = 0;
     }
 
     return FALSE;
 
 }
-
-
-BOOLEAN
-SerialGrabXoffFromIsr(
-    IN WDFINTERRUPT Interrupt,
-    IN PVOID Context
-    )
 
 /*++
 
@@ -961,47 +821,37 @@ Return Value:
     Always false.
 
 --*/
-
+_Use_decl_annotations_
+BOOLEAN
+SerialGrabXoffFromIsr(
+    WDFINTERRUPT Interrupt,
+    PVOID Context
+    )
 {
 
-    PSERIAL_DEVICE_EXTENSION Extension = Context;
+    PSERIAL_DEVICE_EXTENSION extension = Context;
 
     PREQUEST_CONTEXT reqContext;
 
     UNREFERENCED_PARAMETER(Interrupt);
 
-    reqContext = SerialGetRequestContext(Extension->CurrentXoffRequest);
+    reqContext = SerialGetRequestContext(extension->CurrentXoffRequest);
 
-    if (Extension->CountSinceXoff) {
+    if (extension->CountSinceXoff) {
 
-        //
         // This is only non-zero when there actually is a Xoff ioctl
         // counting down.
-        //
 
-        Extension->CountSinceXoff = 0;
+        extension->CountSinceXoff = 0;
 
-        //
         // We decrement the count since the isr no longer owns
         // the request.
-        //
 
-        SERIAL_CLEAR_REFERENCE(
-            reqContext,
-            SERIAL_REF_ISR
-            );
-
+        SERIAL_CLEAR_REFERENCE(reqContext, SERIAL_REF_ISR);
     }
 
     return FALSE;
-
 }
-
-
-VOID
-SerialCompleteXoff(
-    IN WDFDPC Dpc
-    )
 
 /*++
 
@@ -1026,32 +876,31 @@ Return Value:
     None.
 
 --*/
-
+_Use_decl_annotations_
+VOID
+SerialCompleteXoff(
+    WDFDPC Dpc
+    )
 {
 
-    PSERIAL_DEVICE_EXTENSION Extension = NULL;
+    PSERIAL_DEVICE_EXTENSION extension = NULL;
 
-    Extension = SerialGetDeviceExtension(WdfDpcGetParentObject(Dpc));
+    extension = SerialGetDeviceExtension(WdfDpcGetParentObject(Dpc));
 
-    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_WRITE, ">SerialCompleteXoff(%p)\n",
-                     Extension);
+    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_WRITE, "++SerialCompleteXoff(%p)\r\n",
+                     extension);
 
+    SerialTryToCompleteCurrent(extension,
+                                NULL,
+                                STATUS_SUCCESS,
+                                &extension->CurrentXoffRequest,
+                                NULL, NULL,
+                                extension->XoffCountTimer,
+                                NULL, NULL,
+                                SERIAL_REF_ISR);
 
-    SerialTryToCompleteCurrent(Extension, NULL, STATUS_SUCCESS,
-                               &Extension->CurrentXoffRequest, NULL, NULL,
-                               Extension->XoffCountTimer, NULL, NULL,
-                               SERIAL_REF_ISR);
-
-
-    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_WRITE, "<SerialCompleteXoff\n");
-
+    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_WRITE, "--SerialCompleteXoff\r\n");
 }
-
-
-VOID
-SerialTimeoutXoff(
-    IN WDFTIMER Timer
-    )
 
 /*++
 
@@ -1068,28 +917,29 @@ Return Value:
     None.
 
 --*/
-
+_Use_decl_annotations_
+VOID
+SerialTimeoutXoff(
+    WDFTIMER Timer
+    )
 {
 
-    PSERIAL_DEVICE_EXTENSION Extension = NULL;
+    PSERIAL_DEVICE_EXTENSION extension = NULL;
 
-    Extension = SerialGetDeviceExtension(WdfTimerGetParentObject(Timer));
+    extension = SerialGetDeviceExtension(WdfTimerGetParentObject(Timer));
 
-    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_WRITE, ">SerialTimeoutXoff(%p)\n", Extension);
+    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_WRITE, "++SerialTimeoutXoff(%p)\r\n", extension);
 
-    SerialTryToCompleteCurrent(Extension, SerialGrabXoffFromIsr,
-                               STATUS_SERIAL_COUNTER_TIMEOUT,
-                               &Extension->CurrentXoffRequest, NULL, NULL, NULL,
-                               NULL, NULL, SERIAL_REF_TOTAL_TIMER);
+    SerialTryToCompleteCurrent(extension,
+                                SerialGrabXoffFromIsr,
+                                STATUS_SERIAL_COUNTER_TIMEOUT,
+                                &extension->CurrentXoffRequest,
+                                NULL, NULL, NULL,
+                                NULL, NULL,
+                                SERIAL_REF_TOTAL_TIMER);
 
-    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_WRITE, "<SerialTimeoutXoff\n");
+    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_WRITE, "--SerialTimeoutXoff\r\n");
 }
-
-
-VOID
-SerialCancelCurrentXoff(
-    IN WDFREQUEST Request
-    )
 
 /*++
 
@@ -1108,37 +958,30 @@ Return Value:
     None.
 
 --*/
-
+_Use_decl_annotations_
+VOID
+SerialCancelCurrentXoff(
+    WDFREQUEST Request
+    )
 {
-
-    PSERIAL_DEVICE_EXTENSION Extension;
-    WDFDEVICE  device = WdfIoQueueGetDevice(WdfRequestGetIoQueue(Request));
+    PSERIAL_DEVICE_EXTENSION extension;
+    WDFDEVICE device = WdfIoQueueGetDevice(WdfRequestGetIoQueue(Request));
 
     UNREFERENCED_PARAMETER(Request);
 
-    Extension = SerialGetDeviceExtension(device);
+    extension = SerialGetDeviceExtension(device);
 
-    SerialTryToCompleteCurrent(
-        Extension,
-        SerialGrabXoffFromIsr,
-        STATUS_CANCELLED,
-        &Extension->CurrentXoffRequest,
-        NULL,
-        NULL,
-        Extension->XoffCountTimer,
-        NULL,
-        NULL,
-        SERIAL_REF_CANCEL
-        );
-
+    SerialTryToCompleteCurrent(extension,
+                                SerialGrabXoffFromIsr,
+                                STATUS_CANCELLED,
+                                &extension->CurrentXoffRequest,
+                                NULL,
+                                NULL,
+                                extension->XoffCountTimer,
+                                NULL,
+                                NULL,
+                                SERIAL_REF_CANCEL);
 }
-
-
-BOOLEAN
-SerialGiveXoffToIsr(
-    IN WDFINTERRUPT Interrupt,
-    IN PVOID Context
-    )
 
 /*++
 
@@ -1163,37 +1006,33 @@ Return Value:
     This routine always returns FALSE.
 
 --*/
-
+_Use_decl_annotations_
+BOOLEAN
+SerialGiveXoffToIsr(
+    WDFINTERRUPT Interrupt,
+    PVOID Context
+    )
 {
-
-    PSERIAL_DEVICE_EXTENSION Extension = Context;
+    PSERIAL_DEVICE_EXTENSION extension = Context;
     PREQUEST_CONTEXT reqContext;
-    PSERIAL_XOFF_COUNTER Xc = NULL;
+    PSERIAL_XOFF_COUNTER xc = NULL;
 
     UNREFERENCED_PARAMETER(Interrupt);
 
-    reqContext = SerialGetRequestContext(Extension->CurrentXoffRequest);
-    Xc = reqContext->SystemBuffer;
+    reqContext = SerialGetRequestContext(extension->CurrentXoffRequest);
+    xc = reqContext->SystemBuffer;
 
-    //
     // The current stack location.  This contains all of the
     // information we need to process this particular request.
-    //
 
-    ASSERT(Extension->CurrentXoffRequest);
-    Extension->CountSinceXoff = Xc->Counter;
+    ASSERT(extension->CurrentXoffRequest);
+    extension->CountSinceXoff = xc->Counter;
 
-    //
     // The isr now has a reference to the request.
-    //
 
-    SERIAL_SET_REFERENCE(
-        reqContext,
-        SERIAL_REF_ISR
-        );
+    SERIAL_SET_REFERENCE(reqContext, SERIAL_REF_ISR);
 
     return FALSE;
-
 }
 
 

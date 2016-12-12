@@ -1,36 +1,22 @@
-/*++
-
-Copyright (c) Microsoft Corporation
-
-Module Name:
-
-    modmflow.c
-
-Abstract:
-
-    This module contains *MOST* of the code used to manipulate
-    the modem control and status registers.  The vast majority
-    of the remainder of flow control is concentrated in the
-    Interrupt service routine.  A very small amount resides
-    in the read code that pull characters out of the interrupt
-    buffer.
-
-Environment:
-
-    Kernel mode
-
---*/
+// Copyright (c) Microsoft Corporation.  All rights reserved.
+//
+// Module Name:
+//
+//   modmflow.c
+//
+// Abstract:
+//
+//    This module contains *MOST* of the code used to manipulate
+//    the modem control and status registers.  The vast majority
+//    of the remainder of flow control is concentrated in the
+//    Interrupt service routine.  A very small amount resides
+//    in the read code that pull characters out of the interrupt
+//    buffer.
 
 #include "precomp.h"
 #include "modmflow.tmh"
 
 EVT_WDF_INTERRUPT_SYNCHRONIZE SerialDecrementRTSCounter;
- 
-BOOLEAN
-SerialSetDTR(
-    IN WDFINTERRUPT  Interrupt,
-    IN PVOID Context
-    )
 
 /*++
 
@@ -48,32 +34,31 @@ Return Value:
     This routine always returns FALSE.
 
 --*/
-
+_Use_decl_annotations_
+BOOLEAN
+SerialSetDTR(
+    WDFINTERRUPT Interrupt,
+    PVOID Context
+    )
 {
-    PSERIAL_DEVICE_EXTENSION Extension = Context;
-    UCHAR ModemControl;
+    PSERIAL_DEVICE_EXTENSION extension = Context;
+    UCHAR modemControl;
 
     UNREFERENCED_PARAMETER(Interrupt);
 
-    ModemControl = READ_MODEM_CONTROL(Extension, Extension->Controller);
+    modemControl = READ_MODEM_CONTROL(extension, extension->Controller);
 
-    ModemControl |= SERIAL_MCR_DTR;
+    modemControl |= SERIAL_MCR_DTR;
 
     TraceEvents(TRACE_LEVEL_VERBOSE, DBG_IOCTLS,
-                     "Setting DTR for %p\n", Extension->Controller);
+                     "Setting DTR for %p\r\n",
+                     extension->Controller);
 
-    WRITE_MODEM_CONTROL(Extension, Extension->Controller, ModemControl);
+    WRITE_MODEM_CONTROL(extension, extension->Controller, modemControl);
 
     return FALSE;
-
 }
 
-BOOLEAN
-SerialClrDTR(
-    IN WDFINTERRUPT  Interrupt,
-    IN PVOID Context
-    )
-
 /*++
 
 Routine Description:
@@ -90,32 +75,32 @@ Return Value:
     This routine always returns FALSE.
 
 --*/
-
+_Use_decl_annotations_
+BOOLEAN
+SerialClrDTR(
+    WDFINTERRUPT  Interrupt,
+    PVOID Context
+    )
 {
 
-    PSERIAL_DEVICE_EXTENSION Extension = Context;
-    UCHAR ModemControl;
+    PSERIAL_DEVICE_EXTENSION extension = Context;
+    UCHAR modemControl;
 
     UNREFERENCED_PARAMETER(Interrupt);
 
-    ModemControl = READ_MODEM_CONTROL(Extension, Extension->Controller);
+    modemControl = READ_MODEM_CONTROL(extension, extension->Controller);
 
-    ModemControl &= ~SERIAL_MCR_DTR;
+    modemControl &= ~SERIAL_MCR_DTR;
 
-    TraceEvents(TRACE_LEVEL_VERBOSE, DBG_IOCTLS, "Clearing DTR for %p\n", Extension->Controller);
+    TraceEvents(TRACE_LEVEL_VERBOSE, DBG_IOCTLS,
+                "Clearing DTR for %p\r\n",
+                extension->Controller);
 
-    WRITE_MODEM_CONTROL(Extension, Extension->Controller, ModemControl);
+    WRITE_MODEM_CONTROL(extension, extension->Controller, modemControl);
 
     return FALSE;
-
 }
 
-BOOLEAN
-SerialSetRTS(
-    IN WDFINTERRUPT  Interrupt,
-    IN PVOID Context
-    )
-
 /*++
 
 Routine Description:
@@ -132,32 +117,32 @@ Return Value:
     This routine always returns FALSE.
 
 --*/
-
+_Use_decl_annotations_
+BOOLEAN
+SerialSetRTS(
+    WDFINTERRUPT  Interrupt,
+    PVOID Context
+    )
 {
 
-    PSERIAL_DEVICE_EXTENSION Extension = Context;
-    UCHAR ModemControl;
+    PSERIAL_DEVICE_EXTENSION extension = Context;
+    UCHAR modemControl;
 
     UNREFERENCED_PARAMETER(Interrupt);
 
-    ModemControl = READ_MODEM_CONTROL(Extension, Extension->Controller);
+    modemControl = READ_MODEM_CONTROL(extension, extension->Controller);
 
-    ModemControl |= SERIAL_MCR_RTS;
+    modemControl |= SERIAL_MCR_RTS;
 
-    TraceEvents(TRACE_LEVEL_VERBOSE, DBG_IOCTLS, "Setting Rts for %p\n", Extension->Controller);
+    TraceEvents(TRACE_LEVEL_VERBOSE, DBG_IOCTLS,
+                "Setting RTS for %p\r\n",
+                extension->Controller);
 
-    WRITE_MODEM_CONTROL(Extension, Extension->Controller, ModemControl);
+    WRITE_MODEM_CONTROL(extension, extension->Controller, modemControl);
 
     return FALSE;
-
 }
 
-BOOLEAN
-SerialClrRTS(
-    IN WDFINTERRUPT  Interrupt,
-    IN PVOID Context
-    )
-
 /*++
 
 Routine Description:
@@ -174,32 +159,32 @@ Return Value:
     This routine always returns FALSE.
 
 --*/
-
+_Use_decl_annotations_
+BOOLEAN
+SerialClrRTS(
+    WDFINTERRUPT Interrupt,
+    PVOID Context
+    )
 {
 
-    PSERIAL_DEVICE_EXTENSION Extension = Context;
-    UCHAR ModemControl;
+    PSERIAL_DEVICE_EXTENSION extension = Context;
+    UCHAR modemControl;
 
     UNREFERENCED_PARAMETER(Interrupt);
 
-    ModemControl = READ_MODEM_CONTROL(Extension, Extension->Controller);
+    modemControl = READ_MODEM_CONTROL(extension, extension->Controller);
 
-    ModemControl &= ~SERIAL_MCR_RTS;
+    modemControl &= ~SERIAL_MCR_RTS;
 
-    TraceEvents(TRACE_LEVEL_VERBOSE, DBG_IOCTLS, "Clearing Rts for %p\n", Extension->Controller);
+    TraceEvents(TRACE_LEVEL_VERBOSE, DBG_IOCTLS,
+                "Clearing RTS for %p\r\n",
+                 extension->Controller);
 
-    WRITE_MODEM_CONTROL(Extension, Extension->Controller, ModemControl);
+    WRITE_MODEM_CONTROL(extension, extension->Controller, modemControl);
 
     return FALSE;
-
 }
 
-BOOLEAN
-SerialSetupNewHandFlow(
-    IN PSERIAL_DEVICE_EXTENSION Extension,
-    IN PSERIAL_HANDFLOW NewHandFlow
-    )
-
 /*++
 
 Routine Description:
@@ -220,34 +205,34 @@ Return Value:
     This routine always returns FALSE.
 
 --*/
-
+_Use_decl_annotations_
+BOOLEAN
+SerialSetupNewHandFlow(
+    PSERIAL_DEVICE_EXTENSION Extension,
+    PSERIAL_HANDFLOW NewHandFlow
+    )
 {
+    SERIAL_HANDFLOW newSerHndFlow = *NewHandFlow;
 
-    SERIAL_HANDFLOW New = *NewHandFlow;
-
-    //
     // If the Extension->DeviceIsOpened is FALSE that means
     // we are entering this routine in response to an open request.
     // If that is so, then we always proceed with the work regardless
     // of whether things have changed.
-    //
 
-    //
     // First we take care of the DTR flow control.  We only
     // do work if something has changed.
-    //
 
     if ((!Extension->DeviceIsOpened) ||
         ((Extension->HandFlow.ControlHandShake & SERIAL_DTR_MASK) !=
-         (New.ControlHandShake & SERIAL_DTR_MASK))) {
+         (newSerHndFlow.ControlHandShake & SERIAL_DTR_MASK))) {
 
-        TraceEvents(TRACE_LEVEL_VERBOSE, DBG_IOCTLS, "Processing DTR flow for %p\n",
-                         Extension->Controller);
+        TraceEvents(TRACE_LEVEL_VERBOSE, DBG_IOCTLS,
+                        "Processing DTR flow for %pr\r\n",
+                        Extension->Controller);
 
-        if (New.ControlHandShake & SERIAL_DTR_MASK) {
+        if (newSerHndFlow.ControlHandShake & SERIAL_DTR_MASK) {
 
-            //
-            // Well we might want to set DTR.
+            // we might want to set DTR.
             //
             // Before we do, we need to check whether we are doing
             // dtr flow control.  If we are then we need to check
@@ -255,115 +240,101 @@ Return Value:
             // exceeds the XoffLimit.  If it does then we don't
             // enable DTR AND we set the RXHolding to record that
             // we are holding because of the dtr.
-            //
 
-            if ((New.ControlHandShake & SERIAL_DTR_MASK)
+            if ((newSerHndFlow.ControlHandShake & SERIAL_DTR_MASK)
                 == SERIAL_DTR_HANDSHAKE) {
 
-                if ((Extension->BufferSize - New.XoffLimit) >
+                if ((Extension->BufferSize - newSerHndFlow.XoffLimit) >
                     Extension->CharsInInterruptBuffer) {
 
-                    //
                     // However if we are already holding we don't want
                     // to turn it back on unless we exceed the Xon
                     // limit.
-                    //
 
                     if (Extension->RXHolding & SERIAL_RX_DTR) {
 
-                        //
                         // We can assume that its DTR line is already low.
-                        //
 
                         if (Extension->CharsInInterruptBuffer >
-                            (ULONG)New.XonLimit) {
+                            (ULONG)newSerHndFlow.XonLimit) {
 
-                            TraceEvents(TRACE_LEVEL_VERBOSE, DBG_IOCTLS, "Removing DTR block on "
-                                             "reception for %p\n",
-                                             Extension->Controller);
+                            TraceEvents(TRACE_LEVEL_VERBOSE, DBG_IOCTLS, 
+                                        "Removing DTR block on reception for %p\r\n",
+                                         Extension->Controller);
 
                             Extension->RXHolding &= ~SERIAL_RX_DTR;
                             SerialSetDTR(Extension->WdfInterrupt, Extension);
-
                         }
 
                     } else {
 
                         SerialSetDTR(Extension->WdfInterrupt, Extension);
-
                     }
 
                 } else {
 
-                    TraceEvents(TRACE_LEVEL_VERBOSE, DBG_IOCTLS, "Setting DTR block on reception "
-                                     "for %p\n", Extension->Controller);
+                    TraceEvents(TRACE_LEVEL_VERBOSE, DBG_IOCTLS,
+                                "Setting DTR block on reception for %p\r\n",
+                                Extension->Controller);
+
                     Extension->RXHolding |= SERIAL_RX_DTR;
                     SerialClrDTR(Extension->WdfInterrupt, Extension);
-
                 }
 
             } else {
 
-                //
                 // Note that if we aren't currently doing dtr flow control then
                 // we MIGHT have been.  So even if we aren't currently doing
                 // DTR flow control, we should still check if RX is holding
                 // because of DTR.  If it is, then we should clear the holding
                 // of this bit.
-                //
 
                 if (Extension->RXHolding & SERIAL_RX_DTR) {
-                    TraceEvents(TRACE_LEVEL_VERBOSE, DBG_IOCTLS, "Removing dtr block of reception "
-                                     "for %p\n", Extension->Controller);
+                    TraceEvents(TRACE_LEVEL_VERBOSE, DBG_IOCTLS,
+                                "Removing DTR block of reception for %p\r\n",
+                                Extension->Controller);
                     Extension->RXHolding &= ~SERIAL_RX_DTR;
                 }
 
                 SerialSetDTR(Extension->WdfInterrupt, Extension);
-
             }
 
         } else {
 
-            //
             // The end result here will be that DTR is cleared.
             //
             // We first need to check whether reception is being held
             // up because of previous DTR flow control.  If it is then
             // we should clear that reason in the RXHolding mask.
-            //
 
             if (Extension->RXHolding & SERIAL_RX_DTR) {
 
-                TraceEvents(TRACE_LEVEL_VERBOSE, DBG_IOCTLS, "removing dtr block of reception for"
-                                 " %p\n", Extension->Controller);
+                TraceEvents(TRACE_LEVEL_VERBOSE, DBG_IOCTLS,
+                            "removing DTR block of reception for %p\r\n",
+                            Extension->Controller);
                 Extension->RXHolding &= ~SERIAL_RX_DTR;
-
             }
 
             SerialClrDTR(Extension->WdfInterrupt, Extension);
-
         }
-
     }
 
-    //
     // Time to take care of the RTS Flow control.
     //
     // First we only do work if something has changed.
-    //
 
     if ((!Extension->DeviceIsOpened) ||
         ((Extension->HandFlow.FlowReplace & SERIAL_RTS_MASK) !=
-         (New.FlowReplace & SERIAL_RTS_MASK))) {
+         (newSerHndFlow.FlowReplace & SERIAL_RTS_MASK))) {
 
-        TraceEvents(TRACE_LEVEL_VERBOSE, DBG_IOCTLS, "Processing RTS flow %p\n",
+        TraceEvents(TRACE_LEVEL_VERBOSE, DBG_IOCTLS,
+                        "Processing RTS flow %p\r\n",
                          Extension->Controller);
 
-        if ((New.FlowReplace & SERIAL_RTS_MASK) ==
+        if ((newSerHndFlow.FlowReplace & SERIAL_RTS_MASK) ==
             SERIAL_RTS_HANDSHAKE) {
 
-            //
-            // Well we might want to set RTS.
+            // we might want to set RTS.
             //
             // Before we do, we need to check whether we are doing
             // rts flow control.  If we are then we need to check
@@ -371,101 +342,92 @@ Return Value:
             // exceeds the XoffLimit.  If it does then we don't
             // enable RTS AND we set the RXHolding to record that
             // we are holding because of the rts.
-            //
 
-            if ((Extension->BufferSize - New.XoffLimit) >
+            if ((Extension->BufferSize - newSerHndFlow.XoffLimit) >
                 Extension->CharsInInterruptBuffer) {
 
-                //
                 // However if we are already holding we don't want
                 // to turn it back on unless we exceed the Xon
                 // limit.
-                //
 
                 if (Extension->RXHolding & SERIAL_RX_RTS) {
 
-                    //
                     // We can assume that its RTS line is already low.
-                    //
 
                     if (Extension->CharsInInterruptBuffer >
-                        (ULONG)New.XonLimit) {
+                        (ULONG)newSerHndFlow.XonLimit) {
 
-                       TraceEvents(TRACE_LEVEL_VERBOSE, DBG_IOCTLS, "Removing rts block of "
-                                        "reception for %p\n",
-                                        Extension->Controller);
+                       TraceEvents(TRACE_LEVEL_VERBOSE, DBG_IOCTLS,
+                                    "Removing RTS block of reception for %p\r\n",
+                                     Extension->Controller);
                         Extension->RXHolding &= ~SERIAL_RX_RTS;
-                        SerialSetRTS(Extension->WdfInterrupt, Extension);
 
+                        SerialSetRTS(Extension->WdfInterrupt, Extension);
                     }
 
                 } else {
 
                     SerialSetRTS(Extension->WdfInterrupt, Extension);
-
                 }
 
             } else {
 
-                TraceEvents(TRACE_LEVEL_VERBOSE, DBG_IOCTLS, "Setting rts block of reception for "
-                                 "%p\n", Extension->Controller);
-                Extension->RXHolding |= SERIAL_RX_RTS;
-                SerialClrRTS(Extension->WdfInterrupt, Extension);
+                TraceEvents(TRACE_LEVEL_VERBOSE, DBG_IOCTLS,
+                            "Setting RTS block of reception for %p\r\n",
+                            Extension->Controller);
 
+                Extension->RXHolding |= SERIAL_RX_RTS;
+
+                SerialClrRTS(Extension->WdfInterrupt, Extension);
             }
 
-        } else if ((New.FlowReplace & SERIAL_RTS_MASK) ==
+        } else if ((newSerHndFlow.FlowReplace & SERIAL_RTS_MASK) ==
                    SERIAL_RTS_CONTROL) {
 
-            //
             // Note that if we aren't currently doing rts flow control then
             // we MIGHT have been.  So even if we aren't currently doing
             // RTS flow control, we should still check if RX is holding
             // because of RTS.  If it is, then we should clear the holding
             // of this bit.
-            //
 
             if (Extension->RXHolding & SERIAL_RX_RTS) {
 
-                TraceEvents(TRACE_LEVEL_VERBOSE, DBG_IOCTLS, "Clearing rts block of reception for "
-                                 "%p\n", Extension->Controller);
-                Extension->RXHolding &= ~SERIAL_RX_RTS;
+                TraceEvents(TRACE_LEVEL_VERBOSE, DBG_IOCTLS,
+                            "Clearing RTS block of reception for %p\r\n",
+                            Extension->Controller);
 
+                Extension->RXHolding &= ~SERIAL_RX_RTS;
             }
 
             SerialSetRTS(Extension->WdfInterrupt, Extension);
 
-        } else if ((New.FlowReplace & SERIAL_RTS_MASK) ==
+        } else if ((newSerHndFlow.FlowReplace & SERIAL_RTS_MASK) ==
                    SERIAL_TRANSMIT_TOGGLE) {
 
-            //
             // We first need to check whether reception is being held
             // up because of previous RTS flow control.  If it is then
             // we should clear that reason in the RXHolding mask.
-            //
 
             if (Extension->RXHolding & SERIAL_RX_RTS) {
 
-                TraceEvents(TRACE_LEVEL_VERBOSE, DBG_IOCTLS, "TOGGLE Clearing rts block of "
-                                 "reception for %p\n", Extension->Controller);
+                TraceEvents(TRACE_LEVEL_VERBOSE, DBG_IOCTLS,
+                            "TOGGLE Clearing RTS block of reception for %p\r\n",
+                            Extension->Controller);
+
                 Extension->RXHolding &= ~SERIAL_RX_RTS;
 
             }
 
-            //
-            // We have to place the rts value into the Extension
+            // We have to place the RTS value into the Extension
             // now so that the code that tests whether the
             // rts line should be lowered will find that we
             // are "still" doing transmit toggling.  The code
             // for lowering can be invoked later by a timer so
-            // it has to test whether it still needs to do its
-            // work.
-            //
+            // it has to test whether it still needs to do its work.
 
             Extension->HandFlow.FlowReplace &= ~SERIAL_RTS_MASK;
             Extension->HandFlow.FlowReplace |= SERIAL_TRANSMIT_TOGGLE;
 
-            //
             // The order of the tests is very important below.
             //
             // If there is a break then we should turn on the RTS.
@@ -475,7 +437,6 @@ Return Value:
             //
             // If there are writes pending that aren't being held
             // up, then turn on the RTS.
-            //
 
             if ((Extension->TXHolding & SERIAL_TX_BREAK) ||
                 ((SerialProcessLSR(Extension) & (SERIAL_LSR_THRE |
@@ -490,13 +451,11 @@ Return Value:
 
             } else {
 
-                //
                 // This routine will check to see if it is time
                 // to lower the RTS because of transmit toggle
                 // being on.  If it is ok to lower it, it will,
                 // if it isn't ok, it will schedule things so
                 // that it will get lowered later.
-                //
 
                 Extension->CountOfTryingToLowerRTS++;
                 SerialPerhapsLowerRTS(Extension->WdfInterrupt, Extension);
@@ -505,40 +464,34 @@ Return Value:
 
         } else {
 
-            //
             // The end result here will be that RTS is cleared.
             //
             // We first need to check whether reception is being held
             // up because of previous RTS flow control.  If it is then
             // we should clear that reason in the RXHolding mask.
-            //
 
             if (Extension->RXHolding & SERIAL_RX_RTS) {
 
-                TraceEvents(TRACE_LEVEL_VERBOSE, DBG_IOCTLS, "Clearing rts block of reception for"
-                                 " %p\n", Extension->Controller);
-                Extension->RXHolding &= ~SERIAL_RX_RTS;
+                TraceEvents(TRACE_LEVEL_VERBOSE, DBG_IOCTLS,
+                            "Clearing RTS block of reception for %p\r\n",
+                            Extension->Controller);
 
+                Extension->RXHolding &= ~SERIAL_RX_RTS;
             }
 
             SerialClrRTS(Extension->WdfInterrupt, Extension);
-
         }
-
     }
 
-    //
     // We now take care of automatic receive flow control.
     // We only do work if things have changed.
-    //
 
     if ((!Extension->DeviceIsOpened) ||
         ((Extension->HandFlow.FlowReplace & SERIAL_AUTO_RECEIVE) !=
-         (New.FlowReplace & SERIAL_AUTO_RECEIVE))) {
+         (newSerHndFlow.FlowReplace & SERIAL_AUTO_RECEIVE))) {
 
-        if (New.FlowReplace & SERIAL_AUTO_RECEIVE) {
+        if (newSerHndFlow.FlowReplace & SERIAL_AUTO_RECEIVE) {
 
-            //
             // We wouldn't be here if it had been on before.
             //
             // We should check to see whether we exceed the turn
@@ -549,65 +502,49 @@ Return Value:
             // when enabling xon/xoff flow control we discover that
             // we could receive characters but we are held up do
             // to a previous Xoff.
-            //
 
-            if ((Extension->BufferSize - New.XoffLimit) <=
+            if ((Extension->BufferSize - newSerHndFlow.XoffLimit) <=
                 Extension->CharsInInterruptBuffer) {
 
-                //
                 // Cause the Xoff to be sent.
-                //
 
                 Extension->RXHolding |= SERIAL_RX_XOFF;
 
-                SerialProdXonXoff(
-                    Extension,
-                    FALSE
-                    );
-
+                SerialProdXonXoff(Extension,
+                                FALSE);
             }
 
         } else {
 
-            //
             // The app has disabled automatic receive flow control.
             //
             // If transmission was being held up because of
             // an automatic receive Xoff, then we should
             // cause an Xon to be sent.
-            //
 
             if (Extension->RXHolding & SERIAL_RX_XOFF) {
 
                 Extension->RXHolding &= ~SERIAL_RX_XOFF;
 
-                //
                 // Cause the Xon to be sent.
-                //
 
-                SerialProdXonXoff(
-                    Extension,
-                    TRUE
-                    );
-
+                SerialProdXonXoff(Extension,
+                                TRUE);
             }
 
         }
 
     }
 
-    //
     // We now take care of automatic transmit flow control.
     // We only do work if things have changed.
-    //
 
     if ((!Extension->DeviceIsOpened) ||
         ((Extension->HandFlow.FlowReplace & SERIAL_AUTO_TRANSMIT) !=
-         (New.FlowReplace & SERIAL_AUTO_TRANSMIT))) {
+         (newSerHndFlow.FlowReplace & SERIAL_AUTO_TRANSMIT))) {
 
-        if (New.FlowReplace & SERIAL_AUTO_TRANSMIT) {
+        if (newSerHndFlow.FlowReplace & SERIAL_AUTO_TRANSMIT) {
 
-            //
             // We wouldn't be here if it had been on before.
             //
             // There is some belief that if autotransmit
@@ -616,37 +553,25 @@ Return Value:
             // then we should stop transmitting.  I think this
             // is an application bug.  For now we just care about
             // what we see in the future.
-            //
-
-            ;
 
         } else {
 
-            //
             // The app has disabled automatic transmit flow control.
             //
             // If transmission was being held up because of
             // an automatic transmit Xoff, then we should
             // cause an Xon to be sent.
-            //
 
             if (Extension->TXHolding & SERIAL_TX_XOFF) {
 
                 Extension->TXHolding &= ~SERIAL_TX_XOFF;
 
-                //
                 // Cause the Xon to be sent.
-                //
 
-                SerialProdXonXoff(
-                    Extension,
-                    TRUE
-                    );
-
+                SerialProdXonXoff(Extension,
+                                TRUE);
             }
-
         }
-
     }
 
     //
@@ -654,18 +579,11 @@ Return Value:
     // handflow structure in the extension is updated.
     //
 
-    Extension->HandFlow = New;
+    Extension->HandFlow = newSerHndFlow;
 
     return FALSE;
-
 }
 
-BOOLEAN
-SerialSetHandFlow(
-    IN WDFINTERRUPT  Interrupt,
-    IN PVOID Context
-    )
-
 /*++
 
 Routine Description:
@@ -684,35 +602,28 @@ Return Value:
     This routine always returns FALSE.
 
 --*/
-
+_Use_decl_annotations_
+BOOLEAN
+SerialSetHandFlow(
+    WDFINTERRUPT Interrupt,
+    PVOID Context
+    )
 {
-
-    PSERIAL_IOCTL_SYNC S = Context;
-    PSERIAL_DEVICE_EXTENSION Extension = S->Extension;
-    PSERIAL_HANDFLOW HandFlow = S->Data;
+    PSERIAL_IOCTL_SYNC sync = Context;
+    PSERIAL_DEVICE_EXTENSION extension = sync->Extension;
+    PSERIAL_HANDFLOW HandFlow = sync->Data;
 
     UNREFERENCED_PARAMETER(Interrupt);
 
-    SerialSetupNewHandFlow(
-        Extension,
-        HandFlow
-        );
+    SerialSetupNewHandFlow(extension,
+                            HandFlow);
 
-    SerialHandleModemUpdate(
-        Extension,
-        FALSE
-        );
+    SerialHandleModemUpdate(extension,
+                            FALSE);
 
     return FALSE;
-
 }
 
-BOOLEAN
-SerialTurnOnBreak(
-    IN WDFINTERRUPT  Interrupt,
-    IN PVOID Context
-    )
-
 /*++
 
 Routine Description:
@@ -730,43 +641,39 @@ Return Value:
     This routine always returns FALSE.
 
 --*/
-
+_Use_decl_annotations_
+BOOLEAN
+SerialTurnOnBreak(
+    WDFINTERRUPT  Interrupt,
+    PVOID Context
+    )
 {
+    PSERIAL_DEVICE_EXTENSION extension = Context;
 
-    PSERIAL_DEVICE_EXTENSION Extension = Context;
-
-    UCHAR OldLineControl;
+    UCHAR oldLineControl;
 
     UNREFERENCED_PARAMETER(Interrupt);
 
-    if ((Extension->HandFlow.FlowReplace & SERIAL_RTS_MASK) ==
+    if ((extension->HandFlow.FlowReplace & SERIAL_RTS_MASK) ==
         SERIAL_TRANSMIT_TOGGLE) {
 
-        SerialSetRTS(Extension->WdfInterrupt, Extension);
+        SerialSetRTS(extension->WdfInterrupt, extension);
 
     }
 
-    OldLineControl = READ_LINE_CONTROL(Extension, Extension->Controller);
+    oldLineControl = READ_LINE_CONTROL(extension, extension->Controller);
 
-    OldLineControl |= SERIAL_LCR_BREAK;
+    oldLineControl |= SERIAL_LCR_BREAK;
 
-    WRITE_LINE_CONTROL(Extension,
-        Extension->Controller,
-        OldLineControl
-        );
+    WRITE_LINE_CONTROL(extension,
+                        extension->Controller,
+                        oldLineControl);
 
-    Extension->TXHolding |= SERIAL_TX_BREAK;
+    extension->TXHolding |= SERIAL_TX_BREAK;
 
     return FALSE;
-
 }
 
-BOOLEAN
-SerialTurnOffBreak(
-    IN WDFINTERRUPT  Interrupt,
-    IN PVOID Context
-    )
-
 /*++
 
 Routine Description:
@@ -784,18 +691,22 @@ Return Value:
     This routine always returns FALSE.
 
 --*/
-
+_Use_decl_annotations_
+BOOLEAN
+SerialTurnOffBreak(
+    WDFINTERRUPT  Interrupt,
+    PVOID Context
+    )
 {
 
-    PSERIAL_DEVICE_EXTENSION Extension = Context;
+    PSERIAL_DEVICE_EXTENSION extension = Context;
 
-    UCHAR OldLineControl;
+    UCHAR oldLineControl;
 
     UNREFERENCED_PARAMETER(Interrupt);
 
-    if (Extension->TXHolding & SERIAL_TX_BREAK) {
+    if (extension->TXHolding & SERIAL_TX_BREAK) {
 
-        //
         // We actually have a good reason for testing if transmission
         // is holding instead of blindly clearing the bit.
         //
@@ -810,50 +721,39 @@ Return Value:
         // it out and we could end up over writing a character in
         // the transmission hardware.
 
-        OldLineControl = READ_LINE_CONTROL(Extension, Extension->Controller);
+        oldLineControl = READ_LINE_CONTROL(extension, extension->Controller);
 
-        OldLineControl &= ~SERIAL_LCR_BREAK;
+        oldLineControl &= ~SERIAL_LCR_BREAK;
 
-        WRITE_LINE_CONTROL(Extension,
-            Extension->Controller,
-            OldLineControl
-            );
+        WRITE_LINE_CONTROL(extension,
+                            extension->Controller,
+                            oldLineControl);
 
-        Extension->TXHolding &= ~SERIAL_TX_BREAK;
+        extension->TXHolding &= ~SERIAL_TX_BREAK;
 
-        if (!Extension->TXHolding &&
-            (Extension->TransmitImmediate ||
-             Extension->WriteLength) &&
-             Extension->HoldingEmpty) {
+        if (!extension->TXHolding &&
+            (extension->TransmitImmediate ||
+             extension->WriteLength) &&
+             extension->HoldingEmpty) {
 
-            DISABLE_ALL_INTERRUPTS(Extension, Extension->Controller);
-            ENABLE_ALL_INTERRUPTS(Extension, Extension->Controller);
+            DISABLE_ALL_INTERRUPTS(extension, extension->Controller);
+            ENABLE_ALL_INTERRUPTS(extension, extension->Controller);
 
         } else {
 
-            //
             // The following routine will lower the rts if we
             // are doing transmit toggleing and there is no
             // reason to keep it up.
-            //
 
-            Extension->CountOfTryingToLowerRTS++;
-            SerialPerhapsLowerRTS(Extension->WdfInterrupt, Extension);
+            extension->CountOfTryingToLowerRTS++;
+            SerialPerhapsLowerRTS(extension->WdfInterrupt, extension);
 
         }
 
     }
-
     return FALSE;
-
 }
 
-BOOLEAN
-SerialPretendXoff(
-    IN WDFINTERRUPT  Interrupt,
-    IN PVOID Context
-    )
-
 /*++
 
 Routine Description:
@@ -878,34 +778,31 @@ Return Value:
     This routine always returns FALSE.
 
 --*/
-
+_Use_decl_annotations_
+BOOLEAN
+SerialPretendXoff(
+    WDFINTERRUPT  Interrupt,
+    PVOID Context
+    )
 {
 
-    PSERIAL_DEVICE_EXTENSION Extension = Context;
+    PSERIAL_DEVICE_EXTENSION extension = Context;
 
     UNREFERENCED_PARAMETER(Interrupt);
 
-    Extension->TXHolding |= SERIAL_TX_XOFF;
+    extension->TXHolding |= SERIAL_TX_XOFF;
 
-    if ((Extension->HandFlow.FlowReplace & SERIAL_RTS_MASK) ==
+    if ((extension->HandFlow.FlowReplace & SERIAL_RTS_MASK) ==
         SERIAL_TRANSMIT_TOGGLE) {
 
-        SerialInsertQueueDpc(
-            Extension->StartTimerLowerRTSDpc
-            )?Extension->CountOfTryingToLowerRTS++:0;
+        SerialInsertQueueDpc(extension->StartTimerLowerRTSDpc)
+                                ?extension->CountOfTryingToLowerRTS++:0;
 
     }
 
     return FALSE;
-
 }
 
-BOOLEAN
-SerialPretendXon(
-    IN WDFINTERRUPT  Interrupt,
-    IN PVOID Context
-    )
-
 /*++
 
 Routine Description:
@@ -926,16 +823,19 @@ Return Value:
     This routine always returns FALSE.
 
 --*/
-
+_Use_decl_annotations_
+BOOLEAN
+SerialPretendXon(
+    WDFINTERRUPT  Interrupt,
+    PVOID Context
+    )
 {
-
-    PSERIAL_DEVICE_EXTENSION Extension = Context;
+    PSERIAL_DEVICE_EXTENSION extension = Context;
 
     UNREFERENCED_PARAMETER(Interrupt);
 
-    if (Extension->TXHolding) {
+    if (extension->TXHolding) {
 
-        //
         // We actually have a good reason for testing if transmission
         // is holding instead of blindly clearing the bit.
         //
@@ -950,28 +850,23 @@ Return Value:
         // it out and we could end up over writing a character in
         // the transmission hardware.
 
-        Extension->TXHolding &= ~SERIAL_TX_XOFF;
+        extension->TXHolding &= ~SERIAL_TX_XOFF;
 
-        if (!Extension->TXHolding &&
-            (Extension->TransmitImmediate ||
-             Extension->WriteLength) &&
-             Extension->HoldingEmpty) {
+        if (!extension->TXHolding &&
+            (extension->TransmitImmediate ||
+             extension->WriteLength) &&
+             extension->HoldingEmpty) {
 
-            DISABLE_ALL_INTERRUPTS(Extension, Extension->Controller);
-            ENABLE_ALL_INTERRUPTS(Extension, Extension->Controller);
+            DISABLE_ALL_INTERRUPTS(extension, extension->Controller);
+            ENABLE_ALL_INTERRUPTS(extension, extension->Controller);
 
         }
 
     }
 
     return FALSE;
-
 }
 
-VOID
-SerialHandleReducedIntBuffer(
-    IN PSERIAL_DEVICE_EXTENSION Extension
-    )
 
 /*++
 
@@ -993,16 +888,16 @@ Return Value:
     None.
 
 --*/
-
+_Use_decl_annotations_
+VOID
+SerialHandleReducedIntBuffer(
+    PSERIAL_DEVICE_EXTENSION Extension
+    )
 {
-
-
-    //
     // If we are doing receive side flow control and we are
     // currently "holding" then because we've emptied out
     // some characters from the interrupt buffer we need to
     // see if we can "re-enable" reception.
-    //
 
     if (Extension->RXHolding) {
 
@@ -1025,28 +920,17 @@ Return Value:
 
             if (Extension->RXHolding & SERIAL_RX_XOFF) {
 
-                //
                 // Prod the transmit code to send xon.
-                //
 
-                SerialProdXonXoff(
-                    Extension,
-                    TRUE
-                    );
-
+                SerialProdXonXoff(Extension,
+                                    TRUE);
             }
 
         }
 
     }
-
 }
 
-VOID
-SerialProdXonXoff(
-    IN PSERIAL_DEVICE_EXTENSION Extension,
-    IN BOOLEAN SendXon
-    )
 
 /*++
 
@@ -1072,17 +956,19 @@ Return Value:
     None.
 
 --*/
-
+_Use_decl_annotations_
+VOID
+SerialProdXonXoff(
+    PSERIAL_DEVICE_EXTENSION Extension,
+    BOOLEAN SendXon
+    )
 {
-
-    //
     // We assume that if the prodding is called more than
     // once that the last prod has set things up appropriately.
     //
     // We could get called before the character is sent out
     // because the send of the character was blocked because
     // of hardware flow control (or break).
-    //
 
     if (!Extension->SendXonChar && !Extension->SendXoffChar
         && Extension->HoldingEmpty) {
@@ -1103,14 +989,7 @@ Return Value:
         Extension->SendXoffChar = TRUE;
 
     }
-
 }
-
-ULONG
-SerialHandleModemUpdate(
-    IN PSERIAL_DEVICE_EXTENSION Extension,
-    IN BOOLEAN DoingTX
-    )
 
 /*++
 
@@ -1138,33 +1017,32 @@ Return Value:
     This returns the old value of the modem status register
     (extended into a ULONG).
 
---*/
-
+--*/
+_Use_decl_annotations_
+ULONG
+SerialHandleModemUpdate(
+    PSERIAL_DEVICE_EXTENSION Extension,
+    BOOLEAN DoingTX
+    )
 {
-
-    //
     // We keep this local so that after we are done
     // examining the modem status and we've updated
     // the transmission holding value, we know whether
     // we've changed from needing to hold up transmission
     // to transmission being able to proceed.
-    //
+
     ULONG OldTXHolding = Extension->TXHolding;
 
-    //
     // Holds the value in the mode status register.
-    //
+
     UCHAR ModemStatus;
     PREQUEST_CONTEXT reqContext;
 
     ModemStatus =
     READ_MODEM_STATUS(Extension, Extension->Controller);
 
-
-    //
     // If we are placeing the modem status into the data stream
     // on every change, we should do it now.
-    //
 
     if (Extension->EscapeChar) {
 
@@ -1173,25 +1051,17 @@ Return Value:
                            SERIAL_MSR_TERI |
                            SERIAL_MSR_DDCD)) {
 
-            SerialPutChar(
-                Extension,
-                Extension->EscapeChar
-                );
-            SerialPutChar(
-                Extension,
-                SERIAL_LSRMST_MST
-                );
-            SerialPutChar(
-                Extension,
-                ModemStatus
-                );
+            SerialPutChar(Extension,
+                            Extension->EscapeChar);
 
+            SerialPutChar(Extension,
+                            SERIAL_LSRMST_MST);
+
+            SerialPutChar(Extension,
+                            ModemStatus);
         }
-
     }
 
-
-    //
     // Take care of input flow control based on sensitivity
     // to the DSR.  This is done so that the application won't
     // see spurious data generated by odd devices.
@@ -1199,16 +1069,13 @@ Return Value:
     // Basically, if we are doing dsr sensitivity then the
     // driver should only accept data when the dsr bit is
     // set.
-    //
 
     if (Extension->HandFlow.ControlHandShake & SERIAL_DSR_SENSITIVITY) {
 
         if (ModemStatus & SERIAL_MSR_DSR) {
 
-            //
             // The line is high.  Simply make sure that
             // RXHolding does't have the DSR bit.
-            //
 
             Extension->RXHolding &= ~SERIAL_RX_DSR;
 
@@ -1220,22 +1087,17 @@ Return Value:
 
     } else {
 
-        //
         // We don't have sensitivity due to DSR.  Make sure we
         // arn't holding. (We might have been, but the app just
         // asked that we don't hold for this reason any more.)
-        //
 
         Extension->RXHolding &= ~SERIAL_RX_DSR;
-
     }
 
-    //
     // Check to see if we have a wait
     // pending on the modem status events.  If we
     // do then we schedule a dpc to satisfy
     // that wait.
-    //
 
     if (Extension->IsrWaitMask) {
 
@@ -1243,7 +1105,6 @@ Return Value:
             (ModemStatus & SERIAL_MSR_DCTS)) {
 
             Extension->HistoryMask |= SERIAL_EV_CTS;
-
         }
 
         if ((Extension->IsrWaitMask & SERIAL_EV_DSR) &&
@@ -1277,18 +1138,13 @@ Return Value:
 
             reqContext = SerialGetRequestContext(Extension->CurrentWaitRequest);
             reqContext->Information = sizeof(ULONG);
-            SerialInsertQueueDpc(
-                Extension->CommWaitDpc
-                );
 
+            SerialInsertQueueDpc(Extension->CommWaitDpc);
         }
-
     }
 
-    //
     // If the app has modem line flow control then
     // we check to see if we have to hold up transmission.
-    //
 
     if (Extension->HandFlow.ControlHandShake &
         SERIAL_OUT_HANDSHAKEMASK) {
@@ -1341,7 +1197,6 @@ Return Value:
             } else {
 
                 Extension->TXHolding |= SERIAL_TX_DCD;
-
             }
 
         } else {
@@ -1350,30 +1205,24 @@ Return Value:
 
         }
 
-        //
         // If we hadn't been holding, and now we are then
         // queue off a dpc that will lower the RTS line
         // if we are doing transmit toggling.
-        //
 
         if (!OldTXHolding && Extension->TXHolding  &&
             ((Extension->HandFlow.FlowReplace & SERIAL_RTS_MASK) ==
               SERIAL_TRANSMIT_TOGGLE)) {
 
-            SerialInsertQueueDpc(
-                Extension->StartTimerLowerRTSDpc
-                )?Extension->CountOfTryingToLowerRTS++:0;
-
+            SerialInsertQueueDpc(Extension->StartTimerLowerRTSDpc)
+                ?Extension->CountOfTryingToLowerRTS++:0;
         }
 
-        //
         // We've done any adjusting that needed to be
         // done to the holding mask given updates
         // to the modem status.  If the Holding mask
         // is clear (and it wasn't clear to start)
         // and we have "write" work to do set things
         // up so that the transmission code gets invoked.
-        //
 
         if (!DoingTX && OldTXHolding && !Extension->TXHolding) {
 
@@ -1385,12 +1234,10 @@ Return Value:
                 DISABLE_ALL_INTERRUPTS(Extension, Extension->Controller);
                 ENABLE_ALL_INTERRUPTS(Extension, Extension->Controller);
             }
-
         }
 
     } else {
 
-        //
         // We need to check if transmission is holding
         // up because of modem status lines.  What
         // could have occured is that for some strange
@@ -1399,7 +1246,6 @@ Return Value:
         // the modem status lines.  If however, we
         // *had* been held up because of the status lines
         // then we need to clear up those reasons.
-        //
 
         if (Extension->TXHolding & (SERIAL_TX_DCD |
                                     SERIAL_TX_DSR |
@@ -1408,7 +1254,6 @@ Return Value:
             Extension->TXHolding &= ~(SERIAL_TX_DCD |
                                       SERIAL_TX_DSR |
                                       SERIAL_TX_CTS);
-
 
             if (!DoingTX && OldTXHolding && !Extension->TXHolding) {
 
@@ -1420,21 +1265,13 @@ Return Value:
                     DISABLE_ALL_INTERRUPTS(Extension, Extension->Controller);
                     ENABLE_ALL_INTERRUPTS(Extension, Extension->Controller);
                 }
-
             }
-
         }
-
     }
 
     return ((ULONG)ModemStatus);
 }
-
-BOOLEAN
-SerialPerhapsLowerRTS(
-    IN WDFINTERRUPT  Interrupt,
-    IN PVOID Context
-    )
+
 
 /*++
 
@@ -1461,24 +1298,26 @@ Return Value:
     Always FALSE.
 
 --*/
-
+_Use_decl_annotations_
+BOOLEAN
+SerialPerhapsLowerRTS(
+    WDFINTERRUPT Interrupt,
+    PVOID Context
+    )
 {
 
-    PSERIAL_DEVICE_EXTENSION Extension = Context;
+    PSERIAL_DEVICE_EXTENSION extension = Context;
 
     UNREFERENCED_PARAMETER(Interrupt);
     TraceEvents(TRACE_LEVEL_INFORMATION, DBG_CREATE_CLOSE, "++SerialPerhapsLowerRTS()\r\n");
 
-    //
     // We first need to test if we are actually still doing
     // transmit toggle flow control.  If we aren't then
     // we have no reason to try be here.
-    //
 
-    if ((Extension->HandFlow.FlowReplace & SERIAL_RTS_MASK) ==
+    if ((extension->HandFlow.FlowReplace & SERIAL_RTS_MASK) ==
         SERIAL_TRANSMIT_TOGGLE) {
 
-        //
         // The order of the tests is very important below.
         //
         // If there is a break then we should leave on the RTS,
@@ -1491,18 +1330,16 @@ Return Value:
         // are being held up, its ok to lower the RTS because the
         // upon trying to write the first character after transmission
         // is restarted, we will raise the RTS line.
-        //
 
-        if ((Extension->TXHolding & SERIAL_TX_BREAK) ||
-            (Extension->CurrentWriteRequest || Extension->TransmitImmediate ||
-             (!IsQueueEmpty(Extension->WriteQueue)) &&
-             (!Extension->TXHolding))) {
+        if ((extension->TXHolding & SERIAL_TX_BREAK) ||
+            (extension->CurrentWriteRequest || extension->TransmitImmediate ||
+             (!IsQueueEmpty(extension->WriteQueue)) &&
+             (!extension->TXHolding))) {
 
             NOTHING;
 
         } else {
 
-            //
             // Looks good so far.  Call the line status check and processing
             // code, it will return the "current" line status value.  If
             // the holding and shift register are clear, lower the RTS line,
@@ -1511,53 +1348,37 @@ Return Value:
             // but this routine cares about the characters in the hardware,
             // so no routine by this routine will bother invoking to test
             // if the hardware is empty.
-            //
 
-            if ((SerialProcessLSR(Extension) &
+            if ((SerialProcessLSR(extension) &
                  (SERIAL_LSR_THRE | SERIAL_LSR_TEMT)) !=
                  (SERIAL_LSR_THRE | SERIAL_LSR_TEMT)) {
 
-                //
                 // Well it's not empty, try again later.
-                //
 
-                SerialInsertQueueDpc(
-                    Extension->StartTimerLowerRTSDpc
-                    )?Extension->CountOfTryingToLowerRTS++:0;
+                SerialInsertQueueDpc(extension->StartTimerLowerRTSDpc)
+                    ?extension->CountOfTryingToLowerRTS++:0;
 
 
             } else {
 
-                //
                 // Nothing in the hardware, Lower the RTS.
-                //
 
-                SerialClrRTS(Extension->WdfInterrupt, Extension);
-
+                SerialClrRTS(extension->WdfInterrupt, extension);
 
             }
-
         }
-
     }
 
-    //
     // We decement the counter to indicate that we've reached
     // the end of the execution path that is trying to push
     // down the RTS line.
-    //
 
-    Extension->CountOfTryingToLowerRTS--;
+    extension->CountOfTryingToLowerRTS--;
     TraceEvents(TRACE_LEVEL_INFORMATION, DBG_CREATE_CLOSE, "--SerialPerhapsLowerRTS()\r\n");
 
     return FALSE;
 }
 
-VOID
-SerialStartTimerLowerRTS(
-    IN WDFDPC Dpc
-    )
-
 /*++
 
 Routine Description:
@@ -1581,58 +1402,42 @@ Return Value:
     None.
 
 --*/
-
+_Use_decl_annotations_
+VOID
+SerialStartTimerLowerRTS(
+    WDFDPC Dpc
+    )
 {
-    LARGE_INTEGER CharTime;
-    PSERIAL_DEVICE_EXTENSION Extension = NULL;
+    LARGE_INTEGER charTime;
+    PSERIAL_DEVICE_EXTENSION extension = NULL;
 
-    Extension = SerialGetDeviceExtension(WdfDpcGetParentObject(Dpc));
+    extension = SerialGetDeviceExtension(WdfDpcGetParentObject(Dpc));
 
+    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_IOCTLS, "++SerialStartTimerLowerRTS(%p)\r\n",
+                     extension);
 
-
-    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_IOCTLS, "++SerialStartTimerLowerRTS(%p)\n",
-                     Extension);
-
-
-    //
     // Since all the callbacks into the driver are serialized, we don't have
-    // synchronize the access to any of the Extension variables.
-    //
+    // synchronize the access to any of the extension variables.
 
-    CharTime = SerialGetCharTime(Extension);
+    charTime = SerialGetCharTime(extension);
 
-    CharTime.QuadPart = -CharTime.QuadPart;
+    charTime.QuadPart = -charTime.QuadPart;
 
-    if (SerialSetTimer(
-            Extension->LowerRTSTimer,
-            CharTime
-            )) {
+    if (SerialSetTimer(extension->LowerRTSTimer, charTime)) {
 
-        //
         // The timer was already in the timer queue.  This implies
         // that one path of execution that was trying to lower
         // the RTS has "died".  Synchronize with the ISR so that
         // we can lower the count.
-        //
 
-        WdfInterruptSynchronize(
-            Extension->WdfInterrupt,
-            SerialDecrementRTSCounter,
-            Extension
-            );
-
+        WdfInterruptSynchronize(extension->WdfInterrupt,
+                                SerialDecrementRTSCounter,
+                                extension);
     }
 
-
-    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_IOCTLS, "--SerialStartTimerLowerRTS\n");
-
+    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_IOCTLS, "--SerialStartTimerLowerRTS\r\n");
 }
 
-VOID
-SerialInvokePerhapsLowerRTS(
-    IN WDFTIMER Timer
-    )
-
 /*++
 
 Routine Description:
@@ -1650,27 +1455,22 @@ Return Value:
     None.
 
 --*/
-
+_Use_decl_annotations_
+VOID
+SerialInvokePerhapsLowerRTS(
+    WDFTIMER Timer
+    )
 {
 
-    PSERIAL_DEVICE_EXTENSION Extension = NULL;
+    PSERIAL_DEVICE_EXTENSION extension = NULL;
 
-    Extension = SerialGetDeviceExtension(WdfTimerGetParentObject(Timer));
+    extension = SerialGetDeviceExtension(WdfTimerGetParentObject(Timer));
 
-    WdfInterruptSynchronize(
-        Extension->WdfInterrupt,
-        SerialPerhapsLowerRTS,
-        Extension
-        );
-
+    WdfInterruptSynchronize(extension->WdfInterrupt,
+                            SerialPerhapsLowerRTS,
+                            extension);
 }
 
-BOOLEAN
-SerialDecrementRTSCounter(
-    IN WDFINTERRUPT  Interrupt,
-    IN PVOID Context
-    )
-
 /*++
 
 Routine Description:
@@ -1696,17 +1496,20 @@ Return Value:
     Always FALSE.
 
 --*/
-
+_Use_decl_annotations_
+BOOLEAN
+SerialDecrementRTSCounter(
+    WDFINTERRUPT  Interrupt,
+    PVOID Context
+    )
 {
-
-    PSERIAL_DEVICE_EXTENSION Extension = Context;
+    PSERIAL_DEVICE_EXTENSION extension = Context;
 
     UNREFERENCED_PARAMETER(Interrupt);
 
-    Extension->CountOfTryingToLowerRTS--;
+    extension->CountOfTryingToLowerRTS--;
 
     return FALSE;
-
 }
 
 
