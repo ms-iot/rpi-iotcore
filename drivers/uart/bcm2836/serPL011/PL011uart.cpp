@@ -1,7 +1,7 @@
 //
 // Copyright (c) Microsoft Corporation.  All rights reserved.
 //
-// Module Name: 
+// Module Name:
 //
 //    PL011uart.cpp
 //
@@ -51,7 +51,7 @@
 //
 // Routine Description:
 //
-//  PL011EvtSerCx2ApplyConfig is called by SerCx2 framework to apply a device 
+//  PL011EvtSerCx2ApplyConfig is called by SerCx2 framework to apply a device
 //  specific default configuration (from UEFI) settings to the controller.
 //  The routine gets the connection parameters from 'resource hub' extracts
 //  the PL011 specific information, and applies them to the controller calling
@@ -62,7 +62,7 @@
 //  WdfDevice - The WdfDevice object the represent the PL011 this instance of
 //      the PL011 controller.
 //
-//  ConnectionParametersPtr - A connection parameters from resource hub, that 
+//  ConnectionParametersPtr - A connection parameters from resource hub, that
 //      contains the device specific configuration.
 //
 // Return Value:
@@ -98,7 +98,7 @@ PL011EvtSerCx2ApplyConfig(
     if (!NT_SUCCESS(status)) {
 
         PL011_LOG_ERROR(
-            "PL011GetSerialBusDescriptor failed, (status = %!STATUS!)", 
+            "PL011GetSerialBusDescriptor failed, (status = %!STATUS!)",
             status
             );
         return status;
@@ -130,7 +130,7 @@ PL011EvtSerCx2ApplyConfig(
 //
 // Routine Description:
 //
-//  PL011EvtSerCx2Control is called by SerCx2 framework to handle IO 
+//  PL011EvtSerCx2Control is called by SerCx2 framework to handle IO
 //  control requests.
 //
 // Arguments:
@@ -250,7 +250,7 @@ PL011EvtSerCx2Control(
     default:
         status = STATUS_NOT_SUPPORTED;
         PL011_LOG_ERROR(
-            "IO control code not supported 0x%08X", 
+            "IO control code not supported 0x%08X",
             IoControlCode
             );
         WdfRequestComplete(WdfRequest, status);
@@ -265,7 +265,7 @@ PL011EvtSerCx2Control(
 //
 // Routine Description:
 //
-//  PL011EvtSerCx2PurgeFifos is called by SerCx2 framework to purge the 
+//  PL011EvtSerCx2PurgeFifos is called by SerCx2 framework to purge the
 //  FIFO buffers in the PL011 serial controller hardware.
 //
 // Arguments:
@@ -304,8 +304,8 @@ PL011EvtSerCx2PurgeFifos(
 //
 // Routine Description:
 //
-//  PL011EvtSerCx2SetWaitMask is called by SerCx2 framework to handle 
-//  IOCTL_SERIAL_SET_WAIT_MASK requests and configure the serial controller 
+//  PL011EvtSerCx2SetWaitMask is called by SerCx2 framework to handle
+//  IOCTL_SERIAL_SET_WAIT_MASK requests and configure the serial controller
 //  to monitor a set of hardware events that are specified by a wait mask.
 //
 // Arguments:
@@ -315,13 +315,13 @@ PL011EvtSerCx2PurgeFifos(
 //
 //  WdfRequest - The IOCTL_SERIAL_SET_WAIT_MASK request.
 //
-//  WaitMask - The SERIAL_EV_XXX bit mask for the events the device driver 
+//  WaitMask - The SERIAL_EV_XXX bit mask for the events the device driver
 //      should monitor
 //
 // Return Value:
 //
 _Use_decl_annotations_
-VOID 
+VOID
 PL011EvtSerCx2SetWaitMask(
     WDFDEVICE WdfDevice,
     WDFREQUEST WdfRequest,
@@ -429,8 +429,8 @@ done:
 //
 // Routine Description:
 //
-//  PL011EvtSerCx2FileOpen is called by SerCx2 to notify 
-//  the serial controller driver that a client opened a logical connection to 
+//  PL011EvtSerCx2FileOpen is called by SerCx2 to notify
+//  the serial controller driver that a client opened a logical connection to
 //  the serial controller.
 //  The routine initializes the controller on first open instance.
 //
@@ -440,9 +440,9 @@ done:
 //      the PL011 controller.
 //
 // Return Value:
-//  
-//  STATUS_SUCCESS, 
-//  STATUS_DEVICE_NOT_READY - if we have a conflict with the debugger, 
+//
+//  STATUS_SUCCESS,
+//  STATUS_DEVICE_NOT_READY - if we have a conflict with the debugger,
 //  or controller initialization status on first open.
 //
 _Use_decl_annotations_
@@ -455,6 +455,13 @@ PL011EvtSerCx2FileOpen(
 
     if (devExtPtr->IsDebuggerConflict) {
 
+        PL011_LOG_ASSERTION(
+            "A FileOpen request should never be received when a debugger conflict "
+            "is detected. If no FunctionConfig() resource was supplied, the driver "
+            "should have failed to load. If an FunctionConfig() resource was "
+            "supplied, muxing arbitration should prevent a FileOpen() request "
+            "from ever reaching the driver."
+            );
         return STATUS_DEVICE_NOT_READY;
     }
 
@@ -511,8 +518,8 @@ done:
 //
 // Routine Description:
 //
-//  PL011EvtSerCx2FileClose is called by SerCx2 to notify 
-//  the serial controller driver that a client released the file object 
+//  PL011EvtSerCx2FileClose is called by SerCx2 to notify
+//  the serial controller driver that a client released the file object
 //  that represents the logical connection to the serial controller device.
 //  The routine stops the controller on last open instance.
 //
@@ -522,7 +529,7 @@ done:
 //      the PL011 controller.
 //
 // Return Value:
-//  
+//
 //  STATUS_SUCCESS, or controller initialization status on first open.
 //
 _Use_decl_annotations_
@@ -532,7 +539,7 @@ PL011EvtSerCx2FileClose(
     )
 {
     PL011_DEVICE_EXTENSION* devExtPtr = PL011DeviceGetExtension(WdfDevice);
-    
+
     PL011_ASSERT(!devExtPtr->IsDebuggerConflict);
 
     KLOCK_QUEUE_HANDLE lockHandle;
@@ -556,7 +563,7 @@ PL011EvtSerCx2FileClose(
 //
 // Routine Description:
 //
-//  PL011pParseSerialBusDescriptor is called by PL011EvtSerCx2ApplyConfig 
+//  PL011pParseSerialBusDescriptor is called by PL011EvtSerCx2ApplyConfig
 //  to parse the connection information buffer.
 //  The routine verifies the parameters buffer validity and return a reference
 //  to the configuration parameters buffer embedded within the connection
@@ -573,8 +580,8 @@ PL011EvtSerCx2FileClose(
 //      var to receive the address of the default configuration parameters.
 //
 // Return Value:
-//  
-//  STATUS_SUCCESS, or STATUS_INVALID_PARAMETER if the connection information 
+//
+//  STATUS_SUCCESS, or STATUS_INVALID_PARAMETER if the connection information
 //      buffer is invalid.
 //
 _Use_decl_annotations_
@@ -619,8 +626,8 @@ PL011pParseSerialBusDescriptor(
         return STATUS_INVALID_PARAMETER;
     }
 
-    PPNP_SERIAL_BUS_DESCRIPTOR serialBusDescriptorPtr = 
-        reinterpret_cast<PPNP_SERIAL_BUS_DESCRIPTOR>(
+    const PNP_SERIAL_BUS_DESCRIPTOR* serialBusDescriptorPtr =
+        reinterpret_cast<const PNP_SERIAL_BUS_DESCRIPTOR*>(
             &connectionPtr->ConnectionProperties[0]
             );
 
@@ -645,7 +652,7 @@ PL011pParseSerialBusDescriptor(
 //
 // Routine Description:
 //
-//  PL011pApplyConfig is called by PL011EvtSerCx2ApplyConfig 
+//  PL011pApplyConfig is called by PL011EvtSerCx2ApplyConfig
 //  to apply the given configuration to the controller.
 //
 // Arguments:
@@ -659,7 +666,7 @@ PL011pParseSerialBusDescriptor(
 //      var the default configuration parameters.
 //
 // Return Value:
-//  
+//
 //  STATUS_SUCCESS
 //  STATUS_INVALID_PARAMETER - At least one of the configuration parameters
 //      is invalid.
@@ -676,7 +683,7 @@ PL011pApplyConfig(
     )
 {
     NTSTATUS status;
-    PPNP_SERIAL_BUS_DESCRIPTOR serialBusDescPtr = 
+    const PNP_SERIAL_BUS_DESCRIPTOR* serialBusDescPtr =
         &PnpUartDescriptorPtr->SerialBusDescriptor;
 
     //
@@ -697,7 +704,7 @@ PL011pApplyConfig(
     //
     SERIAL_HANDFLOW flowControlSetup = { 0 };
     {
-        USHORT uartFlowControlParams = 
+        USHORT uartFlowControlParams =
             serialBusDescPtr->TypeSpecificFlags & UART_SERIAL_FLAG_FLOW_CTL_MASK;
 
         switch (uartFlowControlParams) {
@@ -710,7 +717,7 @@ PL011pApplyConfig(
                 flowControlSetup.FlowReplace |= SERIAL_RTS_CONTROL;
             }
 
-            if ((PnpUartDescriptorPtr->SerialLinesEnabled & 
+            if ((PnpUartDescriptorPtr->SerialLinesEnabled &
                 UART_SERIAL_LINES_DTR) != 0) {
 
                 flowControlSetup.ControlHandShake |= SERIAL_DTR_CONTROL;
@@ -747,7 +754,7 @@ PL011pApplyConfig(
 
         default:
             PL011_LOG_ERROR(
-                "Unsupported flow control setup parameter 0x%04X, (status = %!STATUS!)", 
+                "Unsupported flow control setup parameter 0x%04X, (status = %!STATUS!)",
                 uartFlowControlParams,
                 STATUS_NOT_SUPPORTED
                 );
@@ -868,7 +875,7 @@ PL011pApplyConfig(
     // Apply line control setup
     //
     status = PL011HwSetFlowControl(WdfDevice, &flowControlSetup);
-    if (!NT_SUCCESS(status)) 
+    if (!NT_SUCCESS(status))
     {
         PL011_LOG_ERROR(
             "PL011HwFlowControl failed, (status = %!STATUS!)", status

@@ -25,8 +25,10 @@
 #include <ntddser.h>
 #include <ntintsafe.h>
 #include <ntstrsafe.h>
+#include <devpkey.h>
 
 // Class Extension includes
+#define RESHUB_USE_HELPER_ROUTINES
 #include <reshub.h>
 #include <SerCx.h>
 

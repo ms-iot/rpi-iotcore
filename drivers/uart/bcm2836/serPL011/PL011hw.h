@@ -673,14 +673,14 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
 NTSTATUS
 PL011HwSetFlowControl(
     _In_ WDFDEVICE WdfDevice,
-    _In_ SERIAL_HANDFLOW* SerialFlowControlPtr
+    _In_ const SERIAL_HANDFLOW* SerialFlowControlPtr
     );
 
 _IRQL_requires_max_(DISPATCH_LEVEL)
 NTSTATUS
 PL011HwSetLineControl(
     _In_ WDFDEVICE WdfDevice,
-    _In_ SERIAL_LINE_CONTROL* SerialLineControlPtr
+    _In_ const SERIAL_LINE_CONTROL* SerialLineControlPtr
     );
 
 _IRQL_requires_max_(DISPATCH_LEVEL)
