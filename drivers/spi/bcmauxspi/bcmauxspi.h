@@ -56,15 +56,21 @@ enum : ULONG { AUXSPI_POOL_TAG = 'IPSA' };
 // Placement new operator
 //
 
-_Notnull_
-void* __cdecl operator new ( size_t, _In_ void* Ptr ) throw ();
+__forceinline void* __cdecl operator new ( size_t, void* Ptr ) throw ()
+{
+    return Ptr;
+} // operator new ( size_t, void* )
 
-void __cdecl operator delete ( void*, void* ) throw ();
+__forceinline void __cdecl operator delete ( void*, void* ) throw ()
+{} // void operator delete ( void*, void* )
 
-_Notnull_
-void* __cdecl operator new[] ( size_t, _In_ void* Ptr ) throw ();
+__forceinline void* __cdecl operator new[] ( size_t, void* Ptr ) throw ()
+{
+    return Ptr;
+} // operator new[] ( size_t, void* )
 
-void __cdecl operator delete[] ( void*, void* ) throw ();
+__forceinline void __cdecl operator delete[] ( void*, void* ) throw ()
+{} // void operator delete[] ( void*, void* )
 
 //
 // class AUXSPI_DEVICE
@@ -106,15 +112,15 @@ public: // NONPAGED
     };
 
     struct _WRITE_CONTEXT {
-        _Field_size_(BytesToWrite) const BYTE* const WriteBufferPtr;
+        const BYTE* const WriteBufferPtr;
         const size_t BytesToWrite;
-        _Field_range_(<=, BytesToWrite) size_t BytesWritten;
+        size_t BytesWritten;
     };
 
     struct _READ_CONTEXT {
-        _Field_size_(BytesToRead) BYTE* const ReadBufferPtr;
+        BYTE* const ReadBufferPtr;
         const size_t BytesToRead;
-        _Field_range_(<=, BytesToRead) size_t BytesRead;
+        size_t BytesRead;
     };
 
     struct _SEQUENCE_CONTEXT {
