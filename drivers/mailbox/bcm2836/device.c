@@ -438,12 +438,12 @@ NTSTATUS RpiqNdisInterfaceCallback (
 {
     NTSTATUS status;
     WDFDEVICE device = Context;
-    DEVICE_INTERFACE_CHANGE_NOTIFICATION* notification;
+    const DEVICE_INTERFACE_CHANGE_NOTIFICATION* notification;
     
     PAGED_CODE();
 
     notification = 
-        (DEVICE_INTERFACE_CHANGE_NOTIFICATION*)NotificationStructure;
+        (const DEVICE_INTERFACE_CHANGE_NOTIFICATION*)NotificationStructure;
 
     // Open a handle to a NDIS device so rpiq always keep a reference.
     if (IsEqualGUID(&notification->Event, &GUID_DEVICE_INTERFACE_ARRIVAL)) {
