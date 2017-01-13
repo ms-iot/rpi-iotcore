@@ -79,6 +79,18 @@ extern "C" {
 #include <stddef.h>
 #include <stdlib.h>
 
+// Disable prefast specific warning to maintain consistent vchiq, vchi and vcos
+// interface. This also minimize porting overhead between OS.
+#pragma prefast(disable:28718, "Disable Unannotated Buffer. Maintain interface defintion")
+#pragma prefast(disable:25004, "Nonconst Param. Maintain interface defintion")
+#pragma prefast(disable:25033, "Nonconst Buffer Param. Maintain interface defintion")
+#pragma prefast(disable:28023, "Missing _Function_class_ annotation. Not all parameter use the same function entry definition")
+#pragma prefast(disable:25135, "Missing locking annotation. Maintain interface defintion")
+#pragma prefast(disable:25120, "Count required for void ptr buffer. Maintain interface defintion")
+#pragma prefast(disable:25057, "Count required for writable buffer. Maintain interface defintion")
+// Disabling dangerous cast as VCHI and VCHIQ shares structure. It is advice
+// to enable this prefast warning during development
+#pragma prefast(disable:25024, "Dangerous Cast")
 
 #define VCOS_HAVE_RTOS         1
 #define VCOS_HAVE_SEMAPHORE    1
@@ -574,8 +586,8 @@ void vcos_mutex_delete(VCOS_MUTEX_T *latch)
 #endif
 }
 
-VCOS_INLINE_IMPL
-VCOS_STATUS_T vcos_mutex_lock(VCOS_MUTEX_T *latch) 
+#pragma prefast(Suppress:26135, "Suppress locking annotation for consistent vcos interface")
+VCOS_INLINE_IMPL VCOS_STATUS_T vcos_mutex_lock(VCOS_MUTEX_T *latch) 
 {
 #ifdef WIN32_KERN 
     KeWaitForMutexObject(latch, Executive, KernelMode, FALSE, NULL);
@@ -585,8 +597,8 @@ VCOS_STATUS_T vcos_mutex_lock(VCOS_MUTEX_T *latch)
     return VCOS_SUCCESS;
 }
 
-VCOS_INLINE_IMPL
-void vcos_mutex_unlock(VCOS_MUTEX_T *latch) 
+#pragma prefast(Suppress:26135, "Suppress locking annotation for consistent vcos interface")
+VCOS_INLINE_IMPL void vcos_mutex_unlock(VCOS_MUTEX_T *latch) 
 {
 #ifdef WIN32_KERN 
     KeReleaseMutex(latch, FALSE);
