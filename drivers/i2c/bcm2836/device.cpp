@@ -69,6 +69,68 @@ NTSTATUS WaitForTransferActive ( BCM_I2C_REGISTERS* RegistersPtr )
     return STATUS_IO_TIMEOUT;
 }
 
+//
+// Enables request for cancellation and writes a new value into the control
+// register (potentially enabling interrupts) under the cancellation
+// spinlock.
+//
+_IRQL_requires_max_(DISPATCH_LEVEL)
+_Requires_lock_not_held_(InterruptContextPtr->CancelLock)
+static NTSTATUS MarkRequestCancelableAndUpdateControlRegisterSynchronized (
+    BCM_I2C_INTERRUPT_CONTEXT* InterruptContextPtr,
+    SPBREQUEST SpbRequest,
+    ULONG ControlRegValue
+    )
+{
+    KLOCK_QUEUE_HANDLE lockHandle;
+    KeAcquireInStackQueuedSpinLock(&InterruptContextPtr->CancelLock, &lockHandle);
+
+    NTSTATUS status = WdfRequestMarkCancelableEx(SpbRequest, OnRequestCancel);
+    if (!NT_SUCCESS(status)) {
+        BSC_LOG_INFORMATION(
+            "Failed to mark request cancelable. (SpbRequest = %p, status = %!STATUS!)",
+            SpbRequest,
+            status);
+
+        KeReleaseInStackQueuedSpinLock(&lockHandle);
+        return status;
+    }
+
+    //
+    // Update control register, potentially enabling interrupts. This must
+    // be done under the cancel lock because the cancel routine also
+    // modifies hardware state.
+    //
+    WRITE_REGISTER_NOFENCE_ULONG(
+        &InterruptContextPtr->RegistersPtr->Control,
+        ControlRegValue);
+
+    KeReleaseInStackQueuedSpinLock(&lockHandle);
+    return STATUS_SUCCESS;
+}
+
+static void ResetHardwareAndRequestContext (
+    BCM_I2C_INTERRUPT_CONTEXT* InterruptContextPtr
+    )
+{
+    InterruptContextPtr->State = TRANSFER_STATE::INVALID;
+    InterruptContextPtr->SpbRequest = WDF_NO_HANDLE;
+    InterruptContextPtr->TargetPtr = nullptr;
+
+    BCM_I2C_REGISTERS* registersPtr = InterruptContextPtr->RegistersPtr;
+    WRITE_REGISTER_NOFENCE_ULONG(
+        &registersPtr->Control,
+        BCM_I2C_REG_CONTROL_I2CEN | BCM_I2C_REG_CONTROL_CLEAR);
+
+    WRITE_REGISTER_NOFENCE_ULONG(&registersPtr->DataLength, 0);
+
+    WRITE_REGISTER_NOFENCE_ULONG(
+        &registersPtr->Status,
+        BCM_I2C_REG_STATUS_ERR |
+        BCM_I2C_REG_STATUS_CLKT |
+        BCM_I2C_REG_STATUS_DONE);
+}
+
 void InitializeTransfer (
     BCM_I2C_REGISTERS* RegistersPtr,
     const BCM_I2C_TARGET_CONTEXT* TargetPtr,
@@ -141,12 +203,14 @@ void InitializeTransfer (
 ULONG ReadFifo (
     BCM_I2C_REGISTERS* RegistersPtr,
     _Out_writes_to_(BufferSize, return) BYTE* BufferPtr,
-    ULONG BufferSize
+    ULONG BufferSize,
+    _Out_ ULONG* StatusPtr
     )
 {
     BYTE* dataPtr = BufferPtr;
+    ULONG statusReg = 0;
     while (dataPtr != (BufferPtr + BufferSize)) {
-        ULONG statusReg = READ_REGISTER_NOFENCE_ULONG(&RegistersPtr->Status);
+        statusReg = READ_REGISTER_NOFENCE_ULONG(&RegistersPtr->Status);
         if (!(statusReg & BCM_I2C_REG_STATUS_RXD)) {
             break;
         }
@@ -161,10 +225,16 @@ ULONG ReadFifo (
         bytesRead,
         BufferSize);
 
+    *StatusPtr = statusReg;
     return bytesRead;
 }
 
-ULONG ReadFifoMdl (BCM_I2C_REGISTERS* RegistersPtr, PMDL Mdl, ULONG Offset)
+ULONG ReadFifoMdl (
+    BCM_I2C_REGISTERS* RegistersPtr,
+    PMDL Mdl,
+    ULONG Offset,
+    _Out_ ULONG* StatusPtr
+    )
 {
     NT_ASSERT(Offset <= MmGetMdlByteCount(Mdl));
     NT_ASSERT(
@@ -174,7 +244,8 @@ ULONG ReadFifoMdl (BCM_I2C_REGISTERS* RegistersPtr, PMDL Mdl, ULONG Offset)
     return ReadFifo(
         RegistersPtr,
         static_cast<BYTE*>(Mdl->MappedSystemVa) + Offset,
-        MmGetMdlByteCount(Mdl) - Offset);
+        MmGetMdlByteCount(Mdl) - Offset,
+        StatusPtr);
 }
 
 //
@@ -294,28 +365,24 @@ VOID OnRead (
         interruptContextPtr->ReadContext.EndPtr = readBufferPtr + bytesToRead;
     }
 
-    status = WdfRequestMarkCancelableEx(SpbRequest, OnRequestCancel);
+    status = MarkRequestCancelableAndUpdateControlRegisterSynchronized(
+            interruptContextPtr,
+            SpbRequest,
+            BCM_I2C_REG_CONTROL_I2CEN |
+            BCM_I2C_REG_CONTROL_INTR |
+            BCM_I2C_REG_CONTROL_INTD |
+            BCM_I2C_REG_CONTROL_READ);
+
     if (!NT_SUCCESS(status)) {
-        BSC_LOG_INFORMATION(
-            "Failed to mark request cancelable. (SpbRequest = %p, status = %!STATUS!)",
+        BSC_LOG_ERROR(
+            "MarkRequestCancelableAndUpdateControlRegisterSynchronized(...) failed. (SpbRequest = %p, status = %!STATUS!)",
             SpbRequest,
             status);
-        WRITE_REGISTER_NOFENCE_ULONG(
-            &registersPtr->Control,
-            BCM_I2C_REG_CONTROL_I2CEN | BCM_I2C_REG_CONTROL_CLEAR);
+
+        ResetHardwareAndRequestContext(interruptContextPtr);
         SpbRequestComplete(SpbRequest, status);
         return;
     }
-
-    BSC_LOG_TRACE("Finished setting up the read, enabling interrupts");
-
-    // enable interrupts
-    WRITE_REGISTER_NOFENCE_ULONG(
-        &registersPtr->Control,
-        BCM_I2C_REG_CONTROL_I2CEN |
-        BCM_I2C_REG_CONTROL_INTR |
-        BCM_I2C_REG_CONTROL_INTD |
-        BCM_I2C_REG_CONTROL_READ);
 }
 
 _Use_decl_annotations_
@@ -401,7 +468,9 @@ VOID OnWrite (
 
         interruptContextPtr->SpbRequest = SpbRequest;
         interruptContextPtr->TargetPtr = targetPtr;
-        interruptContextPtr->State = TRANSFER_STATE::SENDING;
+        interruptContextPtr->State = (bytesWritten == bytesToWrite) ?
+            TRANSFER_STATE::SENDING_WAIT_FOR_DONE : TRANSFER_STATE::SENDING;
+
         interruptContextPtr->CapturedStatus = 0;
         interruptContextPtr->CapturedDataLength = 0;
 
@@ -412,27 +481,23 @@ VOID OnWrite (
             writeBufferPtr + bytesToWrite;
     }
 
-    status = WdfRequestMarkCancelableEx(SpbRequest, OnRequestCancel);
+    status = MarkRequestCancelableAndUpdateControlRegisterSynchronized(
+            interruptContextPtr,
+            SpbRequest,
+            BCM_I2C_REG_CONTROL_I2CEN |
+            BCM_I2C_REG_CONTROL_INTT |
+            BCM_I2C_REG_CONTROL_INTD);
+
     if (!NT_SUCCESS(status)) {
-        BSC_LOG_INFORMATION(
-            "Failed to mark request cancelable. (SpbRequest = %p, status = %!STATUS!)",
+        BSC_LOG_ERROR(
+            "MarkRequestCancelableAndUpdateControlRegisterSynchronized(...) failed. (SpbRequest = %p, status = %!STATUS!)",
             SpbRequest,
             status);
-        WRITE_REGISTER_NOFENCE_ULONG(
-            &registersPtr->Control,
-            BCM_I2C_REG_CONTROL_I2CEN | BCM_I2C_REG_CONTROL_CLEAR);
+
+        ResetHardwareAndRequestContext(interruptContextPtr);
         SpbRequestComplete(SpbRequest, status);
         return;
     }
-
-    BSC_LOG_TRACE("Finished setting up the write, enabling interrupts");
-
-    // enable interrupts
-    WRITE_REGISTER_NOFENCE_ULONG(
-        &registersPtr->Control,
-        BCM_I2C_REG_CONTROL_I2CEN |
-        BCM_I2C_REG_CONTROL_INTT |
-        BCM_I2C_REG_CONTROL_INTD);
 }
 
 //
@@ -457,20 +522,22 @@ NTSTATUS StartSequenceWrite ( BCM_I2C_INTERRUPT_CONTEXT* InterruptContextPtr )
             "Transmit buffer is length 1; waiting for transfer to become active and then setting up the read. (bytesToRead = %lu)",
             sequenceContextPtr->BytesToRead);
 
+        //
+        // Synchronize with the cancellation routine which also modifies
+        // hardware state
+        //
+        KLOCK_QUEUE_HANDLE lockHandle;
+        KeAcquireInStackQueuedSpinLock(
+            &InterruptContextPtr->CancelLock,
+            &lockHandle);
+
         status = WaitForTransferActive(registersPtr);
         if (!NT_SUCCESS(status)) {
             BSC_LOG_ERROR(
                 "The transfer failed to become active. (status = %!STATUS!)",
                 status);
-            return status;
-        }
 
-        status = WdfRequestMarkCancelableEx(spbRequest, OnRequestCancel);
-        if (!NT_SUCCESS(status)) {
-            BSC_LOG_INFORMATION(
-                "Failed to mark request cancelable. (spbRequest = %p, status = %!STATUS!)",
-                spbRequest,
-                status);
+            KeReleaseInStackQueuedSpinLock(&lockHandle);
             return status;
         }
 
@@ -516,9 +583,6 @@ NTSTATUS StartSequenceWrite ( BCM_I2C_INTERRUPT_CONTEXT* InterruptContextPtr )
 
             WdfInterruptReleaseLock(InterruptContextPtr->WdfInterrupt);
         }
-    } else {
-        NT_ASSERT(sequenceContextPtr->BytesToWrite > 1);
-        BSC_LOG_TRACE("Transmit buffer is 2 or greater, writing first byte and enabling TXW interrupt.");
 
         status = WdfRequestMarkCancelableEx(spbRequest, OnRequestCancel);
         if (!NT_SUCCESS(status)) {
@@ -526,8 +590,15 @@ NTSTATUS StartSequenceWrite ( BCM_I2C_INTERRUPT_CONTEXT* InterruptContextPtr )
                 "Failed to mark request cancelable. (spbRequest = %p, status = %!STATUS!)",
                 spbRequest,
                 status);
+
+            KeReleaseInStackQueuedSpinLock(&lockHandle);
             return status;
         }
+
+        KeReleaseInStackQueuedSpinLock(&lockHandle);
+    } else {
+        NT_ASSERT(sequenceContextPtr->BytesToWrite > 1);
+        BSC_LOG_TRACE("Transmit buffer is 2 or greater, writing first byte and enabling TXW interrupt.");
 
         // write first byte to FIFO
         WRITE_REGISTER_NOFENCE_ULONG(
@@ -540,12 +611,21 @@ NTSTATUS StartSequenceWrite ( BCM_I2C_INTERRUPT_CONTEXT* InterruptContextPtr )
         NT_ASSERT(sequenceContextPtr->BytesWritten == 1);
         NT_ASSERT(sequenceContextPtr->CurrentWriteMdlOffset == 1);
 
-        // enable interrupts
-        WRITE_REGISTER_NOFENCE_ULONG(
-            &registersPtr->Control,
-            BCM_I2C_REG_CONTROL_I2CEN |
-            BCM_I2C_REG_CONTROL_INTT |
-            BCM_I2C_REG_CONTROL_INTD);
+        status = MarkRequestCancelableAndUpdateControlRegisterSynchronized(
+                InterruptContextPtr,
+                spbRequest,
+                BCM_I2C_REG_CONTROL_I2CEN |
+                BCM_I2C_REG_CONTROL_INTT |
+                BCM_I2C_REG_CONTROL_INTD);
+
+        if (!NT_SUCCESS(status)) {
+            BSC_LOG_ERROR(
+                "MarkRequestCancelableAndUpdateControlRegisterSynchronized(...) failed. (SpbRequest = %p, status = %!STATUS!)",
+                spbRequest,
+                status);
+
+            return status;
+        }
     }
 
     return STATUS_SUCCESS;
@@ -738,10 +818,8 @@ VOID OnSequence (
         BSC_LOG_ERROR(
             "Failed to do initial write of the sequence transfer. (status = %!STATUS!)",
             status);
-        // abort the transfer since it has already been started
-        WRITE_REGISTER_NOFENCE_ULONG(
-            &registersPtr->Control,
-            BCM_I2C_REG_CONTROL_I2CEN | BCM_I2C_REG_CONTROL_CLEAR);
+
+        ResetHardwareAndRequestContext(interruptContextPtr);
         SpbRequestComplete(SpbRequest, status);
         return;
     }
@@ -754,7 +832,7 @@ VOID OnRequestCancel ( WDFREQUEST  WdfRequest )
 
     BCM_I2C_DEVICE_CONTEXT* devicePtr = GetDeviceContext(WdfFileObjectGetDevice(
         WdfRequestGetFileObject(WdfRequest)));
-    BCM_I2C_REGISTERS* registersPtr = devicePtr->RegistersPtr;
+
     BCM_I2C_INTERRUPT_CONTEXT* interruptContextPtr =
         devicePtr->InterruptContextPtr;
 
@@ -763,35 +841,34 @@ VOID OnRequestCancel ( WDFREQUEST  WdfRequest )
         WdfRequest,
         interruptContextPtr);
 
-    // synchronize with ISR to ensure interrupts get disabled
-    {
-        WdfInterruptAcquireLock(devicePtr->WdfInterrupt);
-
-        WRITE_REGISTER_NOFENCE_ULONG(
-            &registersPtr->Control,
-            BCM_I2C_REG_CONTROL_I2CEN | BCM_I2C_REG_CONTROL_CLEAR);
-        WRITE_REGISTER_NOFENCE_ULONG(&registersPtr->DataLength, 0);
-
-        // clear DONE and ERROR bits
-        WRITE_REGISTER_NOFENCE_ULONG(
-            &registersPtr->Status,
-            BCM_I2C_REG_STATUS_ERR |
-            BCM_I2C_REG_STATUS_CLKT |
-            BCM_I2C_REG_STATUS_DONE);
-
-        WdfInterruptReleaseLock(devicePtr->WdfInterrupt);
-    }
+    //
+    // Synchronize with dispatch routines which may also be modifying
+    // hardware state
+    //
+    KLOCK_QUEUE_HANDLE lockHandle;
+    KeAcquireInStackQueuedSpinLock(
+        &interruptContextPtr->CancelLock,
+        &lockHandle);
 
     // get the request from the interrupt context
-    SPBREQUEST currentRequest = static_cast<SPBREQUEST>(
-        InterlockedExchangePointer(
-            reinterpret_cast<PVOID *>(&interruptContextPtr->SpbRequest),
-            nullptr));
-    if (!currentRequest) {
-        BSC_LOG_TRACE("Cannot cancel request, it was already claimed by DPC.");
+    SPBREQUEST currentRequest = interruptContextPtr->SpbRequest;
+    if (currentRequest == WDF_NO_HANDLE) {
+        BSC_LOG_INFORMATION("Cannot cancel request - must have already been claimed by DPC.");
+        KeReleaseInStackQueuedSpinLock(&lockHandle);
         return;
     }
+
     NT_ASSERT(WdfRequest == currentRequest);
+
+    //
+    // Synchronize with ISR which may also be using request
+    //
+    WdfInterruptAcquireLock(interruptContextPtr->WdfInterrupt);
+    ResetHardwareAndRequestContext(interruptContextPtr);
+    NT_ASSERT(interruptContextPtr->SpbRequest == WDF_NO_HANDLE);
+    WdfInterruptReleaseLock(interruptContextPtr->WdfInterrupt);
+
+    KeReleaseInStackQueuedSpinLock(&lockHandle);
     SpbRequestComplete(static_cast<SPBREQUEST>(WdfRequest), STATUS_CANCELLED);
 }
 
@@ -801,7 +878,7 @@ BOOLEAN HandleInterrupt ( WDFINTERRUPT WdfInterrupt )
         GetInterruptContext(WdfInterrupt);
     BCM_I2C_REGISTERS* registersPtr = interruptContextPtr->RegistersPtr;
 
-    ULONG statusReg = READ_REGISTER_NOFENCE_ULONG(&registersPtr->Status);
+    const ULONG statusReg = READ_REGISTER_NOFENCE_ULONG(&registersPtr->Status);
 
 #ifdef DBG
     BSC_LOG_TRACE("Interrupt occurred. (statusReg = 0x%lx)", statusReg);
@@ -812,68 +889,112 @@ BOOLEAN HandleInterrupt ( WDFINTERRUPT WdfInterrupt )
 
         BSC_LOG_TRACE("Interrupt bits were not set - not claiming interrupt");
         return FALSE;
-    } else if (statusReg & (BCM_I2C_REG_STATUS_CLKT | BCM_I2C_REG_STATUS_ERR |
-                            BCM_I2C_REG_STATUS_DONE)) {
+    }
 
-        // capture data length before writing to any registers
-        ULONG dataLength =
-            READ_REGISTER_NOFENCE_ULONG(&registersPtr->DataLength);
+    const ULONG transferState = interruptContextPtr->State;
+    if (transferState == TRANSFER_STATE::INVALID) {
+        BSC_LOG_WARNING(
+            "Received unexpected interrupt. (statusReg = 0x%x, interruptContextPtr->SpbRequest = 0x%p)",
+            statusReg,
+            interruptContextPtr->SpbRequest);
 
-        bool queueDpc;
-        if (statusReg & (BCM_I2C_REG_STATUS_CLKT | BCM_I2C_REG_STATUS_ERR)) {
-            BSC_LOG_TRACE(
-                "One of the error bits is set. (statusReg = 0x%lx, dataLength = %lu)",
-                statusReg,
-                dataLength);
-            queueDpc = true;
-        } else {
-            NT_ASSERT(statusReg & BCM_I2C_REG_STATUS_DONE);
-
-            BSC_LOG_TRACE(
-                "DONE bit was set - acknowledging DONE bit and checking TA. (statusReg = 0x%lx, dataLength = %lu)",
-                statusReg,
-                dataLength);
-
-            WRITE_REGISTER_NOFENCE_ULONG(
-                &registersPtr->Status,
-                BCM_I2C_REG_STATUS_DONE);
-
-            //
-            // DONE sometimes gets set spuriously. Check if transfer is still
-            // active. If transfer is still active, DONE will be asserted again
-            // when the transfer completes. If transfer is not still active
-            // after acknowledging DONE bit, go to DPC.
-            //
-            queueDpc = !(READ_REGISTER_NOFENCE_ULONG(&registersPtr->Status) &
-                         BCM_I2C_REG_STATUS_TA);
-        }
-
-        if (queueDpc) {
-            interruptContextPtr->CapturedStatus = statusReg;
-            interruptContextPtr->CapturedDataLength = dataLength;
-
-            BSC_LOG_TRACE(
-                "Going to DPC. (interruptContextPtr->CapturedStatus = 0x%lx, interruptContextPtr->CapturedDataLength = %lu)",
-                interruptContextPtr->CapturedStatus,
-                interruptContextPtr->CapturedDataLength);
-
-            // disable interrupts, preserving the READ flag
-            ULONG controlReg =
-                READ_REGISTER_NOFENCE_ULONG(&registersPtr->Control);
-            WRITE_REGISTER_NOFENCE_ULONG(
-                &registersPtr->Control,
-                BCM_I2C_REG_CONTROL_I2CEN |
-                (controlReg & BCM_I2C_REG_CONTROL_READ));
-            WdfInterruptQueueDpcForIsr(WdfInterrupt);
-            return TRUE;
-        }
+        NT_ASSERT(!"Received unexpected interrupt");
+        return TRUE;
     }
 
     NT_ASSERTMSG(
         "Expecting a current request",
-        interruptContextPtr->SpbRequest);
+        interruptContextPtr->SpbRequest != WDF_NO_HANDLE);
 
-    switch (interruptContextPtr->State) {
+    if ((transferState & TRANSFER_STATE::ERROR_FLAG) != 0) {
+        if ((statusReg & BCM_I2C_REG_STATUS_TA) != 0) {
+            BSC_LOG_ERROR(
+                "Interrupt occurred while waiting for TA to deassert, but TA is still asserted! (statusReg = 0x%x)",
+                statusReg);
+
+            NT_ASSERT(!"TA is still asserted!");
+        } else {
+            BSC_LOG_TRACE(
+                "TA is now deasserted - going to DPC. (transferState = %lx, statusReg = 0x%x)",
+                transferState,
+                statusReg);
+        }
+
+        WRITE_REGISTER_NOFENCE_ULONG(
+            &registersPtr->Control,
+            BCM_I2C_REG_CONTROL_I2CEN);
+
+        WRITE_REGISTER_NOFENCE_ULONG(
+            &registersPtr->Status,
+            BCM_I2C_REG_STATUS_ERR |
+            BCM_I2C_REG_STATUS_CLKT |
+            BCM_I2C_REG_STATUS_DONE);
+
+        WdfInterruptQueueDpcForIsr(WdfInterrupt);
+        return TRUE;
+    }
+
+    // capture data length before writing to any registers
+    const ULONG dataLength =
+            READ_REGISTER_NOFENCE_ULONG(&registersPtr->DataLength);
+
+    if ((statusReg & (BCM_I2C_REG_STATUS_CLKT | BCM_I2C_REG_STATUS_ERR)) != 0) {
+        BSC_LOG_ERROR(
+            "A hardware error bit was set. (transferState = %lx, statusReg = 0x%lx, dataLength = %lu)",
+            transferState,
+            statusReg,
+            dataLength);
+
+        interruptContextPtr->State = transferState | TRANSFER_STATE::ERROR_FLAG;
+
+        NT_ASSERT(interruptContextPtr->CapturedStatus == 0);
+        interruptContextPtr->CapturedStatus = statusReg;
+        interruptContextPtr->CapturedDataLength = dataLength;
+
+        if ((statusReg & BCM_I2C_REG_STATUS_DONE) != 0) {
+
+            //
+            // If we write to the control register while DONE and TA are
+            // both asserted, it messed up the hardware state machine.
+            // Clear the DONE bit and check TA. If TA is still set after
+            // clearing DONE, wait for DONE to be set again, at which point
+            // TA should be cleared.
+            //
+            WRITE_REGISTER_NOFENCE_ULONG(
+                &registersPtr->Status,
+                BCM_I2C_REG_STATUS_DONE);
+
+            const ULONG tempStatusReg =
+                READ_REGISTER_NOFENCE_ULONG(&registersPtr->Status);
+
+            if ((tempStatusReg & BCM_I2C_REG_STATUS_TA) != 0) {
+                BSC_LOG_TRACE(
+                    "TA is still set after acknowledging DONE bit. Waiting for DONE to assert. (tempStatusReg = 0x%x)",
+                    tempStatusReg);
+
+                return TRUE;
+            }
+
+            BSC_LOG_TRACE(
+                "DONE bit is set and TA bit is clear, going to DPC. (tempStatusReg = 0x%x)",
+                tempStatusReg);
+        }
+
+        WRITE_REGISTER_NOFENCE_ULONG(
+            &registersPtr->Control,
+            BCM_I2C_REG_CONTROL_I2CEN);
+
+        WRITE_REGISTER_NOFENCE_ULONG(
+            &registersPtr->Status,
+            BCM_I2C_REG_STATUS_ERR |
+            BCM_I2C_REG_STATUS_CLKT |
+            BCM_I2C_REG_STATUS_DONE);
+
+        WdfInterruptQueueDpcForIsr(WdfInterrupt);
+        return TRUE;
+    }
+
+    switch (transferState) {
     case TRANSFER_STATE::SENDING:
     {
         BCM_I2C_INTERRUPT_CONTEXT::WRITE_CONTEXT* writeContextPtr =
@@ -882,18 +1003,29 @@ BOOLEAN HandleInterrupt ( WDFINTERRUPT WdfInterrupt )
         const BYTE* dataPtr = writeContextPtr->CurrentWriteBufferPtr;
         const BYTE* const endPtr = writeContextPtr->EndPtr;
         NT_ASSERTMSG(
-            "DONE interrupt should be fired after all bytes have been written",
+            "Should only be in the SENDING state if there are more bytes to write",
             dataPtr != endPtr);
-        while (dataPtr != endPtr) {
-            statusReg = READ_REGISTER_NOFENCE_ULONG(&registersPtr->Status);
-            if (!(statusReg & BCM_I2C_REG_STATUS_TXD)) {
-                break;
+
+        NT_ASSERTMSG(
+            "The TXD bit should be set if we're still in the SENDING state",
+            (statusReg & BCM_I2C_REG_STATUS_TXD) != 0);
+
+        do {
+            const ULONG tempStatusReg =
+                READ_REGISTER_NOFENCE_ULONG(&registersPtr->Status);
+
+            if ((tempStatusReg & BCM_I2C_REG_STATUS_TXD) == 0) {
+                writeContextPtr->CurrentWriteBufferPtr = dataPtr;
+                return TRUE; // remain in SENDING state
             }
 
-            WRITE_REGISTER_NOFENCE_ULONG(&registersPtr->DataFIFO, *dataPtr++);
-        }
+            WRITE_REGISTER_NOFENCE_ULONG(&registersPtr->DataFIFO, *dataPtr);
+            ++dataPtr;
+        } while (dataPtr != endPtr);
 
         writeContextPtr->CurrentWriteBufferPtr = dataPtr;
+        interruptContextPtr->State = TRANSFER_STATE::SENDING_WAIT_FOR_DONE;
+        BSC_LOG_TRACE("Queued all bytes to TX FIFO, advancing to SENDING_WAIT_FOR_DONE state.");
         return TRUE;
     }
     case TRANSFER_STATE::RECEIVING:
@@ -903,17 +1035,34 @@ BOOLEAN HandleInterrupt ( WDFINTERRUPT WdfInterrupt )
 
         BYTE* dataPtr = readContextPtr->CurrentReadBufferPtr;
         const BYTE* const endPtr = readContextPtr->EndPtr;
-        while (dataPtr != endPtr) {
-            statusReg = READ_REGISTER_NOFENCE_ULONG(&registersPtr->Status);
-            if (!(statusReg & BCM_I2C_REG_STATUS_RXD)) {
-                break;
+        NT_ASSERTMSG(
+            "Should only be in the RECEIVING state if there are more bytes to read",
+            dataPtr != endPtr);
+
+        NT_ASSERTMSG(
+            "The RXD bit should be set if we're in the RECEIVING state",
+            (statusReg & BCM_I2C_REG_STATUS_RXD) != 0);
+
+        ULONG tempStatusReg;
+        do {
+            tempStatusReg = READ_REGISTER_NOFENCE_ULONG(&registersPtr->Status);
+            if ((tempStatusReg & BCM_I2C_REG_STATUS_RXD) == 0) {
+                readContextPtr->CurrentReadBufferPtr = dataPtr;
+                return TRUE; // remain in RECEIVING state
             }
 
-            *dataPtr++ = static_cast<BYTE>(
+            *dataPtr = static_cast<BYTE>(
                 READ_REGISTER_NOFENCE_ULONG(&registersPtr->DataFIFO));
-        }
+
+            ++dataPtr;
+        } while (dataPtr != endPtr);
 
         readContextPtr->CurrentReadBufferPtr = dataPtr;
+        interruptContextPtr->State = TRANSFER_STATE::RECEIVING_WAIT_FOR_DONE;
+        BSC_LOG_TRACE(
+            "Read all bytes, advancing to RECEIVING_WAIT_FOR_DONE state (tempStatusReg = 0x%x).",
+            tempStatusReg);
+
         return TRUE;
     }
     case TRANSFER_STATE::SENDING_SEQUENCE:
@@ -924,6 +1073,10 @@ BOOLEAN HandleInterrupt ( WDFINTERRUPT WdfInterrupt )
         NT_ASSERTMSG(
             "CurrentWriteMdl can only be NULL after transitioning to RECEIVING_SEQUENCE state",
             sequenceContextPtr->CurrentWriteMdl);
+
+        NT_ASSERTMSG(
+            "The TXD or TXW bit should be set if we're in the SENDING_SEQUENCE state",
+            (statusReg & (BCM_I2C_REG_STATUS_TXD | BCM_I2C_REG_STATUS_TXW)) != 0);
 
         for (;;) {
             const PMDL currentWriteMdl = sequenceContextPtr->CurrentWriteMdl;
@@ -990,15 +1143,20 @@ BOOLEAN HandleInterrupt ( WDFINTERRUPT WdfInterrupt )
         // Programming the read before TXW is asserted messes up the
         // controller's state machine.
         //
-        statusReg = READ_REGISTER_NOFENCE_ULONG(&registersPtr->Status);
-        if (!(statusReg & BCM_I2C_REG_STATUS_TXW)) {
-            BSC_LOG_TRACE("TXW is NOT asserted, meaining the FIFO is too full. Waiting for next interrupt.");
+        const ULONG tempStatusReg =
+                READ_REGISTER_NOFENCE_ULONG(&registersPtr->Status);
+
+        if ((tempStatusReg & BCM_I2C_REG_STATUS_TXW) == 0) {
+            BSC_LOG_TRACE(
+                "TXW is NOT asserted, meaining the FIFO is too full. Waiting for next interrupt. (tempStatusReg = 0x%x)",
+                tempStatusReg);
+
             return TRUE;
         }
 
         BSC_LOG_TRACE(
-            "TXW is asserted, programming the Read. (statusReg = 0x%lx)",
-            statusReg);
+            "TXW is asserted, programming the Read. (tempStatusReg = 0x%lx)",
+            tempStatusReg);
 
         WRITE_REGISTER_NOFENCE_ULONG(
             &registersPtr->DataLength,
@@ -1029,7 +1187,7 @@ BOOLEAN HandleInterrupt ( WDFINTERRUPT WdfInterrupt )
             sequenceContextPtr->CurrentWriteMdlOffset ==
             MmGetMdlByteCount(sequenceContextPtr->CurrentWriteMdl));
 
-        BSC_LOG_TRACE("Transitioning to ReceivingSequence state");
+        BSC_LOG_TRACE("Transitioning to RECEIVING_SEQUENCE state");
         NT_ASSERT(!sequenceContextPtr->CurrentWriteMdl->Next);
         sequenceContextPtr->CurrentWriteMdl = nullptr;
         interruptContextPtr->State = TRANSFER_STATE::RECEIVING_SEQUENCE;
@@ -1044,11 +1202,17 @@ BOOLEAN HandleInterrupt ( WDFINTERRUPT WdfInterrupt )
             !sequenceContextPtr->CurrentWriteMdl &&
             sequenceContextPtr->CurrentReadMdl);
 
+        NT_ASSERTMSG(
+            "The RXD bit should be set if we're in the RECEIVING_SEQUENCE state",
+            (statusReg & BCM_I2C_REG_STATUS_RXD) != 0);
+
+        ULONG tempStatusReg;
         do {
             ULONG bytesRead = ReadFifoMdl(
                 registersPtr,
                 sequenceContextPtr->CurrentReadMdl,
-                sequenceContextPtr->CurrentReadMdlOffset);
+                sequenceContextPtr->CurrentReadMdlOffset,
+                &tempStatusReg);
             sequenceContextPtr->BytesRead += bytesRead;
             sequenceContextPtr->CurrentReadMdlOffset += bytesRead;
 
@@ -1071,8 +1235,27 @@ BOOLEAN HandleInterrupt ( WDFINTERRUPT WdfInterrupt )
             sequenceContextPtr->CurrentReadMdlOffset = 0;
         } while (sequenceContextPtr->CurrentReadMdl);
 
-        BSC_LOG_TRACE("All bytes were received, waiting for DONE interrupt.");
+        BSC_LOG_TRACE(
+            "All bytes were received, going to RECEIVING_SEQUENCE_WAIT_FOR_DONE state. (tempStatusReg = 0x%x)",
+            tempStatusReg);
+
+        interruptContextPtr->State = TRANSFER_STATE::RECEIVING_SEQUENCE_WAIT_FOR_DONE;
         return TRUE;
+    }
+    case TRANSFER_STATE::SENDING_WAIT_FOR_DONE:
+    case TRANSFER_STATE::RECEIVING_WAIT_FOR_DONE:
+    case TRANSFER_STATE::RECEIVING_SEQUENCE_WAIT_FOR_DONE:
+    {
+        if ((statusReg & BCM_I2C_REG_STATUS_DONE) == 0) {
+            BSC_LOG_ERROR(
+                "DONE should be set if interrupt is received in *_WAIT_FOR_DONE state. Going to DPC anyway. (transferState = %lx, statusReg = 0x%x)",
+                transferState,
+                statusReg);
+
+            NT_ASSERT(!"Expecting DONE to be set");
+        }
+
+        break; // go to DPC
     }
     default:
         NT_ASSERT(!"Invalid TRANSFER_STATE");
@@ -1087,6 +1270,37 @@ BOOLEAN HandleInterrupt ( WDFINTERRUPT WdfInterrupt )
             BCM_I2C_REG_STATUS_DONE);
        return TRUE;
     }
+
+    BSC_LOG_TRACE(
+        "Going to DPC. (transferState = %lx, statusReg = 0x%lx, dataLength = %lu)",
+        transferState,
+        statusReg,
+        dataLength);
+
+    interruptContextPtr->CapturedStatus = statusReg;
+    interruptContextPtr->CapturedDataLength = dataLength;
+
+    // disable interrupts, preserving the READ flag.
+    ULONG controlReg = BCM_I2C_REG_CONTROL_I2CEN;
+    NT_ASSERT((transferState & TRANSFER_STATE::ERROR_FLAG) == 0);
+    switch (transferState) {
+    case TRANSFER_STATE::RECEIVING:
+    case TRANSFER_STATE::RECEIVING_SEQUENCE:
+    case TRANSFER_STATE::RECEIVING_WAIT_FOR_DONE:
+    case TRANSFER_STATE::RECEIVING_SEQUENCE_WAIT_FOR_DONE:
+        controlReg |= BCM_I2C_REG_CONTROL_READ;
+        break;
+    }
+
+    WRITE_REGISTER_NOFENCE_ULONG(&registersPtr->Control, controlReg);
+    WRITE_REGISTER_NOFENCE_ULONG(
+        &registersPtr->Status,
+        BCM_I2C_REG_STATUS_ERR |
+        BCM_I2C_REG_STATUS_CLKT |
+        BCM_I2C_REG_STATUS_DONE);
+
+    WdfInterruptQueueDpcForIsr(WdfInterrupt);
+    return TRUE;
 }
 
 _Use_decl_annotations_
@@ -1120,18 +1334,23 @@ NTSTATUS ProcessRequestCompletion (
 {
     BCM_I2C_ASSERT_MAX_IRQL(DISPATCH_LEVEL);
 
-    BCM_I2C_REGISTERS* registersPtr = InterruptContextPtr->RegistersPtr;
-    ULONG capturedStatus = InterruptContextPtr->CapturedStatus;
+    const ULONG capturedStatus = InterruptContextPtr->CapturedStatus;
+    const ULONG transferState =
+        InterruptContextPtr->State & ~(TRANSFER_STATE::ERROR_FLAG);
 
-    switch (InterruptContextPtr->State) {
+    switch (transferState) {
     case TRANSFER_STATE::SENDING: __fallthrough;
+    case TRANSFER_STATE::SENDING_WAIT_FOR_DONE: __fallthrough;
     case TRANSFER_STATE::SENDING_SEQUENCE:
     {
-        ULONG bytesToWrite =
-            (InterruptContextPtr->State == TRANSFER_STATE::SENDING) ?
-            (InterruptContextPtr->WriteContext.EndPtr -
-             InterruptContextPtr->WriteContext.WriteBufferPtr) :
-            InterruptContextPtr->SequenceContext.BytesToWrite;
+        ULONG bytesToWrite;
+        if (transferState == TRANSFER_STATE::SENDING_SEQUENCE) {
+            bytesToWrite = InterruptContextPtr->SequenceContext.BytesToWrite;
+        } else {
+            bytesToWrite =
+                InterruptContextPtr->WriteContext.EndPtr -
+                InterruptContextPtr->WriteContext.WriteBufferPtr;
+        }
 
         if (InterruptContextPtr->CapturedDataLength > bytesToWrite) {
             BSC_LOG_ERROR(
@@ -1187,9 +1406,10 @@ NTSTATUS ProcessRequestCompletion (
         return STATUS_INTERNAL_ERROR;
     }
     case TRANSFER_STATE::RECEIVING:
+    case TRANSFER_STATE::RECEIVING_WAIT_FOR_DONE:
     {
-        BCM_I2C_INTERRUPT_CONTEXT::READ_CONTEXT* readContextPtr =
-            &InterruptContextPtr->ReadContext;
+        const BCM_I2C_INTERRUPT_CONTEXT::READ_CONTEXT* readContextPtr =
+                &InterruptContextPtr->ReadContext;
 
         if (capturedStatus & BCM_I2C_REG_STATUS_CLKT) {
             BSC_LOG_ERROR("CLKT bit was set - clock stretch timeout occurred.");
@@ -1206,19 +1426,19 @@ NTSTATUS ProcessRequestCompletion (
             return STATUS_NO_SUCH_DEVICE;
         }
 
-        readContextPtr->CurrentReadBufferPtr += ReadFifo(
-            registersPtr,
-            readContextPtr->CurrentReadBufferPtr,
-            readContextPtr->EndPtr - readContextPtr->CurrentReadBufferPtr);
+        NT_ASSERTMSG(
+            "If none of the error bits were set, all bytes should have been received",
+            readContextPtr->CurrentReadBufferPtr == readContextPtr->EndPtr);
 
         *RequestInformationPtr = readContextPtr->CurrentReadBufferPtr -
             readContextPtr->ReadBufferPtr;
         return STATUS_SUCCESS;
     }
     case TRANSFER_STATE::RECEIVING_SEQUENCE:
+    case TRANSFER_STATE::RECEIVING_SEQUENCE_WAIT_FOR_DONE:
     {
-        BCM_I2C_INTERRUPT_CONTEXT::SEQUENCE_CONTEXT* sequenceContextPtr =
-            &InterruptContextPtr->SequenceContext;
+        const BCM_I2C_INTERRUPT_CONTEXT::SEQUENCE_CONTEXT* sequenceContextPtr =
+                &InterruptContextPtr->SequenceContext;
 
         NT_ASSERTMSG(
             "We should only reach the RECEIVING_SEQUENCE state if the entire write buffer was queued",
@@ -1248,7 +1468,7 @@ NTSTATUS ProcessRequestCompletion (
                 // necessarily clobberred when the read was queued.
                 // Report a partial transfer of 0 bytes.
                 //
-                BSC_LOG_ERROR("The write was NAK-ed before all bytes could be transmitted - partial transfer.");
+                BSC_LOG_ERROR("The write was NAKed before all bytes could be transmitted - partial transfer.");
                 *RequestInformationPtr = 0;
                 return STATUS_SUCCESS;
             } else {
@@ -1258,28 +1478,9 @@ NTSTATUS ProcessRequestCompletion (
             }
         }
 
-        while (sequenceContextPtr->CurrentReadMdl) {
-            ULONG bytesRead = ReadFifoMdl(
-                registersPtr,
-                sequenceContextPtr->CurrentReadMdl,
-                sequenceContextPtr->CurrentReadMdlOffset);
-            sequenceContextPtr->BytesRead += bytesRead;
-            sequenceContextPtr->CurrentReadMdlOffset += bytesRead;
-
-            // Only advance to next MDL if current MDL is exhausted.
-            // If the current MDL is not exhausted, it means there was a
-            // partial transfer.
-            if (sequenceContextPtr->CurrentReadMdlOffset !=
-                MmGetMdlByteCount(sequenceContextPtr->CurrentReadMdl)) {
-
-                break;
-            }
-
-            NT_ASSERT(bytesRead != 0);
-            sequenceContextPtr->CurrentReadMdl =
-                sequenceContextPtr->CurrentReadMdl->Next;
-            sequenceContextPtr->CurrentReadMdlOffset = 0;
-        }
+        NT_ASSERTMSG(
+            "If none of the error bits were set, all bytes should have been received",
+            sequenceContextPtr->BytesRead == sequenceContextPtr->BytesToRead);
 
         *RequestInformationPtr = sequenceContextPtr->BytesWritten +
             sequenceContextPtr->BytesRead;
@@ -1299,50 +1500,64 @@ VOID OnInterruptDpc (WDFINTERRUPT WdfInterrupt, WDFOBJECT /*WdfDevice*/)
     NTSTATUS status;
     BCM_I2C_INTERRUPT_CONTEXT* interruptContextPtr =
         GetInterruptContext(WdfInterrupt);
-    BCM_I2C_REGISTERS* registersPtr = interruptContextPtr->RegistersPtr;
 
     BSC_LOG_TRACE(
-        "DPC occurred. (InterruptContextPtr->State = %d)",
-        int(interruptContextPtr->State));
+        "DPC occurred. (InterruptContextPtr->State = %lx)",
+        interruptContextPtr->State);
 
     NT_ASSERTMSG(
         "Interrupts should be disabled when the DPC is invoked",
-        !(READ_REGISTER_NOFENCE_ULONG(&registersPtr->Control) &
+        (READ_REGISTER_NOFENCE_ULONG(
+            &interruptContextPtr->RegistersPtr->Control) &
          (BCM_I2C_REG_CONTROL_INTD |
           BCM_I2C_REG_CONTROL_INTT |
-          BCM_I2C_REG_CONTROL_INTR)));
+          BCM_I2C_REG_CONTROL_INTR)) == 0);
 
-    // The cancellation callback sets SpbRequest to NULL on cancellation
-    SPBREQUEST spbRequest = static_cast<SPBREQUEST>(InterlockedExchangePointer(
-        reinterpret_cast<PVOID *>(&interruptContextPtr->SpbRequest),
-        nullptr));
-
-    if (!spbRequest) {
-        BSC_LOG_INFORMATION("DPC invoked for cancelled request.");
-        return;
-    }
-
+    //
+    // Synchronize with cancellation routine which may also be trying to
+    // complete the request.
+    //
+    SPBREQUEST spbRequest;
     {
-        status = WdfRequestUnmarkCancelable(spbRequest);
-        switch (status) {
-        case STATUS_SUCCESS:
-            break;
-        case STATUS_CANCELLED:
-            BSC_LOG_INFORMATION(
-                "Cancellation was requested but we beat the cancellation routine to the request. Canceling the request. (spbRequest = %p)",
-                spbRequest);
-            SpbRequestComplete(spbRequest, STATUS_CANCELLED);
-            return;
-        case STATUS_INVALID_PARAMETER:
-        case STATUS_INVALID_DEVICE_REQUEST:
-        default:
-            BSC_LOG_ERROR(
-                "Failed to unmark request cancelable. (spbRequest = %p, status = %!STATUS!)",
-                spbRequest,
-                status);
-            SpbRequestComplete(spbRequest, STATUS_INTERNAL_ERROR);
+        KLOCK_QUEUE_HANDLE lockHandle;
+        KeAcquireInStackQueuedSpinLock(
+            &interruptContextPtr->CancelLock,
+            &lockHandle);
+
+        spbRequest = interruptContextPtr->SpbRequest;
+        if (spbRequest == WDF_NO_HANDLE) {
+            BSC_LOG_INFORMATION("DPC invoked for cancelled request.");
+            KeReleaseInStackQueuedSpinLock(&lockHandle);
             return;
         }
+
+        status = WdfRequestUnmarkCancelable(spbRequest);
+        if (!NT_SUCCESS(status)) {
+            BSC_LOG_ERROR(
+                "WdfRequestUnmarkCancelable(...) failed. (status = %!STATUS!, spbRequest = 0x%p)",
+                status,
+                spbRequest);
+
+            if (status == STATUS_CANCELLED) {
+                BSC_LOG_INFORMATION(
+                    "DPC was invoked for cancelled request. Letting cancellation routine handle request cancellation. (spbRequest = 0x%p)",
+                    spbRequest);
+
+                KeReleaseInStackQueuedSpinLock(&lockHandle);
+                return;
+            }
+
+            interruptContextPtr->SpbRequest = WDF_NO_HANDLE;
+            KeReleaseInStackQueuedSpinLock(&lockHandle);
+            SpbRequestComplete(spbRequest, status);
+            return;
+        }
+
+        //
+        // We successfully acquired ownership of the request
+        //
+        interruptContextPtr->SpbRequest = WDF_NO_HANDLE;
+        KeReleaseInStackQueuedSpinLock(&lockHandle);
     }
 
     ULONG information;
@@ -1352,9 +1567,7 @@ VOID OnInterruptDpc (WDFINTERRUPT WdfInterrupt, WDFOBJECT /*WdfDevice*/)
     // Always clear hardware FIFOs before completing request to aid in bus
     // error recovery and to prevent data leakage.
     //
-    WRITE_REGISTER_NOFENCE_ULONG(
-        &registersPtr->Control,
-        BCM_I2C_REG_CONTROL_I2CEN | BCM_I2C_REG_CONTROL_CLEAR);
+    ResetHardwareAndRequestContext(interruptContextPtr);
 
     BSC_LOG_INFORMATION(
         "Completing request. (spbRequest = %p, information = %lu, status = %!STATUS!)",
