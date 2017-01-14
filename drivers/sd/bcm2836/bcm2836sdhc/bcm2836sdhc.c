@@ -445,18 +445,18 @@ SdhcSlotInitialize (
     SdhcExtension->OutstandingRequest = NULL;
 
     //
-    // Disable the interrupt signals from controller to OS,
-    // but unmask all.
-    // Means we only using SDHC_INTERRUPT_ERROR_SIGNAL_ENABLE to
-    // control interrupts. This enables/disables interrupts and keeps 
-    // the status.
+    // Enable all interrupt signals from controller to the OS,
+    // but mask all.
+    // Means we are only using SDHC_INTERRUPT_ERROR_STATUS_ENABLE to
+    // control interrupts, this way disabled events do not get reflected
+    // in the status register.
     //
 
     SdhcWriteRegisterUlong(SdhcExtension,
-                           SDHC_INTERRUPT_ERROR_SIGNAL_ENABLE,
+                           SDHC_INTERRUPT_ERROR_STATUS_ENABLE,
                            0);
     SdhcWriteRegisterUlong(SdhcExtension,
-                           SDHC_INTERRUPT_ERROR_STATUS_ENABLE,
+                           SDHC_INTERRUPT_ERROR_SIGNAL_ENABLE,
                            SDHC_ALL_EVENTS);
 
     return STATUS_SUCCESS;
@@ -573,7 +573,8 @@ SdhcSlotGetCardDetectState (
     PVOID PrivateExtension
     )
 {
-    PSDHC_EXTENSION SdhcExtension = (PSDHC_EXTENSION)PrivateExtension;
+    const SDHC_EXTENSION* SdhcExtension = 
+        (const SDHC_EXTENSION*)PrivateExtension;
 
     return SdhcIsCardInserted(SdhcExtension);
 } // SdhcSlotGetCardDetectState (...)
@@ -601,7 +602,8 @@ SdhcSlotGetWriteProtectState (
     PVOID PrivateExtension
     )
 {
-    PSDHC_EXTENSION SdhcExtension = (PSDHC_EXTENSION)PrivateExtension;
+    const SDHC_EXTENSION* SdhcExtension = 
+        (const SDHC_EXTENSION*)PrivateExtension;
 
     return SdhcIsWriteProtected(SdhcExtension);
 } // SdhcSlotGetWriteProtectState (...)
@@ -1127,18 +1129,18 @@ SdhcResetHost (
                             SDHC_TC_MAX_DATA_TIMEOUT);
 
     //
-    // Disable the interrupt signals from controller to OS,
-    // but unmask all.
-    // Means we only using SDHC_INTERRUPT_ERROR_SIGNAL_ENABLE to
-    // control interrupts. This enables/disables interrupts and keeps 
-    // the status.
+    // Enable all interrupt signals from controller to the OS,
+    // but mask all.
+    // Means we are only using SDHC_INTERRUPT_ERROR_STATUS_ENABLE to
+    // control interrupts, this way disabled events do not get reflected
+    // in the status register.
     //
 
     SdhcWriteRegisterUlong(SdhcExtension,
-                           SDHC_INTERRUPT_ERROR_SIGNAL_ENABLE,
+                           SDHC_INTERRUPT_ERROR_STATUS_ENABLE,
                            0);
     SdhcWriteRegisterUlong(SdhcExtension,
-                           SDHC_INTERRUPT_ERROR_STATUS_ENABLE,
+                           SDHC_INTERRUPT_ERROR_SIGNAL_ENABLE,
                            SDHC_ALL_EVENTS);
 
     TraceMessage(TRACE_LEVEL_INFORMATION,
@@ -1260,7 +1262,7 @@ Return value:
 _Use_decl_annotations_
 NTSTATUS
 SdhcSetVoltage (
-    PSDHC_EXTENSION SdhcExtension,
+    const SDHC_EXTENSION* SdhcExtension,
     SDPORT_BUS_VOLTAGE Voltage
     )
 {
@@ -1516,7 +1518,7 @@ Return value:
 _Use_decl_annotations_
 NTSTATUS
 SdhcSetSignaling (
-    PSDHC_EXTENSION SdhcExtension,
+    const SDHC_EXTENSION* SdhcExtension,
     SDPORT_SIGNALING_VOLTAGE SignalingVoltage
     )
 {
@@ -1614,7 +1616,7 @@ Return value:
 _Use_decl_annotations_
 VOID
 SdhcSetLed (
-    PSDHC_EXTENSION SdhcExtension,
+    const SDHC_EXTENSION* SdhcExtension,
     BOOLEAN Enable
     )
 {
@@ -1647,7 +1649,7 @@ Return value:
 _Use_decl_annotations_
 NTSTATUS
 SdhcSetPresetValue (
-    PSDHC_EXTENSION SdhcExtension,
+    const SDHC_EXTENSION* SdhcExtension,
     BOOLEAN Enable
     )
 {
@@ -1737,21 +1739,21 @@ SdhcEnableInterrupt (
     )
 {
     ULONG InterruptEnable = SdhcReadRegisterUlong(SdhcExtension,
-                                                  SDHC_INTERRUPT_ERROR_SIGNAL_ENABLE);
+                                                  SDHC_INTERRUPT_ERROR_STATUS_ENABLE);
 
     //
     // The upper half of the register controls the error interrupts.
-    // Enable all of them.
+    // Unmask all of them.
     //
     InterruptEnable |= NormalInterruptMask;
     InterruptEnable |= 0xFFFF0000;
 
     //
-    // Enable the interrupt signals from controller to OS.
+    // Unmask the interrupt signals from controller to OS.
     //
     if (!SdhcExtension->CrashdumpMode) {
         SdhcWriteRegisterUlong(SdhcExtension,
-                               SDHC_INTERRUPT_ERROR_SIGNAL_ENABLE,
+                               SDHC_INTERRUPT_ERROR_STATUS_ENABLE,
                                InterruptEnable);
     }
 
@@ -1786,20 +1788,20 @@ SdhcDisableInterrupt (
     )
 {
     ULONG InterruptDisable = SdhcReadRegisterUlong(SdhcExtension,
-                                                   SDHC_INTERRUPT_ERROR_SIGNAL_ENABLE);
+                                                   SDHC_INTERRUPT_ERROR_STATUS_ENABLE);
 
     //
     // The upper half of the register controls the error interrupts.
-    // Disable all of them.
+    // Mask all of them.
     //
     InterruptDisable &= ~NormalInterruptMask;
     InterruptDisable &= 0x0000FFFF;
 
     //
-    // Disable the interrupt signals from controller to OS.
+    // Mask the interrupt signals from controller to OS.
     //
     SdhcWriteRegisterUlong(SdhcExtension,
-                           SDHC_INTERRUPT_ERROR_SIGNAL_ENABLE,
+                           SDHC_INTERRUPT_ERROR_STATUS_ENABLE,
                            InterruptDisable);
 
     TraceMessage(TRACE_LEVEL_INFORMATION,
@@ -1991,7 +1993,7 @@ Return value:
 _Use_decl_annotations_
 BOOLEAN
 SdhcIsCardInserted (
-    PSDHC_EXTENSION SdhcExtension
+    const SDHC_EXTENSION* SdhcExtension
     )
 {
     UNREFERENCED_PARAMETER(SdhcExtension);
@@ -2022,7 +2024,7 @@ Return value:
 _Use_decl_annotations_
 BOOLEAN
 SdhcIsWriteProtected (
-    PSDHC_EXTENSION SdhcExtension
+    const SDHC_EXTENSION* SdhcExtension
     )
 {
     UNREFERENCED_PARAMETER(SdhcExtension);
@@ -2711,8 +2713,8 @@ Return value:
 _Use_decl_annotations_
 NTSTATUS
 SdhcBuildAdmaTransfer (
-    PSDHC_EXTENSION SdhcExtension,
-    PSDPORT_REQUEST Request,
+    const SDHC_EXTENSION* SdhcExtension,
+    const SDPORT_REQUEST* Request,
     PUSHORT TransferMode
     )
 {
@@ -2835,7 +2837,7 @@ _Use_decl_annotations_
 BOOLEAN
 SdhcStartNonBlockSizeAlignedRequest (
     PSDHC_EXTENSION SdhcExtension,
-    PSDPORT_REQUEST Request
+    const SDPORT_REQUEST* Request
     )
 {
     //
@@ -2906,7 +2908,7 @@ _Use_decl_annotations_
 NTSTATUS
 SdhcCompleteNonBlockSizeAlignedRequest (
     PSDHC_EXTENSION SdhcExtension,
-    PSDPORT_REQUEST Request,
+    const SDPORT_REQUEST* Request,
     NTSTATUS CompletionStatus
     )
 {
@@ -2952,7 +2954,7 @@ _Use_decl_annotations_
 NTSTATUS
 SdhcNonBlockSizeAlignedRequestSM (
     PSDHC_EXTENSION SdhcExtension,
-    PSDPORT_REQUEST Request
+    const SDPORT_REQUEST* Request
     )
 {
     PSDPORT_REQUEST InternalRequest = &SdhcExtension->UnalignedRequest;
@@ -3052,7 +3054,7 @@ _Use_decl_annotations_
 VOID
 SdhcPrepareInternalRequest (
     PSDHC_EXTENSION SdhcExtension,
-    PSDPORT_REQUEST Request
+    const SDPORT_REQUEST* Request
     )
 {
     USHORT BlockSize = Request->Command.BlockSize;
@@ -3123,7 +3125,7 @@ Return value:
 _Use_decl_annotations_
 NTSTATUS
 SdhcStartAdmaTransfer (
-    PSDHC_EXTENSION SdhcExtension,
+    const SDHC_EXTENSION* SdhcExtension,
     PSDPORT_REQUEST Request
     )
 {
@@ -3231,47 +3233,6 @@ SdhcCalcClockFrequency (
 
     return ClockControl;
 } // SdhcCalcClockFrequency (...)
-
-/*++
-
-Routine Description:
-
-    This routine creates a ADMA descriptor table based on scatter gather list
-    given by Sglist.
-
-Arguments:
-
-    Socket - Supplies the pointer to the socket
-
-    Request - Data transfer request for which to build the descriptor table.
-
-    TotalTransferLength - Supplies the pointer to return the total transfer
-                          length of the descriptor table
-
-Return value:
-
-    Whether the table was successfully created.
-
---*/
-_Use_decl_annotations_
-NTSTATUS
-SdhcCreateAdmaDescriptorTable (
-    PSDPORT_REQUEST Request,
-    BOOLEAN Use64BitDescriptor,
-    PULONG TotalTransferLength
-    )
-{
-
-    //
-    // The miniport does not support DMA transfers.
-    //
-
-    UNREFERENCED_PARAMETER(Request);
-    UNREFERENCED_PARAMETER(Use64BitDescriptor);
-    UNREFERENCED_PARAMETER(TotalTransferLength);
-
-    return STATUS_NOT_IMPLEMENTED;
-} // SdhcCreateAdmaDescriptorTable (...)
 
 /*++
 
@@ -3393,7 +3354,7 @@ Return value:
 _Use_decl_annotations_
 UCHAR
 SdhcGetResponseLength (
-    PSDPORT_COMMAND Command
+    const SDPORT_COMMAND* Command
     )
 {
     UCHAR Length;
@@ -3452,8 +3413,8 @@ SdhcCompleteRequest(
     NTSTATUS Status
     )
 {
-    PSDPORT_REQUEST CurRequest;
-    PSDPORT_COMMAND Command = &Request->Command;
+    const SDPORT_REQUEST* CurRequest;
+	const SDPORT_COMMAND* Command = &Request->Command;
     BOOLEAN IsCommandCompleted = TRUE;
 
     if (Request == &SdhcExtension->UnalignedRequest) {
@@ -3471,7 +3432,7 @@ SdhcCompleteRequest(
     } // if
 
     if (IsCommandCompleted) {
-        CurRequest = (PSDPORT_REQUEST)
+        CurRequest = (const SDPORT_REQUEST*)
             InterlockedExchangePointer(&SdhcExtension->OutstandingRequest,
                                        NULL);
         if (CurRequest != Request) {
