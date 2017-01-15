@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 14
-VisualStudioVersion = 14.0.25123.0
+VisualStudioVersion = 14.0.25420.1
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "bcmgpio", "..\..\drivers\gpio\bcm2836\bcmgpio.vcxproj", "{381A9C49-78D7-4B6F-98CD-5084F70B1207}"
 EndProject
@@ -33,6 +33,10 @@ EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "bcmauxspi", "..\..\drivers\spi\bcmauxspi\bcmauxspi.vcxproj", "{74219FC7-92D3-4477-A729-A5CEB965B338}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "vchiq", "..\..\drivers\misc\vchiq\vchiq.vcxproj", "{7FED7DE7-D8AE-448B-A7D9-ED99DCDB1F79}"
+	ProjectSection(ProjectDependencies) = postProject
+		{2DF1927E-BBD9-40FD-9658-88C9FB1C9340} = {2DF1927E-BBD9-40FD-9658-88C9FB1C9340}
+		{9DB72B9A-642B-4B27-A118-91DEEBF5A073} = {9DB72B9A-642B-4B27-A118-91DEEBF5A073}
+	EndProjectSection
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "vcos_win32_kern_generic", "..\..\drivers\misc\userland\interface\vcos\generic\vcos_win32_kern_generic.vcxproj", "{824BAE1C-53BC-4137-A07F-AF6582316A7C}"
 EndProject
