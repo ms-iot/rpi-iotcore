@@ -37,28 +37,6 @@ AUXSPI_NONPAGED_SEGMENT_BEGIN; //==============================================
 
 ULONG AUXSPI_DRIVER::systemClockFrequency;
 
-//
-// Placement new operator
-//
-
-_Use_decl_annotations_
-void* operator new ( size_t, void* Ptr ) throw ()
-{
-    return Ptr;
-} // operator new ( size_t, void* )
-
-void operator delete ( void*, void* ) throw ()
-{} // void operator delete ( void*, void* )
-
-_Use_decl_annotations_
-void* operator new[] ( size_t, void* Ptr ) throw ()
-{
-    return Ptr;
-} // operator new[] ( size_t, void* )
-
-void operator delete[] ( void*, void* ) throw ()
-{} // void operator delete[] ( void*, void* )
-
 _Use_decl_annotations_
 BOOLEAN AUXSPI_DEVICE::EvtInterruptIsr (
     WDFINTERRUPT WdfInterrupt,
@@ -1159,7 +1137,6 @@ size_t AUXSPI_DEVICE::writeFifo (
     }
 }
 
-_Use_decl_annotations_
 size_t AUXSPI_DEVICE::writeFifoMdl (
     volatile BCM_AUXSPI_REGISTERS* RegistersPtr,
     PMDL* MdlPtr,
@@ -1367,12 +1344,8 @@ size_t AUXSPI_DEVICE::_FIFO_VARIABLE_3::Write (
         // Output Sequence: 0x00123456 0x00abcd00
         BCM_AUXSPI_IO_REG dataReg = {0};
         dataReg.Width = 24;
-
-        const size_t index = i * 3;
-        _Analysis_assume_((index + 2) < Length);
-
-        dataReg.Data = (WriteBufferPtr[index] << 16) |
-            (WriteBufferPtr[index + 1] << 8) | WriteBufferPtr[index + 2];
+        dataReg.Data = (WriteBufferPtr[i * 3] << 16) |
+            (WriteBufferPtr[i * 3 + 1] << 8) | WriteBufferPtr[i * 3 + 2];
 
         WRITE_REGISTER_NOFENCE_ULONG(&RegistersPtr->TxHoldReg, dataReg.AsUlong);
     }
@@ -1417,13 +1390,9 @@ void AUXSPI_DEVICE::_FIFO_VARIABLE_3::Extract (
         // Input sequence: 0x00123456 0x0000abcd
         // Output sequence: 12 34 56 ab cd
         ULONG data = FifoBuffer[i];
-
-        const size_t index = i * 3;
-        _Analysis_assume_((index + 2) < Length);
-
-        ReadBufferPtr[index] = static_cast<BYTE>(data >> 16);
-        ReadBufferPtr[index + 1] = static_cast<BYTE>(data >> 8);
-        ReadBufferPtr[index + 2] = static_cast<BYTE>(data);
+        ReadBufferPtr[i * 3] = static_cast<BYTE>(data >> 16);
+        ReadBufferPtr[i * 3 + 1] = static_cast<BYTE>(data >> 8);
+        ReadBufferPtr[i * 3 + 2] = static_cast<BYTE>(data);
     }
 
     // handle last 1 or 2 bytes
@@ -1455,13 +1424,9 @@ size_t AUXSPI_DEVICE::_FIFO_FIXED_3_SHIFTED::Write (
     for (size_t i = 0; i < (bytesToQueue / 3); ++i) {
         // Input sequence: ab cd ef 12 34 56 ...
         // Output sequence: (0xabcdef00 >> 1), (0x12345600 >> 1) ...
-
-        const size_t index = i * 3;
-        _Analysis_assume_((index + 2) < Length);
-
-        ULONG data = (WriteBufferPtr[index] << 23) |
-                     (WriteBufferPtr[index + 1] << 15) |
-                     (WriteBufferPtr[index + 2] << 7);
+        ULONG data = (WriteBufferPtr[i * 3] << 23) |
+                     (WriteBufferPtr[i * 3 + 1] << 15) |
+                     (WriteBufferPtr[i * 3 + 2] << 7);
 
         WRITE_REGISTER_NOFENCE_ULONG(&RegistersPtr->TxHoldReg, data);
     }
@@ -1482,13 +1447,9 @@ void AUXSPI_DEVICE::_FIFO_FIXED_3_SHIFTED::Extract (
         // Input Sequence: 0x00123456 0x00abcdef
         // Output Sequence: 12 34 56 ab cd ef
         ULONG data = FifoBuffer[i];
-
-        const size_t index = i * 3;
-        _Analysis_assume_((index + 2) < Length);
-
-        ReadBufferPtr[index] = static_cast<BYTE>(data >> 16);
-        ReadBufferPtr[index + 1] = static_cast<BYTE>(data >> 8);
-        ReadBufferPtr[index + 2] = static_cast<BYTE>(data);
+        ReadBufferPtr[i * 3] = static_cast<BYTE>(data >> 16);
+        ReadBufferPtr[i * 3 + 1] = static_cast<BYTE>(data >> 8);
+        ReadBufferPtr[i * 3 + 2] = static_cast<BYTE>(data);
     }
 }
 
@@ -1510,12 +1471,8 @@ size_t AUXSPI_DEVICE::_FIFO_VARIABLE_2_SHIFTED::Write (
     for (size_t i = 0; i < (bytesToQueue / 2); ++i) {
         BCM_AUXSPI_IO_REG dataReg = {0};
         dataReg.Width = 16;
-
-        const size_t index = i * 2;
-        _Analysis_assume_((index + 1) < Length);
-
-        dataReg.Data = (WriteBufferPtr[index] << 15) |
-                       (WriteBufferPtr[index + 1] << 7);
+        dataReg.Data = (WriteBufferPtr[i * 2] << 15) |
+                       (WriteBufferPtr[i * 2 + 1] << 7);
         WRITE_REGISTER_NOFENCE_ULONG(&RegistersPtr->TxHoldReg, dataReg.AsUlong);
     }
 
@@ -1544,12 +1501,8 @@ void AUXSPI_DEVICE::_FIFO_VARIABLE_2_SHIFTED::Extract (
     // Output Sequence: 12 34 56 ab cd
     for (size_t i = 0; i < (Length / 2); ++i) {
         ULONG data = FifoBuffer[i];
-
-        const size_t index = i * 2;
-        _Analysis_assume_((index + 1) < Length);
-
-        ReadBufferPtr[index] = static_cast<BYTE>(data >> 8);
-        ReadBufferPtr[index + 1] = static_cast<BYTE>(data);
+        ReadBufferPtr[i * 2] = static_cast<BYTE>(data >> 8);
+        ReadBufferPtr[i * 2 + 1] = static_cast<BYTE>(data);
     }
 
     // Handle last byte

@@ -1,21 +1,14 @@
-/*++
-
-Copyright (c) Microsoft Corporation
-
-Module Name:
-
-    read.c
-
-Abstract:
-
-    This module contains the code that is very specific to read
-    operations in the serial driver
-
-Environment:
-
-    Kernel mode
-
---*/
+// Copyright (c) Microsoft Corporation.  All rights reserved.
+//
+// Module Name:
+//
+//    read.c
+//
+// Abstract:
+//
+//    This module contains the code that is very specific to read
+//    operations in the serial driver
+//
 
 #include "precomp.h"
 #include "read.tmh"
@@ -28,29 +21,13 @@ EVT_WDF_INTERRUPT_SYNCHRONIZE SerialUpdateInterruptBuffer;
 EVT_WDF_INTERRUPT_SYNCHRONIZE SerialUpdateAndSwitchToUser;
 EVT_WDF_INTERRUPT_SYNCHRONIZE SerialUpdateAndSwitchToNew;
 
-ULONG
-SerialGetCharsFromIntBuffer(
-    PSERIAL_DEVICE_EXTENSION Extension
-    );
+ULONG SerialGetCharsFromIntBuffer(_In_ PSERIAL_DEVICE_EXTENSION Extension);
 
+NTSTATUS SerialResizeBuffer(_In_ PSERIAL_DEVICE_EXTENSION Extension);
 
-NTSTATUS
-SerialResizeBuffer(
-    IN PSERIAL_DEVICE_EXTENSION Extension
-    );
-
-ULONG
-SerialMoveToNewIntBuffer(
-    PSERIAL_DEVICE_EXTENSION Extension,
-    PUCHAR NewBuffer
-    );
-
-VOID
-SerialEvtIoRead(
-    IN WDFQUEUE         Queue,
-    IN WDFREQUEST       Request,
-    IN size_t            Length
-    )
+ULONG SerialMoveToNewIntBuffer(
+    _In_ PSERIAL_DEVICE_EXTENSION Extension,
+    _Inout_ PUCHAR NewBuffer);
 
 /*++
 
@@ -71,12 +48,16 @@ Arguments:
                  a zero length request.
 
 Return Value:
-
-
+    none
 --*/
-
+_Use_decl_annotations_
+VOID
+SerialEvtIoRead(
+    WDFQUEUE Queue,
+    WDFREQUEST Request,
+    size_t Length
+    )
 {
-
     PSERIAL_DEVICE_EXTENSION extension;
     NTSTATUS status;
     WDFDEVICE hDevice;
@@ -88,59 +69,58 @@ Return Value:
     extension = SerialGetDeviceExtension(hDevice);
 
     TraceEvents(TRACE_LEVEL_INFORMATION, DBG_READ,
-                    "++SerialEvtIoRead(%p, 0x%I64x)\n", Request, Length);
+                    "++SerialEvtIoRead(%p, 0x%I64x)\r\n",
+                    Request, Length);
 
     if (SerialCompleteIfError(extension, Request) != STATUS_SUCCESS) {
 
-       TraceEvents(TRACE_LEVEL_INFORMATION, DBG_READ, "<SerialEvtIoRead (2) %d\n", STATUS_CANCELLED);
+       TraceEvents(TRACE_LEVEL_INFORMATION, DBG_READ,
+                    "--SerialEvtIoRead (2) %Xh\r\n",
+                    (ULONG)STATUS_CANCELLED);
        return;
-
     }
 
     WDF_REQUEST_PARAMETERS_INIT(&params);
 
-    WdfRequestGetParameters(
-             Request,
-             &params
-             );
+    WdfRequestGetParameters(Request,
+                            &params);
 
-    //
     // Initialize the scratch area of the request.
-    //
+
     reqContext = SerialGetRequestContext(Request);
     reqContext->MajorFunction = params.Type;
-    reqContext->Length  = (ULONG) Length;
+    reqContext->Length = (ULONG) Length;
 
-    status = WdfRequestRetrieveOutputBuffer (Request, Length, &reqContext->SystemBuffer, &bufLen);
+    status = WdfRequestRetrieveOutputBuffer(Request,
+                                            Length,
+                                            &reqContext->SystemBuffer,
+                                            &bufLen);
 
     if (!NT_SUCCESS (status)) {
 
         SerialCompleteRequest(Request , status, 0);
-        TraceEvents(TRACE_LEVEL_ERROR, DBG_READ, "<SerialEvtIoRead (5) %X\n", status);
+
+        TraceEvents(TRACE_LEVEL_ERROR, DBG_READ,
+                    "--SerialEvtIoRead (5) %Xh\r\n",
+                    status);
         return;
     }
 
     ASSERT(bufLen == reqContext->Length);
 
-    //
-    // Well it looks like we actually have to do some
+    // It looks like we actually have to do some
     // work.  Put the read on the queue so that we can
     // process it when our previous reads are done.
-    //
-    SerialStartOrQueue(extension, Request, extension->ReadQueue,
-                                   &extension->CurrentReadRequest, SerialStartRead);
 
+    SerialStartOrQueue(extension,
+                        Request,
+                        extension->ReadQueue,
+                        &extension->CurrentReadRequest,
+                        SerialStartRead);
 
-    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_READ, "--SerialEvtIoRead (3) %X\n", status);
-
+    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_READ, "--SerialEvtIoRead()\r\n");
     return;
-
 }
-
-VOID
-SerialStartRead(
-    IN PSERIAL_DEVICE_EXTENSION Extension
-    )
 
 /*++
 
@@ -166,9 +146,12 @@ Return Value:
     application won't have to do a wait.
 
 --*/
-
+_Use_decl_annotations_
+VOID
+SerialStartRead(
+    PSERIAL_DEVICE_EXTENSION Extension
+    )
 {
-
     SERIAL_UPDATE_CHAR updateChar;
 
     WDFREQUEST newRequest;
@@ -180,7 +163,7 @@ Return Value:
     BOOLEAN useIntervalTimer;
 
     ULONG multiplierVal = 0;
-    ULONG constantVal   = 0;
+    ULONG constantVal = 0;
 
     LARGE_INTEGER totalTime = {0};
 
@@ -189,19 +172,17 @@ Return Value:
     PREQUEST_CONTEXT reqContext;
 
     TraceEvents(TRACE_LEVEL_INFORMATION, DBG_READ,
-                     "++SerialStartRead(%p)\n", Extension);
+                     "++SerialStartRead(%p)\r\n",
+                     Extension);
 
     updateChar.Extension = Extension;
-
 
     do {
 
         reqContext = SerialGetRequestContext(Extension->CurrentReadRequest);
 
-        //
         // Check to see if this is a resize request.  If it is
         // then go to a routine that specializes in that.
-        //
 
         if (reqContext->MajorFunction != IRP_MJ_READ) {
 
@@ -213,11 +194,9 @@ Return Value:
 
             Extension->NumberNeededForRead = reqContext->Length;
 
-            //
             // Calculate the timeout value needed for the
             // request.  Note that the values stored in the
             // timeout record are in milliseconds.
-            //
 
             useTotalTimer = FALSE;
             returnWithWhatsPresent = FALSE;
@@ -225,36 +204,24 @@ Return Value:
             crunchDownToOne = FALSE;
             useIntervalTimer = FALSE;
 
-            //
-            //
-            // CIMEXCIMEX -- this is a lie
-            //
             // Always initialize the timer objects so that the
             // completion code can tell when it attempts to
             // cancel the timers whether the timers had ever
             // been Set.
             //
-            // CIMEXCIMEX -- this is the truth
-            //
             // What we want to do is just make sure the timers are
             // cancelled to the best of our ability and move on with
             // life.
-            //
 
             SerialCancelTimer(Extension->ReadRequestTotalTimer, Extension);
             SerialCancelTimer(Extension->ReadRequestIntervalTimer, Extension);
 
-            //
             // We get the *current* timeout values to use for timing
             // this read.
-            //
 
+            timeoutsForIrp = Extension->timeouts;
 
-            timeoutsForIrp = Extension->Timeouts;
-
-            //
             // Calculate the interval timeout for the read.
-            //
 
             if (timeoutsForIrp.ReadIntervalTimeout &&
                 (timeoutsForIrp.ReadIntervalTimeout !=
@@ -263,10 +230,8 @@ Return Value:
                 useIntervalTimer = TRUE;
 
                 Extension->IntervalTime.QuadPart =
-                    UInt32x32To64(
-                        timeoutsForIrp.ReadIntervalTimeout,
-                        10000
-                        );
+                    UInt32x32To64(timeoutsForIrp.ReadIntervalTimeout,
+                                10000);
 
 
                 if (Extension->IntervalTime.QuadPart >=
@@ -286,7 +251,6 @@ Return Value:
 
             if (timeoutsForIrp.ReadIntervalTimeout == MAXULONG) {
 
-                //
                 // We need to do special return quickly stuff here.
                 //
                 // 1) If both constant and multiplier are
@@ -301,7 +265,6 @@ Return Value:
                 // 3) If multiplier is MAXULONG then do as in
                 //    "2" but return when the first character
                 //    arrives.
-                //
 
                 if (!timeoutsForIrp.ReadTotalTimeoutConstant &&
                     !timeoutsForIrp.ReadTotalTimeoutMultiplier) {
@@ -333,17 +296,13 @@ Return Value:
 
             } else {
 
-                //
                 // If both the multiplier and the constant are
                 // zero then don't do any total timeout processing.
-                //
 
                 if (timeoutsForIrp.ReadTotalTimeoutMultiplier ||
                     timeoutsForIrp.ReadTotalTimeoutConstant) {
 
-                    //
                     // We have some timer values to calculate.
-                    //
 
                     useTotalTimer = TRUE;
                     multiplierVal = timeoutsForIrp.ReadTotalTimeoutMultiplier;
@@ -356,58 +315,44 @@ Return Value:
             if (useTotalTimer) {
 
                 totalTime.QuadPart = ((LONGLONG)(UInt32x32To64(
-                                          Extension->NumberNeededForRead,
-                                          multiplierVal
-                                          )
-                                          + constantVal))
-                                      * -10000;
-
+                        Extension->NumberNeededForRead,
+                        multiplierVal)
+                        + constantVal))
+                        * -10000;
             }
 
-
-            //
             // We do this copy in the hope of getting most (if not
             // all) of the characters out of the interrupt buffer.
             //
             // Note that we need to protect this operation with a
             // spinlock since we don't want a purge to hose us.
-            //
 
             updateChar.CharsCopied = SerialGetCharsFromIntBuffer(Extension);
 
-            //
             // See if we have any cause to return immediately.
-            //
 
             if (returnWithWhatsPresent || (!Extension->NumberNeededForRead) ||
                 (os2ssreturn &&
                  reqContext->Information)) {
 
-                //
                 // We got all we needed for this read.
                 // Update the number of characters in the
                 // interrupt read buffer.
-                //
 
-                WdfInterruptSynchronize(
-                    Extension->WdfInterrupt,
-                    SerialUpdateInterruptBuffer,
-                    &updateChar
-                    );
+                WdfInterruptSynchronize(Extension->WdfInterrupt,
+                                        SerialUpdateInterruptBuffer,
+                                        &updateChar);
 
                 reqContext->Status =  STATUS_SUCCESS;
 
             } else {
 
-                //
                 // The request might go under control of the isr.  It
                 // won't hurt to initialize the reference count
                 // right now.
-                //
 
                 SERIAL_INIT_REFERENCE(reqContext);
 
-                //
                 // If we are supposed to crunch the read down to
                 // one character, then update the read length
                 // in the request and truncate the number needed for
@@ -416,40 +361,31 @@ Return Value:
                 // zero (or we would have completed above) and
                 // the number needed for the read must still be
                 // equal to the read length.
-                //
 
                 if (crunchDownToOne) {
 
-                    ASSERT(
-                        (!reqContext->Information)
+                    ASSERT((!reqContext->Information)
                         &&
-                        (Extension->NumberNeededForRead == reqContext->Length)
-                        );
+                        (Extension->NumberNeededForRead == reqContext->Length));
 
                     Extension->NumberNeededForRead = 1;
                     reqContext->Length = 1;
-
                 }
 
-                //
                 // We still need to get more characters for this read.
                 // synchronize with the isr so that we can update the
                 // number of characters and if necessary it will have the
                 // isr switch to copying into the users buffer.
-                //
 
-                WdfInterruptSynchronize(
-                    Extension->WdfInterrupt,
-                    SerialUpdateAndSwitchToUser,
-                    &updateChar
-                    );
+                WdfInterruptSynchronize(Extension->WdfInterrupt,
+                                        SerialUpdateAndSwitchToUser,
+                                        &updateChar);
 
                 if (!updateChar.Completed) {
 
                      SerialSetCancelRoutine(Extension->CurrentReadRequest,
                                                      SerialCancelCurrentRead);
 
-                    //
                     // The request still isn't complete.  The
                     // completion routines will end up reinvoking
                     // this routine.  So we simply leave.
@@ -461,21 +397,16 @@ Return Value:
                     // the io has been satisfied by the isr it can't
                     // complete yet because we still own the cancel
                     // spinlock.
-                    //
 
                     if (useTotalTimer) {
                         BOOLEAN result;
 
-                        result = SerialSetTimer(
-                            Extension->ReadRequestTotalTimer,
-                            totalTime
-                            );
+                        result = SerialSetTimer(Extension->ReadRequestTotalTimer,
+                                                totalTime);
 
                         if(result == FALSE) {
-                            SERIAL_SET_REFERENCE(
-                                reqContext,
-                                SERIAL_REF_TOTAL_TIMER
-                                );
+                            SERIAL_SET_REFERENCE(reqContext,
+                                                SERIAL_REF_TOTAL_TIMER);
                         }
 
                     }
@@ -484,20 +415,14 @@ Return Value:
 
                         BOOLEAN result;
 
-                        KeQuerySystemTime(
-                            &Extension->LastReadTime
+                        KeQuerySystemTime(&Extension->LastReadTime);
 
-                            );
-                        result = SerialSetTimer(
-                            Extension->ReadRequestIntervalTimer,
-                            *Extension->IntervalTimeToUse
-                            );
+                        result = SerialSetTimer(Extension->ReadRequestIntervalTimer,
+                                                *Extension->IntervalTimeToUse);
 
                         if(result == FALSE) {
-                            SERIAL_SET_REFERENCE(
-                                reqContext,
-                                SERIAL_REF_INT_TIMER
-                                );
+                            SERIAL_SET_REFERENCE(reqContext,
+                                                SERIAL_REF_INT_TIMER);
                         }
 
                     }
@@ -513,27 +438,20 @@ Return Value:
 
         }
 
-        //
-        // Well the operation is complete.
-        //
+        // The operation is complete.
 
         SerialGetNextRequest(&Extension->CurrentReadRequest,
                              Extension->ReadQueue,
-                             &newRequest, TRUE, Extension);
+                             &newRequest,
+                             TRUE,
+                             Extension);
 
     } while (newRequest);
 
-    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_READ,  "--SerialStartRead \n");
+    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_READ,  "--SerialStartRead\r\n");
 
     return;
-
 }
-
-
-VOID
-SerialCompleteRead(
-    IN WDFDPC Dpc
-    )
 
 /*++
 
@@ -548,55 +466,48 @@ Arguments:
 
     Dpc - Not Used.
 
-
 Return Value:
 
     None.
 
 --*/
-
+_Use_decl_annotations_
+VOID
+SerialCompleteRead(
+    IN WDFDPC Dpc
+    )
 {
 
     PSERIAL_DEVICE_EXTENSION extension = NULL;
 
     extension = SerialGetDeviceExtension(WdfDpcGetParentObject(Dpc));
 
+    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_READ,
+                "++SerialCompleteRead(%p) DPC\r\n",
+                extension);
 
-    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_READ, "++SerialCompleteRead(%p) DPC\n",
-                     extension);
-
-    //
     // We set this to indicate to the interval timer
     // that the read has completed.
     //
     // Recall that the interval timer dpc can be lurking in some
     // DPC queue.
-    //
 
     extension->CountOnLastRead = SERIAL_COMPLETE_READ_COMPLETE;
 
-    SerialTryToCompleteCurrent(
-        extension,
-        NULL,
-        STATUS_SUCCESS,
-        &extension->CurrentReadRequest,
-        extension->ReadQueue,
-        extension->ReadRequestIntervalTimer,
-        extension->ReadRequestTotalTimer,
-        SerialStartRead,
-        SerialGetNextRequest,
-        SERIAL_REF_ISR
-        );
+    SerialTryToCompleteCurrent(extension,
+                                NULL,
+                                STATUS_SUCCESS,
+                                &extension->CurrentReadRequest,
+                                extension->ReadQueue,
+                                extension->ReadRequestIntervalTimer,
+                                extension->ReadRequestTotalTimer,
+                                SerialStartRead,
+                                SerialGetNextRequest,
+                                SERIAL_REF_ISR);
 
-
-    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_READ, "--SerialCompleteRead DPC\n");
+    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_READ, "--SerialCompleteRead DPC\r\n");
 }
 
-
-VOID
-SerialCancelCurrentRead(
-    WDFREQUEST  Request
-    )
 /*++
 
 Routine Description:
@@ -614,7 +525,11 @@ Return Value:
     None.
 
 --*/
-
+_Use_decl_annotations_
+VOID
+SerialCancelCurrentRead(
+    WDFREQUEST Request
+    )
 {
 
     PSERIAL_DEVICE_EXTENSION extension = NULL;
@@ -624,37 +539,25 @@ Return Value:
 
     extension = SerialGetDeviceExtension(device);
 
-    //
     // We set this to indicate to the interval timer
     // that the read has encountered a cancel.
     //
     // Recall that the interval timer dpc can be lurking in some
     // DPC queue.
-    //
 
     extension->CountOnLastRead = SERIAL_COMPLETE_READ_CANCEL;
 
-    SerialTryToCompleteCurrent(
-        extension,
-        SerialGrabReadFromIsr,
-        STATUS_CANCELLED,
-        &extension->CurrentReadRequest,
-        extension->ReadQueue,
-        extension->ReadRequestIntervalTimer,
-        extension->ReadRequestTotalTimer,
-        SerialStartRead,
-        SerialGetNextRequest,
-        SERIAL_REF_CANCEL
-        );
-
+    SerialTryToCompleteCurrent(extension,
+                                SerialGrabReadFromIsr,
+                                STATUS_CANCELLED,
+                                &extension->CurrentReadRequest,
+                                extension->ReadQueue,
+                                extension->ReadRequestIntervalTimer,
+                                extension->ReadRequestTotalTimer,
+                                SerialStartRead,
+                                SerialGetNextRequest,
+                                SERIAL_REF_CANCEL);
 }
-
-
-BOOLEAN
-SerialGrabReadFromIsr(
-    IN WDFINTERRUPT Interrupt,
-    IN PVOID Context
-    )
 
 /*++
 
@@ -685,7 +588,12 @@ Return Value:
     Always false.
 
 --*/
-
+_Use_decl_annotations_
+BOOLEAN
+SerialGrabReadFromIsr(
+    WDFINTERRUPT Interrupt,
+    PVOID Context
+    )
 {
 
     PSERIAL_DEVICE_EXTENSION extension = Context;
@@ -698,18 +606,14 @@ Return Value:
     if (extension->ReadBufferBase !=
         extension->InterruptReadBuffer) {
 
-        //
         // We need to set the information to the number of characters
         // that the read wanted minus the number of characters that
         // didn't get read into the interrupt buffer.
-        //
 
         reqContext->Information = reqContext->Length -
             ((extension->LastCharSlot - extension->CurrentCharSlot) + 1);
 
-        //
         // Switch back to the interrupt buffer.
-        //
 
         extension->ReadBufferBase = extension->InterruptReadBuffer;
         extension->CurrentCharSlot = extension->InterruptReadBuffer;
@@ -718,21 +622,12 @@ Return Value:
                                       (extension->BufferSize - 1);
         extension->CharsInInterruptBuffer = 0;
 
-        SERIAL_CLEAR_REFERENCE(
-            reqContext,
-            SERIAL_REF_ISR
-            );
-
+        SERIAL_CLEAR_REFERENCE(reqContext,
+                                SERIAL_REF_ISR);
     }
 
     return FALSE;
-
 }
-
-VOID
-SerialReadTimeout(
-    IN WDFTIMER Timer
-    )
 
 /*++
 
@@ -749,50 +644,41 @@ Return Value:
     None.
 
 --*/
-
+_Use_decl_annotations_
+VOID
+SerialReadTimeout(
+    WDFTIMER Timer
+    )
 {
-
     PSERIAL_DEVICE_EXTENSION extension = NULL;
 
     extension = SerialGetDeviceExtension(WdfTimerGetParentObject(Timer));
 
+    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_READ,
+                "++SerialReadTimeout(%p)\r\n",
+                extension);
 
-    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_READ, ">SerialReadTimeout(%p)\n",
-                     extension);
-
-    //
     // We set this to indicate to the interval timer
     // that the read has completed due to total timeout.
     //
     // Recall that the interval timer dpc can be lurking in some
     // DPC queue.
-    //
 
     extension->CountOnLastRead = SERIAL_COMPLETE_READ_TOTAL;
 
-    SerialTryToCompleteCurrent(
-        extension,
-        SerialGrabReadFromIsr,
-        STATUS_TIMEOUT,
-        &extension->CurrentReadRequest,
-        extension->ReadQueue,
-        extension->ReadRequestIntervalTimer,
-        extension->ReadRequestTotalTimer,
-        SerialStartRead,
-        SerialGetNextRequest,
-        SERIAL_REF_TOTAL_TIMER
-        );
+    SerialTryToCompleteCurrent(extension,
+                                SerialGrabReadFromIsr,
+                                STATUS_TIMEOUT,
+                                &extension->CurrentReadRequest,
+                                extension->ReadQueue,
+                                extension->ReadRequestIntervalTimer,
+                                extension->ReadRequestTotalTimer,
+                                SerialStartRead,
+                                SerialGetNextRequest,
+                                SERIAL_REF_TOTAL_TIMER);
 
-
-    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_READ, "<SerialReadTimeout\n");
+    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_READ, "--SerialReadTimeout\r\n");
 }
-
-
-BOOLEAN
-SerialUpdateReadByIsr(
-    IN WDFINTERRUPT  Interrupt,
-    IN PVOID Context
-    )
 
 /*++
 
@@ -815,7 +701,12 @@ Return Value:
     Always false.
 
 --*/
-
+_Use_decl_annotations_
+BOOLEAN
+SerialUpdateReadByIsr(
+    WDFINTERRUPT Interrupt,
+    PVOID Context
+    )
 {
 
     PSERIAL_DEVICE_EXTENSION extension = Context;
@@ -826,14 +717,7 @@ Return Value:
     extension->ReadByIsr = 0;
 
     return FALSE;
-
 }
-
-
-VOID
-SerialIntervalReadTimeout(
-    IN WDFTIMER Timer
-    )
 
 /*++
 
@@ -857,190 +741,150 @@ Return Value:
     None.
 
 --*/
-
+_Use_decl_annotations_
+VOID
+SerialIntervalReadTimeout(
+    WDFTIMER Timer
+    )
 {
     PSERIAL_DEVICE_EXTENSION extension = NULL;
 
     extension = SerialGetDeviceExtension(WdfTimerGetParentObject(Timer));
 
-
-    //TraceEvents(TRACE_LEVEL_INFORMATION, DBG_READ, ">SerialIntervalReadTimeout(%p)\n",
-    //                 extension);
+    TraceEvents(TRACE_LEVEL_VERBOSE, DBG_READ,
+                "++SerialIntervalReadTimeout(%p)\r\n",
+                extension);
 
     if (extension->CountOnLastRead == SERIAL_COMPLETE_READ_TOTAL) {
 
-        //
         // This value is only set by the total
         // timer to indicate that it has fired.
         // If so, then we should simply try to complete.
-        //
-        TraceEvents(TRACE_LEVEL_INFORMATION, DBG_INIT, "in SERIAL_COMPLETE_READ_TOTAL\n");
 
-        SerialTryToCompleteCurrent(
-            extension,
-            SerialGrabReadFromIsr,
-            STATUS_TIMEOUT,
-            &extension->CurrentReadRequest,
-            extension->ReadQueue,
-            extension->ReadRequestIntervalTimer,
-            extension->ReadRequestTotalTimer,
-            SerialStartRead,
-            SerialGetNextRequest,
-            SERIAL_REF_INT_TIMER
-            );
+        TraceEvents(TRACE_LEVEL_INFORMATION, DBG_INIT, "in SERIAL_COMPLETE_READ_TOTAL\r\n");
+
+        SerialTryToCompleteCurrent(extension,
+                                    SerialGrabReadFromIsr,
+                                    STATUS_TIMEOUT,
+                                    &extension->CurrentReadRequest,
+                                    extension->ReadQueue,
+                                    extension->ReadRequestIntervalTimer,
+                                    extension->ReadRequestTotalTimer,
+                                    SerialStartRead,
+                                    SerialGetNextRequest,
+                                    SERIAL_REF_INT_TIMER);
 
     } else if (extension->CountOnLastRead == SERIAL_COMPLETE_READ_COMPLETE) {
 
-        //
         // This value is only set by the regular
         // completion routine.
         //
         // If so, then we should simply try to complete.
-        //
-        TraceEvents(TRACE_LEVEL_INFORMATION, DBG_INIT, "in SERIAL_COMPLETE_READ_COMPLETE\n");
 
-        SerialTryToCompleteCurrent(
-            extension,
-            SerialGrabReadFromIsr,
-            STATUS_SUCCESS,
-            &extension->CurrentReadRequest,
-            extension->ReadQueue,
-            extension->ReadRequestIntervalTimer,
-            extension->ReadRequestTotalTimer,
-            SerialStartRead,
-            SerialGetNextRequest,
-            SERIAL_REF_INT_TIMER
-            );
+        TraceEvents(TRACE_LEVEL_INFORMATION, DBG_INIT, "in SERIAL_COMPLETE_READ_COMPLETE\r\n");
+
+        SerialTryToCompleteCurrent(extension,
+                                    SerialGrabReadFromIsr,
+                                    STATUS_SUCCESS,
+                                    &extension->CurrentReadRequest,
+                                    extension->ReadQueue,
+                                    extension->ReadRequestIntervalTimer,
+                                    extension->ReadRequestTotalTimer,
+                                    SerialStartRead,
+                                    SerialGetNextRequest,
+                                    SERIAL_REF_INT_TIMER);
 
     } else if (extension->CountOnLastRead == SERIAL_COMPLETE_READ_CANCEL) {
 
-        //
         // This value is only set by the cancel
         // read routine.
         //
         // If so, then we should simply try to complete.
-        //
-        TraceEvents(TRACE_LEVEL_INFORMATION, DBG_INIT, "in SERIAL_COMPLETE_READ_CANCEL\n");
 
-        SerialTryToCompleteCurrent(
-            extension,
-            SerialGrabReadFromIsr,
-            STATUS_CANCELLED,
-            &extension->CurrentReadRequest,
-            extension->ReadQueue,
-            extension->ReadRequestIntervalTimer,
-            extension->ReadRequestTotalTimer,
-            SerialStartRead,
-            SerialGetNextRequest,
-            SERIAL_REF_INT_TIMER
-            );
+        TraceEvents(TRACE_LEVEL_INFORMATION, DBG_INIT, "in SERIAL_COMPLETE_READ_CANCEL\r\n");
+
+        SerialTryToCompleteCurrent(extension,
+                                SerialGrabReadFromIsr,
+                                STATUS_CANCELLED,
+                                &extension->CurrentReadRequest,
+                                extension->ReadQueue,
+                                extension->ReadRequestIntervalTimer,
+                                extension->ReadRequestTotalTimer,
+                                SerialStartRead,
+                                SerialGetNextRequest,
+                                SERIAL_REF_INT_TIMER);
 
     } else if (extension->CountOnLastRead || extension->ReadByIsr) {
 
-        //
         // Something has happened since we last came here.  We
         // check to see if the ISR has read in any more characters.
         // If it did then we should update the isr's read count
         // and resubmit the timer.
-        //
 
         if (extension->ReadByIsr) {
 
-            WdfInterruptSynchronize(
-                extension->WdfInterrupt,
-                SerialUpdateReadByIsr,
-                extension
-                );
+            WdfInterruptSynchronize(extension->WdfInterrupt,
+                                    SerialUpdateReadByIsr,
+                                    extension);
 
-            //
             // Save off the "last" time something was read.
             // As we come back to this routine we will compare
             // the current time to the "last" time.  If the
             // difference is ever larger then the interval
             // requested by the user, then time out the request.
-            //
 
-            KeQuerySystemTime(
-                &extension->LastReadTime
-                );
+            KeQuerySystemTime(&extension->LastReadTime);
 
-            SerialSetTimer(
-                extension->ReadRequestIntervalTimer,
-                *extension->IntervalTimeToUse
-                );
+            SerialSetTimer(extension->ReadRequestIntervalTimer,
+                            *extension->IntervalTimeToUse);
 
         } else {
 
-            //
             // Take the difference between the current time
             // and the last time we had characters and
             // see if it is greater then the interval time.
             // if it is, then time out the request.  Otherwise
             // go away again for a while.
             //
-
-            //
             // No characters read in the interval time.  Kill
             // this read.
-            //
 
             LARGE_INTEGER currentTime;
 
-            KeQuerySystemTime(
-                &currentTime
-                );
+            KeQuerySystemTime(&currentTime);
 
             if ((currentTime.QuadPart - extension->LastReadTime.QuadPart) >=
                 extension->IntervalTime.QuadPart) {
 
-                SerialTryToCompleteCurrent(
-                    extension,
-                    SerialGrabReadFromIsr,
-                    STATUS_TIMEOUT,
-                    &extension->CurrentReadRequest,
-                    extension->ReadQueue,
-                    extension->ReadRequestIntervalTimer,
-                    extension->ReadRequestTotalTimer,
-                    SerialStartRead,
-                    SerialGetNextRequest,
-                    SERIAL_REF_INT_TIMER
-                    );
+                SerialTryToCompleteCurrent(extension,
+                                            SerialGrabReadFromIsr,
+                                            STATUS_TIMEOUT,
+                                            &extension->CurrentReadRequest,
+                                            extension->ReadQueue,
+                                            extension->ReadRequestIntervalTimer,
+                                            extension->ReadRequestTotalTimer,
+                                            SerialStartRead,
+                                            SerialGetNextRequest,
+                                            SERIAL_REF_INT_TIMER);
 
             } else {
 
-                SerialSetTimer(
-                    extension->ReadRequestIntervalTimer,
-                    *extension->IntervalTimeToUse
-                    );
-
+                SerialSetTimer(extension->ReadRequestIntervalTimer,
+                                *extension->IntervalTimeToUse);
             }
-
-
         }
 
     } else {
 
-        //
         // Timer doesn't really start until the first character.
         // So we should simply resubmit ourselves.
-        //
 
-        SerialSetTimer(
-            extension->ReadRequestIntervalTimer,
-            *extension->IntervalTimeToUse
-            );
-
+        SerialSetTimer(extension->ReadRequestIntervalTimer,
+                        *extension->IntervalTimeToUse);
     }
 
-
-    //TraceEvents(TRACE_LEVEL_INFORMATION, DBG_READ, "<SerialIntervalReadTimeout\n");
+    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_READ, "--SerialIntervalReadTimeout\r\n");
 }
-
-
-ULONG
-SerialGetCharsFromIntBuffer(
-    PSERIAL_DEVICE_EXTENSION Extension
-    )
 
 /*++
 
@@ -1064,31 +908,30 @@ Return Value:
     buffer.
 
 --*/
-
+_Use_decl_annotations_
+ULONG
+SerialGetCharsFromIntBuffer(
+    PSERIAL_DEVICE_EXTENSION Extension
+    )
 {
-
-    //
     // This value will be the number of characters that this
     // routine returns.  It will be the minimum of the number
     // of characters currently in the buffer or the number of
     // characters required for the read.
-    //
+
     ULONG numberOfCharsToGet;
 
-    //
     // This holds the number of characters between the first
     // readable character and - the last character we will read or
     // the real physical end of the buffer (not the last readable
     // character).
-    //
+
     ULONG firstTryNumberToGet;
 
     PREQUEST_CONTEXT reqContext = SerialGetRequestContext(Extension->CurrentReadRequest);
 
-    //
     // The minimum of the number of characters we need and
     // the number of characters available
-    //
 
     numberOfCharsToGet = Extension->CharsInInterruptBuffer;
 
@@ -1100,34 +943,27 @@ Return Value:
 
     if (numberOfCharsToGet) {
 
-        //
         // This will hold the number of characters between the
         // first available character and the end of the buffer.
         // Note that the buffer could wrap around but for the
         // purposes of the first copy we don't care about that.
-        //
 
         firstTryNumberToGet = (ULONG)(Extension->LastCharSlot -
                                Extension->FirstReadableChar) + 1;
 
         if (firstTryNumberToGet > numberOfCharsToGet) {
 
-            //
             // The characters don't wrap. Actually they may wrap but
             // we don't care for the purposes of this read since the
             // characters we need are available before the wrap.
-            //
 
-            RtlMoveMemory(
-                ((PUCHAR)(reqContext->SystemBuffer))
-                    + (reqContext->Length - Extension->NumberNeededForRead),
-                Extension->FirstReadableChar,
-                numberOfCharsToGet
-                );
+            RtlMoveMemory(((PUCHAR)(reqContext->SystemBuffer))
+                            + (reqContext->Length - Extension->NumberNeededForRead),
+                            Extension->FirstReadableChar,
+                            numberOfCharsToGet);
 
             Extension->NumberNeededForRead -= numberOfCharsToGet;
 
-            //
             // We now will move the pointer to the first character after
             // what we just copied into the users buffer.
             //
@@ -1136,7 +972,6 @@ Return Value:
             //
             // Note that we may have just taken the last characters
             // at the end of the buffer.
-            //
 
             if ((Extension->FirstReadableChar + (numberOfCharsToGet - 1)) ==
                 Extension->LastCharSlot) {
@@ -1151,53 +986,36 @@ Return Value:
 
         } else {
 
-            //
             // The characters do wrap.  Get up until the end of the buffer.
-            //
 
-            RtlMoveMemory(
-                ((PUCHAR)(reqContext->SystemBuffer))
-                    + (reqContext->Length - Extension->NumberNeededForRead),
-                Extension->FirstReadableChar,
-                firstTryNumberToGet
-                );
+            RtlMoveMemory(((PUCHAR)(reqContext->SystemBuffer))
+                        + (reqContext->Length - Extension->NumberNeededForRead),
+                        Extension->FirstReadableChar,
+                        firstTryNumberToGet);
 
             Extension->NumberNeededForRead -= firstTryNumberToGet;
 
-            //
-            // Now get the rest of the characters from the beginning of the
-            // buffer.
-            //
+            // Now get the rest of the characters from the beginning of the buffer.
 
-            RtlMoveMemory(
-                ((PUCHAR)(reqContext->SystemBuffer))
-                    + (reqContext->Length  - Extension->NumberNeededForRead),
-                Extension->InterruptReadBuffer,
-                numberOfCharsToGet - firstTryNumberToGet
-                );
+            RtlMoveMemory(((PUCHAR)(reqContext->SystemBuffer))
+                        + (reqContext->Length  - Extension->NumberNeededForRead),
+                        Extension->InterruptReadBuffer,
+                        numberOfCharsToGet - firstTryNumberToGet);
 
             Extension->FirstReadableChar = Extension->InterruptReadBuffer +
-                                           (numberOfCharsToGet -
-                                            firstTryNumberToGet);
+                                        (numberOfCharsToGet -
+                                        firstTryNumberToGet);
 
             Extension->NumberNeededForRead -= (numberOfCharsToGet -
-                                               firstTryNumberToGet);
-
+                                                firstTryNumberToGet);
         }
 
     }
 
     reqContext->Information += numberOfCharsToGet;
     return numberOfCharsToGet;
-
 }
 
-
-BOOLEAN
-SerialUpdateInterruptBuffer(
-    IN WDFINTERRUPT  Interrupt,
-    IN PVOID Context
-    )
 
 /*++
 
@@ -1223,9 +1041,13 @@ Return Value:
     Always FALSE.
 
 --*/
-
+_Use_decl_annotations_
+BOOLEAN
+SerialUpdateInterruptBuffer(
+    WDFINTERRUPT Interrupt,
+    PVOID Context
+    )
 {
-
     PSERIAL_UPDATE_CHAR update = Context;
     PSERIAL_DEVICE_EXTENSION extension = update->Extension;
 
@@ -1234,23 +1056,12 @@ Return Value:
     ASSERT(extension->CharsInInterruptBuffer >= update->CharsCopied);
     extension->CharsInInterruptBuffer -= update->CharsCopied;
 
-    //
     // Deal with flow control if necessary.
-    //
 
     SerialHandleReducedIntBuffer(extension);
 
-
     return FALSE;
-
 }
-
-
-BOOLEAN
-SerialUpdateAndSwitchToUser(
-    IN WDFINTERRUPT  Interrupt,
-    IN PVOID Context
-    )
 
 /*++
 
@@ -1280,12 +1091,16 @@ Return Value:
     Always FALSE.
 
 --*/
-
+_Use_decl_annotations_
+BOOLEAN
+SerialUpdateAndSwitchToUser(
+    WDFINTERRUPT Interrupt,
+    PVOID Context
+    )
 {
-
-    PSERIAL_UPDATE_CHAR      updateChar = Context;
+    PSERIAL_UPDATE_CHAR updateChar = Context;
     PSERIAL_DEVICE_EXTENSION extension = updateChar->Extension;
-    PREQUEST_CONTEXT         reqContext;
+    PREQUEST_CONTEXT reqContext;
 
     UNREFERENCED_PARAMETER(Interrupt);
 
@@ -1293,33 +1108,26 @@ Return Value:
 
     SerialUpdateInterruptBuffer(extension->WdfInterrupt, Context);
 
-    //
     // There are more characters to get to satisfy this read.
     // Copy any characters that have arrived since we got
     // the last batch.
-    //
 
     updateChar->CharsCopied = SerialGetCharsFromIntBuffer(extension);
 
     SerialUpdateInterruptBuffer(extension->WdfInterrupt, Context);
 
-    //
     // No more new characters will be "received" until we exit
     // this routine.  We again check to make sure that we
     // haven't satisfied this read, and if we haven't we set things
     // up so that the ISR copies into the user buffer.
-    //
 
     if (extension->NumberNeededForRead) {
 
-        //
         // We shouldn't be switching unless there are no
         // characters left.
-        //
 
         ASSERT(!extension->CharsInInterruptBuffer);
 
-        //
         // We use the following to values to do inteval timing.
         //
         // CountOnLastRead is mostly used to simply prevent
@@ -1340,81 +1148,54 @@ Return Value:
         // < 0.  This is done by the read completion routines other
         // than the total timeout dpc to indicate that the total
         // timeout has expired.)
-        //
 
         extension->CountOnLastRead = (LONG)reqContext->Information;
 
         extension->ReadByIsr = 0;
 
-        //
         // By compareing the read buffer base address to the
         // the base address of the interrupt buffer the ISR
         // can determine whether we are using the interrupt
         // buffer or the user buffer.
-        //
 
         extension->ReadBufferBase = reqContext->SystemBuffer;
 
-        //
         // The current char slot is after the last copied in
         // character.  We know there is always room since we
         // we wouldn't have gotten here if there wasn't.
-        //
 
         extension->CurrentCharSlot = extension->ReadBufferBase +
                                     reqContext->Information;
 
-        //
         // The last position that a character can go is on the
         // last byte of user buffer.  While the actual allocated
         // buffer space may be bigger, we know that there is at
         // least as much as the read length.
-        //
 
         extension->LastCharSlot = extension->ReadBufferBase +
                                       (reqContext->Length - 1);
-#if 0 // We set the cancel before calling this routine in StartRead
-        //
-        // Mark the request as being in a cancelable state.
-        //
-        IoSetCancelRoutine(
-            extension->CurrentReadIrp,
-            SerialCancelCurrentRead
-            );
 
-       SERIAL_SET_REFERENCE(
-            reqContext,
-            SERIAL_REF_CANCEL
-            );
-#endif
-        //
         // Increment the reference count twice.
         //
         // Once for the Isr owning the request and once
-        // because the cancel routine has a reference
-        // to it.
-        //
+        // because the cancel routine has a reference to it.
 
-        SERIAL_SET_REFERENCE(
-            reqContext,
-            SERIAL_REF_ISR
-            );
+        SERIAL_SET_REFERENCE(reqContext,
+                            SERIAL_REF_ISR);
 
         updateChar->Completed = FALSE;
 
     } else {
 
         updateChar->Completed = TRUE;
-
     }
 
     return FALSE;
-
 }
-//
+
 // We use this structure only to communicate to the synchronization
 // routine when we are switching to the resized buffer.
-//
+
 typedef struct _SERIAL_RESIZE_PARAMS {
     PSERIAL_DEVICE_EXTENSION Extension;
     PUCHAR OldBuffer;
@@ -1422,12 +1203,6 @@ typedef struct _SERIAL_RESIZE_PARAMS {
     ULONG NewBufferSize;
     ULONG NumberMoved;
     } SERIAL_RESIZE_PARAMS,*PSERIAL_RESIZE_PARAMS;
-
-
-NTSTATUS
-SerialResizeBuffer(
-    IN PSERIAL_DEVICE_EXTENSION Extension
-    )
 
 /*++
 
@@ -1454,13 +1229,16 @@ Return Value:
 
 --*/
 
+_Use_decl_annotations_
+NTSTATUS
+SerialResizeBuffer(
+    PSERIAL_DEVICE_EXTENSION Extension
+    )
 {
-
     PREQUEST_CONTEXT reqContext = SerialGetRequestContext(Extension->CurrentReadRequest);
     PSERIAL_QUEUE_SIZE rs = reqContext->SystemBuffer;
 
     PVOID newBuffer = reqContext->Type3InputBuffer;
-
 
     reqContext->Type3InputBuffer = NULL;
     reqContext->Information = 0L;
@@ -1468,11 +1246,9 @@ Return Value:
 
     if (rs->InSize <= Extension->BufferSize) {
 
-        //
         // Nothing to do.  We don't make buffers smaller.  Just
         // agree with the user.  We must deallocate the memory
         // that was already allocated in the ioctl dispatch routine.
-        //
 
         ExFreePool(newBuffer);
 
@@ -1480,8 +1256,7 @@ Return Value:
 
         SERIAL_RESIZE_PARAMS rp;
 
-        //
-        // Hmmm, looks like we actually have to go
+        // Looks like we actually have to go
         // through with this.  We need to move all the
         // data that is in the current buffer into this
         // new buffer.  We'll do this in two steps.
@@ -1509,42 +1284,26 @@ Return Value:
         // was not the default one created when we initialized
         // the device (i.e. it was created via a previous WDFREQUEST of
         // this type), we should deallocate it.
-        //
 
         rp.Extension = Extension;
         rp.OldBuffer = Extension->InterruptReadBuffer;
         rp.NewBuffer = newBuffer;
         rp.NewBufferSize = rs->InSize;
 
-        rp.NumberMoved = SerialMoveToNewIntBuffer(
-                             Extension,
-                             newBuffer
-                             );
+        rp.NumberMoved = SerialMoveToNewIntBuffer( Extension,
+                                                newBuffer);
 
-        WdfInterruptSynchronize(
-            Extension->WdfInterrupt,
-            SerialUpdateAndSwitchToNew,
-            &rp
-            );
+        WdfInterruptSynchronize(Extension->WdfInterrupt,
+                                SerialUpdateAndSwitchToNew,
+                                &rp);
 
-        //
         // Free up the memory that the old buffer consumed.
-        //
 
         ExFreePool(rp.OldBuffer);
-
     }
 
     return STATUS_SUCCESS;
-
 }
-
-
-ULONG
-SerialMoveToNewIntBuffer(
-    PSERIAL_DEVICE_EXTENSION Extension,
-    PUCHAR NewBuffer
-    )
 
 /*++
 
@@ -1569,34 +1328,32 @@ Return Value:
     buffer.
 
 --*/
-
+_Use_decl_annotations_
+ULONG
+SerialMoveToNewIntBuffer(
+    PSERIAL_DEVICE_EXTENSION Extension,
+    PUCHAR NewBuffer
+    )
 {
-
     ULONG numberOfCharsMoved = Extension->CharsInInterruptBuffer;
-
 
     if (numberOfCharsMoved) {
 
-        //
         // This holds the number of characters between the first
         // readable character and the last character we will read or
         // the real physical end of the buffer (not the last readable
         // character).
-        //
+
         ULONG firstTryNumberToGet = (ULONG)(Extension->LastCharSlot -
                                      Extension->FirstReadableChar) + 1;
 
         if (firstTryNumberToGet >= numberOfCharsMoved) {
 
-            //
             // The characters don't wrap.
-            //
 
-            RtlMoveMemory(
-                NewBuffer,
-                Extension->FirstReadableChar,
-                numberOfCharsMoved
-                );
+            RtlMoveMemory(NewBuffer,
+                        Extension->FirstReadableChar,
+                        numberOfCharsMoved);
 
             if ((Extension->FirstReadableChar+(numberOfCharsMoved-1)) ==
                 Extension->LastCharSlot) {
@@ -1606,49 +1363,30 @@ Return Value:
             } else {
 
                 Extension->FirstReadableChar += numberOfCharsMoved;
-
             }
 
         } else {
 
-            //
             // The characters do wrap.  Get up until the end of the buffer.
-            //
 
-            RtlMoveMemory(
-                NewBuffer,
-                Extension->FirstReadableChar,
-                firstTryNumberToGet
-                );
+            RtlMoveMemory(NewBuffer,
+                        Extension->FirstReadableChar,
+                        firstTryNumberToGet);
 
-            //
-            // Now get the rest of the characters from the beginning of the
-            // buffer.
-            //
+            // Now get the rest of the characters from the beginning of the buffer.
 
-            RtlMoveMemory(
-                NewBuffer+firstTryNumberToGet,
-                Extension->InterruptReadBuffer,
-                numberOfCharsMoved - firstTryNumberToGet
-                );
+            RtlMoveMemory(NewBuffer+firstTryNumberToGet,
+                        Extension->InterruptReadBuffer,
+                        numberOfCharsMoved - firstTryNumberToGet);
 
             Extension->FirstReadableChar = Extension->InterruptReadBuffer +
                                    numberOfCharsMoved - firstTryNumberToGet;
-
         }
 
     }
 
     return numberOfCharsMoved;
-
 }
-
-
-BOOLEAN
-SerialUpdateAndSwitchToNew(
-    IN WDFINTERRUPT  Interrupt,
-    IN PVOID Context
-    )
 
 /*++
 
@@ -1673,9 +1411,13 @@ Return Value:
     Always FALSE.
 
 --*/
-
+_Use_decl_annotations_
+BOOLEAN
+SerialUpdateAndSwitchToNew(
+    WDFINTERRUPT  Interrupt,
+    PVOID Context
+    )
 {
-
     PSERIAL_RESIZE_PARAMS params = Context;
     PSERIAL_DEVICE_EXTENSION extension = params->Extension;
     ULONG tempCharsInInterruptBuffer = extension->CharsInInterruptBuffer;
@@ -1684,25 +1426,18 @@ Return Value:
 
     ASSERT(extension->CharsInInterruptBuffer >= params->NumberMoved);
 
-    //
     // We temporarily reduce the chars in interrupt buffer to
-    // "fool" the move routine.  We will restore it after the
-    // move.
-    //
+    // "fool" the move routine.  We will restore it after the move.
 
     extension->CharsInInterruptBuffer -= params->NumberMoved;
 
     if (extension->CharsInInterruptBuffer) {
 
-        SerialMoveToNewIntBuffer(
-            extension,
-            params->NewBuffer + params->NumberMoved
-            );
-
+        SerialMoveToNewIntBuffer(extension,
+                                params->NewBuffer + params->NumberMoved);
     }
 
     extension->CharsInInterruptBuffer = tempCharsInInterruptBuffer;
-
 
     extension->LastCharSlot = params->NewBuffer + (params->NewBufferSize - 1);
     extension->FirstReadableChar = params->NewBuffer;
@@ -1710,17 +1445,13 @@ Return Value:
     extension->InterruptReadBuffer = params->NewBuffer;
     extension->BufferSize = params->NewBufferSize;
 
-    //
-    // We *KNOW* that the new interrupt buffer is larger than the
+    // We *know* that the new interrupt buffer is larger than the
     // old buffer.  We don't need to worry about it being full.
-    //
 
     extension->CurrentCharSlot = extension->InterruptReadBuffer +
                                  extension->CharsInInterruptBuffer;
 
-    //
     // We set up the default xon/xoff limits.
-    //
 
     extension->HandFlow.XoffLimit = extension->BufferSize >> 3;
     extension->HandFlow.XonLimit = extension->BufferSize >> 1;
@@ -1731,15 +1462,12 @@ Return Value:
     extension->BufferSizePt8 = ((3*(extension->BufferSize>>2))+
                                    (extension->BufferSize>>4));
 
-    //
     // Since we (essentially) reduced the percentage of the interrupt
     // buffer being full, we need to handle any flow control.
-    //
 
     SerialHandleReducedIntBuffer(extension);
 
     return FALSE;
-
 }
 
 

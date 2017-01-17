@@ -241,6 +241,7 @@ NTSTATUS OnDeviceAdd (WDFDRIVER /*WdfDriver*/, WDFDEVICE_INIT* DeviceInitPtr)
         }
 
         interruptContextPtr = GetInterruptContext(devicePtr->WdfInterrupt);
+        KeInitializeSpinLock(&interruptContextPtr->CancelLock);
         interruptContextPtr->WdfInterrupt = devicePtr->WdfInterrupt;
     }
     devicePtr->InterruptContextPtr = interruptContextPtr;

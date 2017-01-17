@@ -65,7 +65,7 @@ namespace { // static
 //
 // Register interrupt for pins in the supplied mask in the supplied mode
 //
-NTSTATUS BCM_GPIO::_INTERRUPT_REGISTERS::Add (
+void BCM_GPIO::_INTERRUPT_REGISTERS::Add (
     ULONG Mask,
     KINTERRUPT_MODE InterruptMode,
     KINTERRUPT_POLARITY Polarity
@@ -81,7 +81,8 @@ NTSTATUS BCM_GPIO::_INTERRUPT_REGISTERS::Add (
             this->GPLEN |= Mask;
             break;
         default:
-            return STATUS_NOT_SUPPORTED;
+            NT_ASSERT(!"Invalid interrupt mode/level");
+            return;
         } // switch (Polarity)
         break;
     case Latched:
@@ -94,14 +95,14 @@ NTSTATUS BCM_GPIO::_INTERRUPT_REGISTERS::Add (
             break;
         case InterruptActiveBoth:
         default:
-            return STATUS_NOT_SUPPORTED;
+            NT_ASSERT(!"Invalid interrupt mode/level");
+            return;
         } // switch (Polarity)
         break;
     default:
-        return STATUS_NOT_SUPPORTED;
+        NT_ASSERT(!"Invalid interrupt mode/level");
+        return;
     } // switch (InterruptMode)
-
-    return STATUS_SUCCESS;
 } // BCM_GPIO::_INTERRUPT_REGISTERS::Add (...)
 
 _Use_decl_annotations_
@@ -216,13 +217,10 @@ NTSTATUS BCM_GPIO::UnmaskInterrupt (
     const PIN_NUMBER pinNumber = UnmaskParametersPtr->PinNumber;
     const ULONG mask = 1 << pinNumber;
 
-    NTSTATUS status = thisPtr->interruptContext[bankId].registers.Add(
+    thisPtr->interruptContext[bankId].registers.Add(
         mask,
         UnmaskParametersPtr->InterruptMode,
         UnmaskParametersPtr->Polarity);
-    if (!NT_SUCCESS(status)) {
-        return status;
-    }
 
     WRITE_REGISTER_NOFENCE_ULONG(&thisPtr->registersPtr->GPEDS[bankId], mask);
     thisPtr->programInterruptRegisters(bankId);
@@ -240,10 +238,6 @@ NTSTATUS BCM_GPIO::QueryActiveInterrupts (
 
     QueryActiveParametersPtr->ActiveMask = READ_REGISTER_NOFENCE_ULONG(
         &thisPtr->registersPtr->GPEDS[QueryActiveParametersPtr->BankId]);
-
-    QueryActiveParametersPtr->EnabledMask =
-        thisPtr->interruptContext[QueryActiveParametersPtr->BankId].
-        registers.EnabledMask();
 
     return STATUS_SUCCESS;
 } // BCM_GPIO::QueryActiveInterrupts (...)
@@ -346,7 +340,9 @@ NTSTATUS BCM_GPIO::StartController (
 
     // read initial gpfsel register values
     for (ULONG i = 0; i < ARRAYSIZE(hw->GPFSEL); ++i) {
-        thisPtr->gpfsel[i] = READ_REGISTER_NOFENCE_ULONG(&hw->GPFSEL[i]);
+        ULONG value = READ_REGISTER_NOFENCE_ULONG(&hw->GPFSEL[i]);
+        thisPtr->gpfsel[i] = value;
+        thisPtr->initialGpfsel[i] = value;
     } // for (ULONG i = ...)
 
     // Initialize registers by resetting interrupt state
@@ -412,6 +408,64 @@ void BCM_GPIO::programInterruptRegisters ( ULONG BankId )
 } // BCM_GPIO::programInterruptRegisters (...)
 
 _Use_decl_annotations_
+void BCM_GPIO::setDriveMode (
+    BANK_ID BankId,
+    PIN_NUMBER PinNumber,
+    BCM_GPIO_FUNCTION Function,
+    UCHAR AcpiPullConfig
+    )
+{
+    BCM_ASSERT_MAX_IRQL(PASSIVE_LEVEL);
+
+    const ULONG absolutePinNumber = BankId * BCM_GPIO_PINS_PER_BANK + PinNumber;
+
+    if (Function != BCM_GPIO_FUNCTION_OUTPUT) {
+        BCM_GPIO_PULL pullMode;
+        switch (AcpiPullConfig) {
+        case GPIO_PIN_PULL_CONFIGURATION_PULLUP:
+            pullMode = BCM_GPIO_PULL_UP;
+            break;
+        case GPIO_PIN_PULL_CONFIGURATION_PULLDOWN:
+            pullMode = BCM_GPIO_PULL_DOWN;
+            break;
+        case GPIO_PIN_PULL_CONFIGURATION_NONE:
+            pullMode = BCM_GPIO_PULL_DISABLE;
+            break;
+        default:
+            NT_ASSERT(!"Invalid AcpiPullConfig value");
+            __fallthrough;
+        case GPIO_PIN_PULL_CONFIGURATION_DEFAULT:
+            pullMode = BCM_GPIO_PULL(
+                this->defaultPullConfig.Get(absolutePinNumber));
+        }
+
+        // when changing to an input, configure pull before changing
+        // pin direction to avoid any time potentially spent floating
+        this->updatePullMode(BankId, PinNumber, pullMode);
+    } // if
+
+    this->gpfsel.Set(absolutePinNumber, Function);
+    auto index = this->gpfsel.MakeIndex(absolutePinNumber);
+    WRITE_REGISTER_NOFENCE_ULONG(
+        &this->registersPtr->GPFSEL[index.StorageIndex],
+        this->gpfsel[index.StorageIndex]);
+} // BCM_GPIO::setDriveMode (...)
+
+_Use_decl_annotations_
+void BCM_GPIO::revertPinToDefault (BANK_ID BankId, PIN_NUMBER PinNumber)
+{
+    BCM_ASSERT_MAX_IRQL(PASSIVE_LEVEL);
+
+    const ULONG absolutePinNumber = BankId * BCM_GPIO_PINS_PER_BANK + PinNumber;
+
+    this->setDriveMode(
+        BankId,
+        PinNumber,
+        static_cast<BCM_GPIO_FUNCTION>(this->initialGpfsel.Get(absolutePinNumber)),
+        GPIO_PIN_PULL_CONFIGURATION_DEFAULT);
+} // BCM_GPIO::revertPinToDefault (...)
+
+_Use_decl_annotations_
 NTSTATUS BCM_GPIO::EnableInterrupt (
     PVOID ContextPtr,
     PGPIO_ENABLE_INTERRUPT_PARAMETERS EnableParametersPtr
@@ -420,7 +474,6 @@ NTSTATUS BCM_GPIO::EnableInterrupt (
     BCM_ASSERT_MAX_IRQL(PASSIVE_LEVEL);
 
     auto thisPtr = static_cast<BCM_GPIO*>(ContextPtr);
-    BCM_GPIO_REGISTERS* hw = thisPtr->registersPtr;
 
     const BANK_ID bankId = EnableParametersPtr->BankId;
     const PIN_NUMBER pinNumber = EnableParametersPtr->PinNumber;
@@ -428,10 +481,23 @@ NTSTATUS BCM_GPIO::EnableInterrupt (
     _INTERRUPT_CONTEXT* interruptContextPtr =
         thisPtr->interruptContext + bankId;
 
-    // PullConfiguration is intentionally ignored because it could conflict
-    // with IO configuration if the pin is already connected as IO
+    NT_ASSERT(!(thisPtr->openInterruptPins[bankId] & mask));
+    thisPtr->openInterruptPins[bankId] |= mask;
 
-    NTSTATUS status;
+    // Configure to GPIO input function if not already configured through
+    // ConnectIoPins
+    if (!(thisPtr->openIoPins[bankId] & mask)) {
+        thisPtr->setDriveMode(
+            bankId,
+            pinNumber,
+            BCM_GPIO_FUNCTION_INPUT,
+            EnableParametersPtr->PullConfiguration);
+    } else {
+        NT_ASSERT(
+            thisPtr->gpfsel.Get(bankId * BCM_GPIO_PINS_PER_BANK + pinNumber) ==
+            BCM_GPIO_FUNCTION_INPUT);
+    } // iff
+
     {
         GPIO_CLX_AcquireInterruptLock(ContextPtr, bankId);
 
@@ -439,23 +505,19 @@ NTSTATUS BCM_GPIO::EnableInterrupt (
         NT_ASSERT(!(interruptContextPtr->disabledMask & mask));
         NT_ASSERT(!(interruptContextPtr->pendingReenableMask & mask));
 
-        status = interruptContextPtr->registers.Add(
+        interruptContextPtr->registers.Add(
             mask,
             EnableParametersPtr->InterruptMode,
             EnableParametersPtr->Polarity);
-        if (!NT_SUCCESS(status)) {
-            GPIO_CLX_ReleaseInterruptLock(ContextPtr, bankId);
-            return status;
-        }
 
         interruptContextPtr->enabledMask |= mask;
-        WRITE_REGISTER_NOFENCE_ULONG(&hw->GPEDS[bankId], mask);
+        WRITE_REGISTER_NOFENCE_ULONG(&thisPtr->registersPtr->GPEDS[bankId], mask);
         thisPtr->programInterruptRegisters(bankId);
 
         GPIO_CLX_ReleaseInterruptLock(ContextPtr, bankId);
     } // release lock
 
-    return status;
+    return STATUS_SUCCESS;
 } // BCM_GPIO::EnableInterrupt (...)
 
 _Use_decl_annotations_
@@ -487,8 +549,89 @@ NTSTATUS BCM_GPIO::DisableInterrupt (
         GPIO_CLX_ReleaseInterruptLock(ContextPtr, bankId);
     } // release lock
 
+    // Revert IO configuration if pin is not opened for IO
+    if (!(thisPtr->openIoPins[bankId] & mask)) {
+        thisPtr->revertPinToDefault(bankId, pinNumber);
+    } // if
+
+    thisPtr->openInterruptPins[bankId] &= ~mask;
+
     return STATUS_SUCCESS;
 } // BCM_GPIO::DisableInterrupt (...)
+
+_Use_decl_annotations_
+NTSTATUS BCM_GPIO::ConnectFunctionConfigPins (
+    PVOID ContextPtr,
+    PGPIO_CONNECT_FUNCTION_CONFIG_PINS_PARAMETERS ConnectParametersPtr
+    )
+{
+    PAGED_CODE();
+    BCM_ASSERT_MAX_IRQL(PASSIVE_LEVEL);
+
+    // this function should only be called for alternate functions and
+    // nothing else
+    switch (ConnectParametersPtr->FunctionNumber) {
+    case  BCM_GPIO_FUNCTION_ALT0:
+    case  BCM_GPIO_FUNCTION_ALT1:
+    case  BCM_GPIO_FUNCTION_ALT2:
+    case  BCM_GPIO_FUNCTION_ALT3:
+    case  BCM_GPIO_FUNCTION_ALT4:
+    case  BCM_GPIO_FUNCTION_ALT5:
+        break;
+    default:
+        NT_ASSERT(FALSE);
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    auto function =
+        static_cast<BCM_GPIO_FUNCTION>(ConnectParametersPtr->FunctionNumber);
+
+    switch (ConnectParametersPtr->PullConfiguration) {
+    case GPIO_PIN_PULL_CONFIGURATION_PULLUP:
+    case GPIO_PIN_PULL_CONFIGURATION_PULLDOWN:
+    case GPIO_PIN_PULL_CONFIGURATION_DEFAULT:
+    case GPIO_PIN_PULL_CONFIGURATION_NONE:
+        break;
+    default:
+        return STATUS_NOT_SUPPORTED;
+    } // switch (ConnectParametersPtr->PullConfiguration)
+
+    auto thisPtr = static_cast<BCM_GPIO*>(ContextPtr);
+    const BANK_ID bankId = ConnectParametersPtr->BankId;
+
+    // set pins to requested drive mode
+    for (USHORT i = 0; i < ConnectParametersPtr->PinCount; ++i) {
+        const PIN_NUMBER pinNumber = ConnectParametersPtr->PinNumberTable[i];
+
+        thisPtr->setDriveMode(
+                bankId,
+                pinNumber,
+                function,
+                ConnectParametersPtr->PullConfiguration);
+    } // for (USHORT i = ...)
+
+    return STATUS_SUCCESS;
+}
+
+_Use_decl_annotations_
+NTSTATUS BCM_GPIO::DisconnectFunctionConfigPins (
+    PVOID ContextPtr,
+    PGPIO_DISCONNECT_FUNCTION_CONFIG_PINS_PARAMETERS DisconnectParametersPtr
+    )
+{
+    PAGED_CODE();
+    BCM_ASSERT_MAX_IRQL(PASSIVE_LEVEL);
+
+    auto thisPtr = static_cast<BCM_GPIO*>(ContextPtr);
+    const BANK_ID bankId = DisconnectParametersPtr->BankId;
+
+    for (USHORT i = 0; i < DisconnectParametersPtr->PinCount; ++i) {
+        const PIN_NUMBER pinNumber = DisconnectParametersPtr->PinNumberTable[i];
+        thisPtr->revertPinToDefault(bankId, pinNumber);
+    } // for (USHORT i = ...)
+
+    return STATUS_SUCCESS;
+}
 
 _Use_decl_annotations_
 VOID BCM_GPIO::evtReenableInterruptTimerFunc ( WDFTIMER WdfTimer )
@@ -547,56 +690,19 @@ NTSTATUS BCM_GPIO::ConnectIoPins (
         return STATUS_NOT_SUPPORTED;
     } // switch (ConnectParametersPtr->ConnectMode)
 
-    switch (ConnectParametersPtr->PullConfiguration) {
-    case GPIO_PIN_PULL_CONFIGURATION_PULLUP:
-    case GPIO_PIN_PULL_CONFIGURATION_PULLDOWN:
-    case GPIO_PIN_PULL_CONFIGURATION_DEFAULT:
-    case GPIO_PIN_PULL_CONFIGURATION_NONE:
-        break;
-    default:
-        return STATUS_NOT_SUPPORTED;
-    } // switch (ConnectParametersPtr->PullConfiguration)
-
     auto thisPtr = static_cast<BCM_GPIO*>(ContextPtr);
-    BCM_GPIO_REGISTERS* hw = thisPtr->registersPtr;
     const BANK_ID bankId = ConnectParametersPtr->BankId;
 
     // set pins to requested drive mode
     for (USHORT i = 0; i < ConnectParametersPtr->PinCount; ++i) {
         const PIN_NUMBER pinNumber = ConnectParametersPtr->PinNumberTable[i];
-        const ULONG absolutePinNumber =
-                    bankId * BCM_GPIO_PINS_PER_BANK + pinNumber;
-
-        if (function == BCM_GPIO_FUNCTION_INPUT) {
-            BCM_GPIO_PULL pullMode;
-            switch (ConnectParametersPtr->PullConfiguration) {
-            case GPIO_PIN_PULL_CONFIGURATION_PULLUP:
-                pullMode = BCM_GPIO_PULL_UP;
-                break;
-            case GPIO_PIN_PULL_CONFIGURATION_PULLDOWN:
-                pullMode = BCM_GPIO_PULL_DOWN;
-                break;
-            case GPIO_PIN_PULL_CONFIGURATION_NONE:
-                pullMode = BCM_GPIO_PULL_DISABLE;
-                break;
-            default:
-                NT_ASSERT(!"PullConfiguration should have been validated above");
-                // fall through
-            case GPIO_PIN_PULL_CONFIGURATION_DEFAULT:
-                pullMode = BCM_GPIO_PULL(
-                    thisPtr->defaultPullConfig.Get(absolutePinNumber));
-            }
-
-            // when changing to an input, configure pull before changing
-            // pin direction to avoid any time potentially spent floating
-            thisPtr->updatePullMode(bankId, pinNumber, pullMode);
-        }
-
-        thisPtr->gpfsel.Set(absolutePinNumber, function);
-        auto index = thisPtr->gpfsel.MakeIndex(absolutePinNumber);
-        WRITE_REGISTER_NOFENCE_ULONG(
-            &hw->GPFSEL[index.StorageIndex],
-            thisPtr->gpfsel[index.StorageIndex]);
+        NT_ASSERT(!(thisPtr->openIoPins[bankId] & (1 << pinNumber)));
+        thisPtr->openIoPins[bankId] |= 1 << pinNumber;
+        thisPtr->setDriveMode(
+            bankId,
+            pinNumber,
+            function,
+            ConnectParametersPtr->PullConfiguration);
     } // for (USHORT i = ...)
 
     return STATUS_SUCCESS;
@@ -611,33 +717,23 @@ NTSTATUS BCM_GPIO::DisconnectIoPins (
     PAGED_CODE();
     BCM_ASSERT_MAX_IRQL(PASSIVE_LEVEL);
 
-    if (DisconnectParametersPtr->DisconnectFlags.PreserveConfiguration) {
-        return STATUS_SUCCESS;
-    }
+    const bool preserveConfiguration =
+        DisconnectParametersPtr->DisconnectFlags.PreserveConfiguration;
 
     auto thisPtr = static_cast<BCM_GPIO*>(ContextPtr);
-    BCM_GPIO_REGISTERS* hw = thisPtr->registersPtr;
+    const BANK_ID bankId = DisconnectParametersPtr->BankId;
 
     for (USHORT i = 0; i < DisconnectParametersPtr->PinCount; ++i) {
         const PIN_NUMBER pinNumber = DisconnectParametersPtr->PinNumberTable[i];
-        const ULONG absolutePinNumber =
-            DisconnectParametersPtr->BankId * BCM_GPIO_PINS_PER_BANK +
-            pinNumber;
 
-        // Revert pin to input with default pull mode
-        BCM_GPIO_PULL pullMode = BCM_GPIO_PULL(
-            thisPtr->defaultPullConfig.Get(absolutePinNumber));
+        // Only revert pin if interrupts also disconnected
+        if (!preserveConfiguration &&
+            !(thisPtr->openInterruptPins[bankId] & (1 << pinNumber))) {
 
-        thisPtr->updatePullMode(
-                DisconnectParametersPtr->BankId,
-                pinNumber,
-                pullMode);
+            thisPtr->revertPinToDefault(bankId, pinNumber);
+        }
 
-        thisPtr->gpfsel.Set(absolutePinNumber, BCM_GPIO_FUNCTION_INPUT);
-        auto index = thisPtr->gpfsel.MakeIndex(absolutePinNumber);
-        WRITE_REGISTER_NOFENCE_ULONG(
-            &hw->GPFSEL[index.StorageIndex],
-            thisPtr->gpfsel[index.StorageIndex]);
+        thisPtr->openIoPins[bankId] &= ~(1 << pinNumber);
     } // for (USHORT i = ...)
 
     return STATUS_SUCCESS;
@@ -662,6 +758,15 @@ NTSTATUS BCM_GPIO::QueryControllerBasicInformation (
     ControllerInformationPtr->Flags.DeviceIdlePowerMgmtSupported = FALSE;
     ControllerInformationPtr->Flags.EmulateDebouncing = TRUE;
     ControllerInformationPtr->Flags.EmulateActiveBoth = TRUE;
+
+    // Indicate that the H/W registers used for I/O can be accessed seperately
+    // from the registers used for interrupt processing.
+    //
+    // N.B.: Setting this flag to TRUE will cause the GPIO class extension
+    // to optimize I/O processing by skipping the acquisition of
+    // interrupt-related locks in I/O paths.
+    ControllerInformationPtr->Flags.IndependentIoHwSupported = TRUE;
+
     return STATUS_SUCCESS;
 } // BCM_GPIO::QueryControllerBasicInformation (...)
 
@@ -905,9 +1010,10 @@ BCM_GPIO::BCM_GPIO (
     BCM_GPIO_REGISTERS* RegistersPtr,
     ULONG RegistersLength
     ) :
-    signature(_SIGNATURE::UNINITIALIZED),
     registersPtr(RegistersPtr),
-    registersLength(RegistersLength)
+    registersLength(RegistersLength),
+    openIoPins(),
+    openInterruptPins()
 {
     PAGED_CODE();
 
@@ -970,6 +1076,31 @@ NTSTATUS DriverEntry (
         } // if
     } // wdfDriver
 
+    bool stormMitigationEnabled = false;
+    {
+        WDFKEY wdfKey;
+        status = WdfDriverOpenParametersRegistryKey(
+                wdfDriver,
+                KEY_READ,
+                WDF_NO_OBJECT_ATTRIBUTES,
+                &wdfKey);
+
+        if (NT_SUCCESS(status)) {
+            DECLARE_CONST_UNICODE_STRING(valueName, L"StormMitigationEnabled");
+            ULONG value;
+            status = WdfRegistryQueryULong(
+                    wdfKey,
+                    &valueName,
+                    &value);
+
+            if (NT_SUCCESS(status)) {
+                stormMitigationEnabled = (value != 0);
+            }
+
+            WdfRegistryClose(wdfKey);
+        }
+    }
+
     // Register with GpioClx
     GPIO_CLIENT_REGISTRATION_PACKET registrationPacket = {
         GPIO_CLIENT_VERSION,
@@ -995,10 +1126,12 @@ NTSTATUS DriverEntry (
         nullptr,    // CLIENT_WriteGpioPins
         nullptr,    // CLIENT_SaveBankHardwareContext
         nullptr,    // CLIENT_RestoreBankHardwareContext
-        BCM_GPIO::PreProcessControllerInterrupt,
+        stormMitigationEnabled ? BCM_GPIO::PreProcessControllerInterrupt : nullptr,
         nullptr,    // CLIENT_ControllerSpecificFunction
         BCM_GPIO::ReconfigureInterrupt,
         BCM_GPIO::QueryEnabledInterrupts,
+        BCM_GPIO::ConnectFunctionConfigPins,
+        BCM_GPIO::DisconnectFunctionConfigPins,
     }; // registrationPacket
 
     registrationPacket.CLIENT_ReadGpioPinsUsingMask =

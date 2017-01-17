@@ -54,21 +54,25 @@ enum PNP_SERIAL_BUS_TYPE {
     PNP_SERIAL_BUS_TYPE_UART = 0x3,
 };
 
-enum class TRANSFER_STATE {
+enum TRANSFER_STATE : ULONG {
     INVALID,
     SENDING,
     RECEIVING,
     SENDING_SEQUENCE,
     RECEIVING_SEQUENCE,
+    SENDING_WAIT_FOR_DONE,
+    RECEIVING_WAIT_FOR_DONE,
+    RECEIVING_SEQUENCE_WAIT_FOR_DONE,
+    ERROR_FLAG = 0x80000000UL,
 };
 
 struct BCM_I2C_INTERRUPT_CONTEXT;
 
 struct BCM_I2C_DEVICE_CONTEXT {
+    BCM_I2C_REGISTERS* RegistersPtr;
+    BCM_I2C_INTERRUPT_CONTEXT* InterruptContextPtr;
     WDFDEVICE  WdfDevice;
     WDFINTERRUPT WdfInterrupt;
-    BCM_I2C_INTERRUPT_CONTEXT* InterruptContextPtr;
-    BCM_I2C_REGISTERS* RegistersPtr;
     PHYSICAL_ADDRESS RegistersPhysicalAddress;
     ULONG RegistersLength;
     ULONG ClockStretchTimeout;  // in units of SCL clock cycles
@@ -104,13 +108,14 @@ struct BCM_I2C_INTERRUPT_CONTEXT {
         ULONG CurrentReadMdlOffset;
     };
 
-    WDFINTERRUPT WdfInterrupt;
     BCM_I2C_REGISTERS* RegistersPtr;
+    ULONG State;    // TRANSFER_STATE
     SPBREQUEST SpbRequest;
-    const BCM_I2C_TARGET_CONTEXT* TargetPtr;
-    TRANSFER_STATE State;
     ULONG CapturedStatus;
     ULONG CapturedDataLength;
+    KSPIN_LOCK CancelLock;
+    const BCM_I2C_TARGET_CONTEXT* TargetPtr;
+    WDFINTERRUPT WdfInterrupt;
 
     union {
         WRITE_CONTEXT WriteContext;

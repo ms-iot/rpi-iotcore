@@ -613,7 +613,7 @@ PL011IoctlClrRts(
     WDFREQUEST WdfRequest
     )
 {
-    PL011_DEVICE_EXTENSION* devExtPtr = PL011DeviceGetExtension(WdfDevice);
+    const PL011_DEVICE_EXTENSION* devExtPtr = PL011DeviceGetExtension(WdfDevice);
     NTSTATUS status = STATUS_SUCCESS;
 
     //
@@ -671,7 +671,8 @@ PL011IoctlSetRts(
     WDFREQUEST WdfRequest
     )
 {
-    PL011_DEVICE_EXTENSION* devExtPtr = PL011DeviceGetExtension(WdfDevice);
+    const PL011_DEVICE_EXTENSION* devExtPtr = 
+        PL011DeviceGetExtension(WdfDevice);
     NTSTATUS status = STATUS_SUCCESS;
 
     //
@@ -729,7 +730,8 @@ PL011IoctlClrDtr(
     WDFREQUEST WdfRequest
     )
 {
-    PL011_DEVICE_EXTENSION* devExtPtr = PL011DeviceGetExtension(WdfDevice);
+    const PL011_DEVICE_EXTENSION* devExtPtr = 
+        PL011DeviceGetExtension(WdfDevice);
     NTSTATUS status = STATUS_SUCCESS;
 
     //
@@ -787,7 +789,8 @@ PL011IoctlSetDtr(
     WDFREQUEST WdfRequest
     )
 {
-    PL011_DEVICE_EXTENSION* devExtPtr = PL011DeviceGetExtension(WdfDevice);
+    const PL011_DEVICE_EXTENSION* devExtPtr = 
+        PL011DeviceGetExtension(WdfDevice);
     NTSTATUS status = STATUS_SUCCESS;
 
     //
@@ -935,7 +938,8 @@ PL011IoctlGetProperties(
     }
     RtlZeroMemory(serialCommPropertiesPtr, sizeof(SERIAL_COMMPROP));
 
-    PL011_DEVICE_EXTENSION* devExtPtr = PL011DeviceGetExtension(WdfDevice);
+    const PL011_DEVICE_EXTENSION* devExtPtr = 
+        PL011DeviceGetExtension(WdfDevice);
 
     //
     // Set the comm properties.
@@ -1191,7 +1195,8 @@ PL011IoctlGetModemStatus(
 
     UNREFERENCED_PARAMETER(WdfDevice);
 
-    PL011_DEVICE_EXTENSION* devExtPtr = PL011DeviceGetExtension(WdfDevice);
+    const PL011_DEVICE_EXTENSION* devExtPtr = 
+        PL011DeviceGetExtension(WdfDevice);
 
     if ((devExtPtr->UartSupportedControlsMask &
         UART_CONTROL_LINES_MODEM_STATUS) == 0) {

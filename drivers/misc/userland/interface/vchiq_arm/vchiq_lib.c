@@ -107,7 +107,7 @@ int send_ioctl_sync(
     DWORD ioctl_code,
     VOID* input_buffer,
     DWORD input_buffer_size,
-    VOID* output_buffer,
+    _Out_bytecap_(output_buffer_size) VOID* output_buffer,
     DWORD output_buffer_size,
     IO_STATUS_BLOCK* io_status_block
     )
@@ -344,6 +344,7 @@ int send_ioctl_func (
                 break;
             }
 
+            __pragma(prefast(suppress:25058, "Casting within va_arg"))
             val = va_arg(pl, unsigned int);
             
             status = ZwDeviceIoControlFile(
@@ -951,7 +952,7 @@ vchiq_get_service_userdata(VCHIQ_SERVICE_HANDLE_T handle)
 int
 vchiq_get_service_fourcc(VCHIQ_SERVICE_HANDLE_T handle)
 {
-   VCHIQ_SERVICE_T *service = find_service_by_handle(handle);
+   const VCHIQ_SERVICE_T *service = find_service_by_handle(handle);
 
    return service ? service->base.fourcc : 0;
 }
@@ -1825,7 +1826,7 @@ vchiq_lib_init(void)
 
        RtlInitUnicodeString(
            &device_name, 
-           VCHIQ_SYMBOLIC_NAME);
+           VCHIQ_SYMBOLIC_NAME_W);
 
        InitializeObjectAttributes(
            &object_attributes,

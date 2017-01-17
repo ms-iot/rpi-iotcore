@@ -1,21 +1,13 @@
-/*++
-
-Copyright (c) Microsoft Corporation
-
-Module Name:
-
-    openclos.c
-
-Abstract:
-
-    This module contains the code that is very specific to
-    opening, closing, and cleaning up in the serial driver.
-
-Environment:
-
-    Kernel mode
-
---*/
+// Copyright (c) Microsoft Corporation.  All rights reserved.
+//
+// Module Name:
+//
+//   openclos.c
+//
+// Abstract:
+//
+//    This module contains the code that is very specific to
+//    opening, closing, and cleaning up in the serial driver.
 
 #include "precomp.h"
 #include "openclos.tmh"
@@ -26,16 +18,8 @@ Environment:
 #pragma alloc_text(PAGESER,SerialDrainUART)
 #pragma alloc_text(PAGESRP0,SerialEvtDeviceFileCreate)
 #pragma alloc_text(PAGESRP0,SerialCreateTimersAndDpcs)
-#endif // ALLOC_PRAGMA
+#endif
 
-
-
-VOID
-SerialEvtDeviceFileCreate (
-    IN WDFDEVICE     Device,
-    IN WDFREQUEST    Request,
-    IN WDFFILEOBJECT FileObject
-    )
 /*++
 
 Routine Description:
@@ -58,6 +42,13 @@ Return Value:
    VOID.
 
 --*/
+_Use_decl_annotations_
+VOID
+SerialEvtDeviceFileCreate (
+    WDFDEVICE Device,
+    WDFREQUEST Request,
+    WDFFILEOBJECT FileObject
+    )
 {
     NTSTATUS status;
     PSERIAL_DEVICE_EXTENSION extension = SerialGetDeviceExtension (Device);
@@ -68,24 +59,50 @@ Return Value:
 
     TraceEvents(TRACE_LEVEL_INFORMATION, DBG_CREATE_CLOSE, "++SerialEvtDeviceFileCreate(%wZ)\r\n", &extension->DeviceName);
 
-    status = SerialDeviceFileCreateWorker(Device);
+    // If there is a debugger conflict, we should not get here
+    // since the device is not exposed. 
 
-    //
+    if (extension->DebugPortInUse) {
+        ASSERT(FALSE);
+        status = STATUS_DEVICE_NOT_READY;
+        goto End;
+    }
+
+    // Reserve and commit function configuration
+
+    status = SerialReserveFunctionConfig(Device, TRUE);
+    if (!NT_SUCCESS(status)) {
+        goto End;
+    }
+
+    status = SerialDeviceFileCreateWorker(Device);
+    if (!NT_SUCCESS(status)) {
+        goto End;
+    }
+
+    status = STATUS_SUCCESS;
+
+End:
+
+    // Cleanup on failure
+
+    if (!NT_SUCCESS(status)) {
+        if ((extension->FunctionConfigHandle != NULL) &&
+            !extension->DebugPortInUse) {
+            WdfObjectDelete(extension->FunctionConfigHandle);
+            extension->FunctionConfigHandle = NULL;
+        }
+    }
+
     // Complete the WDF request.
-    //
+
     WdfRequestComplete(Request, status);
 
-    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_CREATE_CLOSE, "--SerialEvtDeviceFileCreate(%wZ)\r\n", &extension->DeviceName);
+    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_CREATE_CLOSE, "--SerialEvtDeviceFileCreate(%wZ)\r\n",
+        &extension->DeviceName);
     return;
-
 }
 
-
-NTSTATUS
-SerialWdmDeviceFileCreate (
-    IN WDFDEVICE Device,
-    IN PIRP Irp
-    )
 /*++
 
 Routine Description:
@@ -104,38 +121,46 @@ Return Value:
    NT status code
 
 --*/
+_Use_decl_annotations_
+NTSTATUS
+SerialWdmDeviceFileCreate (
+    WDFDEVICE Device,
+    PIRP Irp
+    )
 {
     NTSTATUS status;
     PSERIAL_DEVICE_EXTENSION extension = SerialGetDeviceExtension (Device);
 
-    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_CREATE_CLOSE, "++SerialWdmDeviceFileCreate(%wZ)\r\n", &extension->DeviceName);
+    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_CREATE_CLOSE,
+                "++SerialWdmDeviceFileCreate(%wZ)\r\n",
+                &extension->DeviceName);
 
     status = SerialDeviceFileCreateWorker(Device);
 
-    //
     // Complete the WDM request.
-    //
+
     Irp->IoStatus.Information = 0L;
     Irp->IoStatus.Status = status;
     IoCompleteRequest(Irp, IO_NO_INCREMENT);
 
-    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_CREATE_CLOSE, "--SerialWdmDeviceFileCreate(%wZ)\r\n", &extension->DeviceName);
+    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_CREATE_CLOSE,
+                "--SerialWdmDeviceFileCreate(%wZ)\r\n",
+                &extension->DeviceName);
     return status;
 }
 
-
+_Use_decl_annotations_
 NTSTATUS
 SerialDeviceFileCreateWorker (
-    IN WDFDEVICE Device
+    WDFDEVICE Device
     )
 {
     NTSTATUS status;
     PSERIAL_DEVICE_EXTENSION extension = SerialGetDeviceExtension (Device);
 
     TraceEvents(TRACE_LEVEL_INFORMATION, DBG_CREATE_CLOSE, "++SerialDeviceFileCreateWorker()\r\n");
-    //
+
     // Create a buffer for the RX data when no reads are outstanding.
-    //
 
     extension->InterruptReadBuffer = NULL;
     extension->BufferSize = 0;
@@ -145,11 +170,9 @@ SerialDeviceFileCreateWorker (
         case MmLargeSystem: {
 
             extension->BufferSize = 4096;
-            extension->InterruptReadBuffer = ExAllocatePoolWithTag(
-                                                 NonPagedPool,
-                                                 extension->BufferSize,
-                                                 POOL_TAG
-                                                 );
+            extension->InterruptReadBuffer = ExAllocatePoolWithTag(NonPagedPool,
+                                                                 extension->BufferSize,
+                                                                 POOL_TAG);
 
             if (extension->InterruptReadBuffer) {
                 break;
@@ -160,11 +183,9 @@ SerialDeviceFileCreateWorker (
         case MmMediumSystem: {
 
             extension->BufferSize = 1024;
-            extension->InterruptReadBuffer = ExAllocatePoolWithTag(
-                                                 NonPagedPool,
-                                                 extension->BufferSize,
-                                                 POOL_TAG
-                                                 );
+            extension->InterruptReadBuffer = ExAllocatePoolWithTag(NonPagedPool,
+                                                                 extension->BufferSize,
+                                                                 POOL_TAG);
 
             if (extension->InterruptReadBuffer) {
                 break;
@@ -175,11 +196,9 @@ SerialDeviceFileCreateWorker (
         case MmSmallSystem: {
 
             extension->BufferSize = 128;
-            extension->InterruptReadBuffer = ExAllocatePoolWithTag(
-                                                 NonPagedPool,
-                                                 extension->BufferSize,
-                                                 POOL_TAG
-                                                 );
+            extension->InterruptReadBuffer = ExAllocatePoolWithTag(NonPagedPool,
+                                                                 extension->BufferSize,
+                                                                 POOL_TAG);
 
         }
 
@@ -189,28 +208,23 @@ SerialDeviceFileCreateWorker (
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    //
     // By taking a power reference by calling WdfDeviceStopIdle, we prevent the
     // framework from powering down our device due to idle timeout when there
     // is an open handle.  Power reference also moves the device to D0 if we are
     // idled out. If you fail create anywhere later in this routine, do make sure
     // drop the reference.
-    //
+
     status = WdfDeviceStopIdle(Device, TRUE);
     if (!NT_SUCCESS(status)) {
         return status;
     }
 
-    //
     // wakeup is not currently enabled
-    //
 
     extension->IsWakeEnabled = FALSE;
 
-    //
     // On a new open we "flush" the read queue by initializing the
     // count of characters.
-    //
 
     extension->CharsInInterruptBuffer = 0;
     extension->LastCharSlot = extension->InterruptReadBuffer +
@@ -222,9 +236,7 @@ SerialDeviceFileCreateWorker (
 
     extension->TotalCharsQueued = 0;
 
-    //
     // We set up the default xon/xoff limits.
-    //
 
     extension->HandFlow.XoffLimit = extension->BufferSize >> 3;
     extension->HandFlow.XonLimit = extension->BufferSize >> 1;
@@ -235,9 +247,7 @@ SerialDeviceFileCreateWorker (
     extension->BufferSizePt8 = ((3*(extension->BufferSize>>2))+
                                    (extension->BufferSize>>4));
 
-    //
     // Mark the device as busy for WMI
-    //
 
     extension->WmiCommData.IsBusy = TRUE;
 
@@ -253,20 +263,15 @@ SerialDeviceFileCreateWorker (
     // Clear out the statistics.
     //
 
-    WdfInterruptSynchronize(
-        extension->WdfInterrupt,
-        SerialClearStats,
-        extension
-        );
+    WdfInterruptSynchronize(extension->WdfInterrupt,
+                            SerialClearStats,
+                            extension);
 #endif
 
-    //
     // The escape char replacement must be reset upon every open.
-    //
 
     extension->EscapeChar = 0;
 
-    //
     // We don't want the device to be removed or stopped when there is an handle
     //
     // Note to anyone copying this sample as a starting point:
@@ -275,30 +280,145 @@ SerialDeviceFileCreateWorker (
     // one open handle at a time.  If it supported more, then it would need
     // counting logic to determine when all the reasons for failing Stop/Remove
     // were gone.
-    //
+
     WdfDeviceSetStaticStopRemove(Device, FALSE);
 
-    //
     // Synchronize with the ISR and let it know that the device
     // has been successfully opened.
-    //
 
-    WdfInterruptSynchronize(
-        extension->WdfInterrupt,
-        SerialMarkOpen,
-        extension
-        );
+    WdfInterruptSynchronize(extension->WdfInterrupt,
+                            SerialMarkOpen,
+                            extension);
 
     TraceEvents(TRACE_LEVEL_INFORMATION, DBG_CREATE_CLOSE, "--SerialDeviceFileCreateWorker()\r\n");
 
     return STATUS_SUCCESS;
 }
 
+/*++
 
-VOID
-SerialEvtFileClose(
-    IN WDFFILEOBJECT FileObject
+Routine Description:
+
+    SerialReserveFunctionConfig is called from EvtDeviceFileCreate callback
+    when the framework receives an IRP_MJ_CREATE request.
+    If the platform supports multiple alternate functions for the miniUART,
+    the function opens the associated connection ID, and commits the specific 
+    function required for the driver to work properly.
+    For example in Raspberry Pi3 a GPIO function configuration routes the RX/TX 
+    signals to GPIO 15/14, that are exposed at the board headers.
+
+Arguments:
+
+    Device - Handle to a framework device object.
+    IsCommit - If to commit function configuration (TRUE) or just reserve (FALSE).
+
+Return Value:
+
+    NTSTATUS
+
+--*/
+_Use_decl_annotations_
+NTSTATUS
+SerialReserveFunctionConfig (
+    WDFDEVICE Device,
+    BOOLEAN IsCommit
     )
+{
+    NTSTATUS status;
+    PSERIAL_DEVICE_EXTENSION extension = SerialGetDeviceExtension(Device);
+    WDF_OBJECT_ATTRIBUTES wdfObjectAttributes;
+    WDF_IO_TARGET_OPEN_PARAMS openParams;
+    DECLARE_UNICODE_STRING_SIZE(devicePath, RESOURCE_HUB_PATH_CHARS);
+
+    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_CREATE_CLOSE, 
+                "++SerialReserveFunctionConfig()\r\n");
+
+    ASSERT(extension->FunctionConfigHandle == NULL);
+
+    if (extension->FunctionConfigConnectionId.QuadPart == 0LL) {
+        status = STATUS_SUCCESS;
+        goto End;
+    }
+
+    status = RESOURCE_HUB_CREATE_PATH_FROM_ID(&devicePath,
+                extension->FunctionConfigConnectionId.LowPart,
+                extension->FunctionConfigConnectionId.HighPart);
+    if (!NT_SUCCESS(status)) {
+        TraceEvents(TRACE_LEVEL_ERROR, DBG_CREATE_CLOSE, 
+                    "RESOURCE_HUB_CREATE_PATH_FROM_ID failed "
+                    " Err=%Xh\r\n",
+                    status);
+        goto End;
+    }
+
+    WDF_OBJECT_ATTRIBUTES_INIT(&wdfObjectAttributes);
+    wdfObjectAttributes.ParentObject = extension->WdfDevice;
+
+    status = WdfIoTargetCreate(extension->WdfDevice,
+                               &wdfObjectAttributes,
+                               &extension->FunctionConfigHandle);
+    if (!NT_SUCCESS(status)) {
+        TraceEvents(TRACE_LEVEL_ERROR, DBG_CREATE_CLOSE,
+                    "WdfIoTargetCreate failed Err=%Xh\r\n",
+                    status);
+        goto End;
+    }
+
+    WDF_IO_TARGET_OPEN_PARAMS_INIT_OPEN_BY_NAME(&openParams,
+                                                &devicePath,
+                                                FILE_GENERIC_READ | 
+                                                 FILE_GENERIC_WRITE);
+
+    status = WdfIoTargetOpen(extension->FunctionConfigHandle, &openParams);
+    if (!NT_SUCCESS(status)) {
+        TraceEvents(TRACE_LEVEL_ERROR, DBG_CREATE_CLOSE,
+                    "WdfIoTargetOpen failed. "
+                    "status = %Xh, devicePath = %wZ)\r\n",
+                    status,
+                    &devicePath);
+        goto End;
+    }
+
+    // If we need to commit the function configuration, send IOCTL to commit 
+    // the configuration to H/W.
+    
+    if (IsCommit) {
+        status = WdfIoTargetSendIoctlSynchronously(extension->FunctionConfigHandle,
+                                                NULL,
+                                                IOCTL_GPIO_COMMIT_FUNCTION_CONFIG_PINS,
+                                                NULL,
+                                                0,
+                                                NULL,
+                                                0);
+        if (!NT_SUCCESS(status)) {
+            TraceEvents(TRACE_LEVEL_ERROR, DBG_CREATE_CLOSE,
+                        "IOCTL_GPIO_COMMIT_FUNCTION_CONFIG_PINS failed. "
+                        "Err=%Xh, devicePath = %wZ)\r\n",
+                        status,
+                        &devicePath);
+
+            goto End;
+        }
+    }
+
+    status = STATUS_SUCCESS;
+
+End:
+
+    // Cleanup on failure
+
+    if (!NT_SUCCESS(status)) {
+        if (extension->FunctionConfigHandle != NULL) {
+            WdfObjectDelete(extension->FunctionConfigHandle);
+            extension->FunctionConfigHandle = NULL;
+        }
+    }
+
+    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_CREATE_CLOSE, 
+                "--SerialReserveFunctionConfig()\r\n");
+
+    return status;
+}
 
 /*++
 
@@ -318,33 +438,43 @@ Return Value:
    VOID
 
 --*/
-
+_Use_decl_annotations_
+VOID
+SerialEvtFileClose(
+    WDFFILEOBJECT FileObject
+    )
 {
-    WDFDEVICE Device;
+    WDFDEVICE device;
     PSERIAL_DEVICE_EXTENSION extension;
+
     PAGED_CODE();
+    
     TraceEvents(TRACE_LEVEL_INFORMATION, DBG_CREATE_CLOSE, "++SerialEvtFileClose()\r\n");
 
-    Device=WdfFileObjectGetDevice(FileObject);
-    extension=SerialGetDeviceExtension(Device);
+    device=WdfFileObjectGetDevice(FileObject);
+    extension=SerialGetDeviceExtension(device);
 
-    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_INTERRUPT, "SerialEvtFileClose() - disable all intrpts\r\n");
-// need to disable miniUart both interrupts.
-// Tx interrupt may have been disabled in ISR earlier.
+    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_INTERRUPT, "SerialEvtFileClose() -"
+            " disable all intrpts\r\n");
+
+    // need to disable miniUart both interrupts.
+    // Tx interrupt may have been disabled in ISR earlier.
+
     WRITE_INTERRUPT_ENABLE(extension, extension->Controller, 0x0); 
 
-    SerialFileCloseWorker(Device);
+    SerialFileCloseWorker(device);
+
+    // Release the function configuration while the UART is not in use.
+
+    if (extension->FunctionConfigHandle != NULL) {
+        WdfObjectDelete(extension->FunctionConfigHandle);
+        extension->FunctionConfigHandle = NULL;
+    }
 
     TraceEvents(TRACE_LEVEL_INFORMATION, DBG_CREATE_CLOSE, "--SerialEvtFileClose()\r\n");
     return;
 }
 
-
-NTSTATUS
-SerialWdmFileClose (
-    IN WDFDEVICE Device,
-    IN PIRP Irp
-    )
 /*++
 
 Routine Description:
@@ -363,21 +493,45 @@ Return Value:
    NT status code
 
 --*/
+_Use_decl_annotations_
+NTSTATUS
+SerialWdmFileClose (
+    WDFDEVICE Device,
+    PIRP Irp
+    )
 {
     TraceEvents(TRACE_LEVEL_INFORMATION, DBG_CREATE_CLOSE, "++SerialWdmFileClose()\r\n");
+    
     SerialFileCloseWorker(Device);
 
     Irp->IoStatus.Information = 0L;
     Irp->IoStatus.Status = STATUS_SUCCESS;
     IoCompleteRequest(Irp, IO_NO_INCREMENT);
+    
     TraceEvents(TRACE_LEVEL_INFORMATION, DBG_CREATE_CLOSE, "--SerialWdmFileClose()\r\n");
+
     return STATUS_SUCCESS;
 }
 
+/*++
 
+Routine Description:
+
+    This routine is called to perform work when file handle is closed. 
+
+Arguments:
+
+    DeviceObject - Pointer to the device object for this device
+
+Return Value:
+
+   none
+
+--*/
+_Use_decl_annotations_
 VOID
 SerialFileCloseWorker(
-    IN WDFDEVICE Device
+    WDFDEVICE Device
     )
 {
     ULONG flushCount;
@@ -397,8 +551,9 @@ SerialFileCloseWorker(
     PSERIAL_DEVICE_EXTENSION extension = SerialGetDeviceExtension(Device);
     PSERIAL_INTERRUPT_CONTEXT interruptContext = SerialGetInterruptContext(extension->WdfInterrupt);
 
-    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_CREATE_CLOSE, "++SerialFileCloseWorker(%wZ)\r\n",
-                                                &extension->DeviceName);
+    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_CREATE_CLOSE,
+                "++SerialFileCloseWorker(%wZ)\r\n",
+                &extension->DeviceName);
 
     //
     // Acquire the interrupt state lock.
@@ -416,141 +571,132 @@ SerialFileCloseWorker(
     {
 
         charTime.QuadPart = -SerialGetCharTime(extension).QuadPart;
-        TraceEvents(TRACE_LEVEL_INFORMATION, DBG_CREATE_CLOSE, "SerialFileCloseWorker() interrupt is connected. CharTime=%I64d (%08X%08Xh)\r\n",charTime.QuadPart,charTime.HighPart,charTime.LowPart);
+        TraceEvents(TRACE_LEVEL_INFORMATION, DBG_CREATE_CLOSE,
+                    "SerialFileCloseWorker() interrupt is connected. CharTime=%I64d (%08X%08Xh)\r\n",
+                    charTime.QuadPart,charTime.HighPart,charTime.LowPart);
 
-        //
         // Do this now so that if the isr gets called it won't do anything
         // to cause more chars to get sent.  We want to run down the hardware.
-        //
 
         SetDeviceIsOpened(extension, FALSE, FALSE);
 
-        //
         // Synchronize with the isr to turn off break if it
         // is already on.
-        //
 
-        WdfInterruptSynchronize(
-            extension->WdfInterrupt,
-            SerialTurnOffBreak,
-            extension
-            );
+        WdfInterruptSynchronize(extension->WdfInterrupt,
+                                SerialTurnOffBreak,
+                                extension);
 
-        TraceEvents(TRACE_LEVEL_INFORMATION, DBG_CREATE_CLOSE, "SerialFileCloseWorker() Wait until all characters emptied out of the hardware\r\n");
+        TraceEvents(TRACE_LEVEL_INFORMATION, DBG_CREATE_CLOSE,
+                    "SerialFileCloseWorker() Wait until all characters emptied out of the hardware\r\n");
+       
         // Wait a reasonable amount of time (20 * fifodepth) until all characters
         // have been emptied out of the hardware.
-        // RPi3 - fifodepth is 8
 
-        for (flushCount = (20 * 8); flushCount != 0; flushCount--) 
+        for (flushCount = (20 * SERIAL_RX_FIFO_DEFAULT); flushCount != 0; flushCount--) 
         {
            if ((READ_LINE_STATUS(extension, extension->Controller) &
                 (SERIAL_LSR_THRE | SERIAL_LSR_TEMT)) !=
-               (SERIAL_LSR_THRE | SERIAL_LSR_TEMT)) 
-           {
+               (SERIAL_LSR_THRE | SERIAL_LSR_TEMT)) {
 
               KeDelayExecutionThread(KernelMode, FALSE, &charTime);
-          } 
-          else 
-          {
-             TraceEvents(TRACE_LEVEL_INFORMATION, DBG_CREATE_CLOSE, "SerialFileCloseWorker() emptied.\r\n");
+
+          }  else {
+
+             TraceEvents(TRACE_LEVEL_INFORMATION, DBG_CREATE_CLOSE,
+                        "SerialFileCloseWorker() emptied.\r\n");
              break;
           }
-        };
+        }
 
-        if (flushCount == 0)         
-        {
-            TraceEvents(TRACE_LEVEL_WARNING, DBG_CREATE_CLOSE, "SerialFileCloseWorker() Failed to empty hardware.\r\n");
+        if (flushCount == 0) {  
+
+            TraceEvents(TRACE_LEVEL_WARNING, DBG_CREATE_CLOSE,
+                        "SerialFileCloseWorker() Failed to empty hardware.\r\n");
+
             SerialMarkHardwareBroken(extension);
         }
 
-        //
         // Synchronize with the ISR to let it know that interrupts are
         // no longer important.
-        //
 
-        WdfInterruptSynchronize(
-            extension->WdfInterrupt,
-            SerialMarkClose,
-            extension
-            );
+        WdfInterruptSynchronize(extension->WdfInterrupt,
+                                SerialMarkClose,
+                                extension);
 
-
-        //
         // If the driver has automatically transmitted an Xoff in
         // the context of automatic receive flow control then we
         // should transmit an Xon.
-        //
 
         if (extension->RXHolding & SERIAL_RX_XOFF) 
         {
 
-            TraceEvents(TRACE_LEVEL_INFORMATION, DBG_CREATE_CLOSE, "SerialFileCloseWorker() driver has automatically transmitted an Xoff\r\n");
-            //
+            TraceEvents(TRACE_LEVEL_INFORMATION, DBG_CREATE_CLOSE,
+                        "SerialFileCloseWorker() driver has automatically transmitted an Xoff\r\n");
+
             // Loop until the holding register is empty.
-            //
+
             while (!(READ_LINE_STATUS(extension, extension->Controller) &
                      SERIAL_LSR_THRE)) {
-                KeDelayExecutionThread(
-                    KernelMode,
-                    FALSE,
-                    &charTime
-                    );
 
+                KeDelayExecutionThread(KernelMode,
+                                        FALSE,
+                                        &charTime);
             }
-            TraceEvents(TRACE_LEVEL_INFORMATION, DBG_CREATE_CLOSE, "SerialFileCloseWorker() now transmit an Xon\r\n");
+
+            TraceEvents(TRACE_LEVEL_INFORMATION, DBG_CREATE_CLOSE,
+                        "SerialFileCloseWorker() now transmit an Xon\r\n");
+
             WRITE_TRANSMIT_HOLDING(extension,
                 extension->Controller,
-                extension->SpecialChars.XonChar
-                );
+                extension->SpecialChars.XonChar);
 
+            TraceEvents(TRACE_LEVEL_INFORMATION, DBG_CREATE_CLOSE,
+                        "SerialFileCloseWorker() wait for char emptied from hardware\r\n");
 
-            TraceEvents(TRACE_LEVEL_INFORMATION, DBG_CREATE_CLOSE, "SerialFileCloseWorker() wait for char emptied from hardware\r\n");
-            //
             // Wait a reasonable amount of time for the characters
             // to be emptied out of the hardware.
-            //
 
              for (flushCount = (20 * 8); flushCount != 0; flushCount--) 
              {
                 if ((READ_LINE_STATUS(extension, extension->Controller) &
                      (SERIAL_LSR_THRE | SERIAL_LSR_TEMT)) !=
-                    (SERIAL_LSR_THRE | SERIAL_LSR_TEMT)) 
-                {
+                    (SERIAL_LSR_THRE | SERIAL_LSR_TEMT)) {
                    KeDelayExecutionThread(KernelMode, FALSE, &charTime);
-                } 
-                else 
-                {
-                    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_CREATE_CLOSE, "SerialFileCloseWorker() chars emptied\r\n");
+
+                } else {
+
+                    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_CREATE_CLOSE,
+                                "SerialFileCloseWorker() chars emptied\r\n");
                    break;
-                };
+                }
              }
 
-             if (flushCount == 0) 
-             {
-                TraceEvents(TRACE_LEVEL_WARNING, DBG_CREATE_CLOSE, "SerialFileCloseWorker() Failed to empty hardware.\r\n");
+             if (flushCount == 0) {
+
+                TraceEvents(TRACE_LEVEL_WARNING, DBG_CREATE_CLOSE,
+                            "SerialFileCloseWorker() Failed to empty hardware.\r\n");
                 SerialMarkHardwareBroken(extension);
              }
-        }; // end of IF Xon-Xoff was in use
+        } 
 
 
-        TraceEvents(TRACE_LEVEL_INFORMATION, DBG_CREATE_CLOSE, "SerialFileCloseWorker() Delay for 10 chars\r\n");
-        //
+        TraceEvents(TRACE_LEVEL_INFORMATION, DBG_CREATE_CLOSE,
+                        "SerialFileCloseWorker() Delay for 10 chars\r\n");
+
         // The hardware is empty.  Delay 10 character times before
         // shut down all the flow control.
-        //
 
         tenCharDelay.QuadPart = charTime.QuadPart * 10;
 
-        KeDelayExecutionThread(
-            KernelMode,
-            TRUE,
-            &tenCharDelay
-            );
+        KeDelayExecutionThread(KernelMode,
+                                TRUE,
+                                &tenCharDelay);
 
 #pragma prefast(suppress: __WARNING_INFERRED_IRQ_TOO_LOW, "This warning is because we are calling interrupt synchronize routine directly.")
+
         SerialClrDTR(extension->WdfInterrupt, extension);
 
-        //
         // We have to be very careful how we clear the RTS line.
         // Transmit toggling might have been on at some point.
         //
@@ -564,58 +710,52 @@ SerialFileCloseWorker(
         // make sure that we still aren't in the routine that
         // synchronized execution with the ISR by synchronizing
         // ourselve with the ISR.
-        //
 
         if (extension->CountOfTryingToLowerRTS) {
 
             do {
+
 #pragma prefast(suppress: __WARNING_INFERRED_IRQ_TOO_HIGH, "This warning is due to suppressing the previous one.")
-                KeDelayExecutionThread(
-                    KernelMode,
-                    FALSE,
-                    &charTime
-                    );
+
+                KeDelayExecutionThread(KernelMode,
+                                        FALSE,
+                                        &charTime);
 
             } while (extension->CountOfTryingToLowerRTS);
 
-            //
             // The execution path should no longer exist that
             // is trying to push down the RTS.  Well just
             // make sure it's down by falling through to
             // code that forces it down.
-            //
 
         }
 
 #pragma prefast(suppress: __WARNING_INFERRED_IRQ_TOO_LOW, "This warning is because we are calling interrupt synchronize routine directly.")
+
         SerialClrRTS(extension->WdfInterrupt, extension);
 
-         TraceEvents(TRACE_LEVEL_INFORMATION, DBG_CREATE_CLOSE, "SerialFileCloseWorker() Clean out the holding reasons\r\n");
-        //
+         TraceEvents(TRACE_LEVEL_INFORMATION, DBG_CREATE_CLOSE,
+                        "SerialFileCloseWorker() Clean out the holding reasons\r\n");
+
         // Clean out the holding reasons (since we are closed).
-        //
 
         extension->RXHolding = 0;
         extension->TXHolding = 0;
 
-        //
         // Mark device as not busy for WMI
-        //
 
         extension->WmiCommData.IsBusy = FALSE;
-
     }
 
-    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_CREATE_CLOSE, "SerialFileCloseWorker() Release the Interrupt state lock\r\n");
-    //
+    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_CREATE_CLOSE,
+                "SerialFileCloseWorker() Release the Interrupt state lock\r\n");
+
     // Release the Interrupt state lock.
-    //
+
     WdfWaitLockRelease(interruptContext->InterruptStateLock);
 
-    //
     // All is done.  The port has been disabled from interrupting
     // so there is no point in keeping the memory around.
-    //
 
     extension->BufferSize = 0;
     if (extension->InterruptReadBuffer != NULL) {
@@ -623,24 +763,24 @@ SerialFileCloseWorker(
     }
     extension->InterruptReadBuffer = NULL;
 
-    //
     // Make sure the wake is disabled.
-    //
+
     ASSERT(!extension->IsWakeEnabled);
 
-    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_CREATE_CLOSE, "SerialFileCloseWorker() draining DPCs and Timers\r\n");
+    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_CREATE_CLOSE,
+                "SerialFileCloseWorker() draining DPCs and Timers\r\n");
 
     SerialDrainTimersAndDpcs(extension);
 
-    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_CREATE_CLOSE, "DPC's drained:\n");
+    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_CREATE_CLOSE, "DPC's drained:\r\n");
 
-    //
     // It's fine for the device to be powered off if there are no open handles.
-    //
+
     WdfDeviceResumeIdle(Device);
 
-    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_CREATE_CLOSE, "SerialFileCloseWorker() ok for device to be removed.\r\n");
-    //
+    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_CREATE_CLOSE, "SerialFileCloseWorker()"
+            " ok for device to be removed.\r\n");
+
     // It's okay to allow the device to be stopped or removed.
     //
     // Note to anyone copying this sample as a starting point:
@@ -649,20 +789,14 @@ SerialFileCloseWorker(
     // one open handle at a time.  If it supported more, then it would need
     // counting logic to determine when all the reasons for failing Stop/Remove
     // were gone.
-    //
+
     WdfDeviceSetStaticStopRemove(Device, TRUE);
 
-    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_CREATE_CLOSE, "--SerialFileCloseWorker(%wZ)\r\n",
-                                                &extension->DeviceName);
+    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_CREATE_CLOSE,
+                "--SerialFileCloseWorker(%wZ)\r\n",
+                &extension->DeviceName);
     return;
-
 }
-
-BOOLEAN
-SerialMarkOpen(
-    IN WDFINTERRUPT  Interrupt,
-    IN PVOID Context
-    )
 
 /*++
 
@@ -681,7 +815,12 @@ Return Value:
     This routine always returns FALSE.
 
 --*/
-
+_Use_decl_annotations_
+BOOLEAN
+SerialMarkOpen(
+    WDFINTERRUPT  Interrupt,
+    PVOID Context
+    )
 {
 
     PSERIAL_DEVICE_EXTENSION extension = Context;
@@ -692,52 +831,66 @@ Return Value:
 
     SerialReset(extension->WdfInterrupt, extension);
 
+    // Prepare for the opening by re-enabling Rx interrupt.
     //
-    // Prepare for the opening by re-enabling interrupts.
-    //
-    // We do this my modifying the OUT2 line in the modem control.
-    // In PC's this bit is "anded" with the interrupt line.
-    // on RPi2 we enable interrupts now, since there is no out2
+    // On PC we do this with 16550 uart by modifying the OUT2 line in the modem control,
+    // since on 16550 this bit is "anded" with the interrupt line.
+    // on RPi there is no OUT2 so we enable Rx interrupt now
 
     WRITE_MODEM_CONTROL(extension,
         extension->Controller,
-        (UCHAR)(READ_MODEM_CONTROL(extension, extension->Controller) | SERIAL_MCR_OUT2)
-        );
+        (UCHAR)(READ_MODEM_CONTROL(extension, extension->Controller) | SERIAL_MCR_OUT2));
 
     TraceEvents(TRACE_LEVEL_INFORMATION, DBG_INTERRUPT, "SerialMarkOpen() - enable Rx interrupt\r\n");
 
-    WRITE_INTERRUPT_ENABLE(extension, extension->Controller, SERIAL_IER_RDA); // 0x1
+    WRITE_INTERRUPT_ENABLE(extension, extension->Controller, SERIAL_IER_RDA); 
 
     extension->DeviceIsOpened = TRUE;
     extension->ErrorWord = 0;
 
-    bPrintMiniUartregs(extension);
+#if DBG
+    PrintMiniUartregs(extension);
+#endif
 
     TraceEvents(TRACE_LEVEL_INFORMATION, DBG_CREATE_CLOSE, "--SerialMarkOpen()\r\n");
     return FALSE;
 
 }
 
+/*++
+
+Routine Description:
+
+    This routine waits until all characters ot become emptied out of the hardware.
+
+Arguments:
+
+    PDevExt - a pointer to the device extension.
+    PDrainTime - time duration to wait for
+
+Return Value:
+
+    None.
+
+--*/
+_Use_decl_annotations_
 VOID
-SerialDrainUART(IN PSERIAL_DEVICE_EXTENSION PDevExt,
-                IN PLARGE_INTEGER PDrainTime)
+SerialDrainUART(PSERIAL_DEVICE_EXTENSION DevExt,
+                PLARGE_INTEGER PDrainTime)
 {
    PAGED_CODE();
    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_CREATE_CLOSE, "++SerialDrainUART()\r\n");
-   //
-   // Wait until all characters have been emptied out of the hardware.
-   //
 
-   while ((READ_LINE_STATUS(PDevExt, PDevExt->Controller) &
+   // Wait until all characters have been emptied out of the hardware.
+
+   while ((READ_LINE_STATUS(DevExt, DevExt->Controller) &
            (SERIAL_LSR_THRE | SERIAL_LSR_TEMT))
            != (SERIAL_LSR_THRE | SERIAL_LSR_TEMT)) {
+
         KeDelayExecutionThread(KernelMode, FALSE, PDrainTime);
     }
    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_CREATE_CLOSE, "--SerialDrainUART()\r\n");
 }
-
-VOID
-SerialDisableUART(IN PVOID Context)
 
 /*++
 
@@ -755,40 +908,37 @@ Return Value:
     This routine always returns FALSE.
 
 --*/
-
+_Use_decl_annotations_
+VOID
+SerialDisableUART(PVOID Context)
 {
-   PSERIAL_DEVICE_EXTENSION extension = Context;
-   TraceEvents(TRACE_LEVEL_INFORMATION, DBG_CREATE_CLOSE, "++SerialDisableUART()\r\n");
+    PSERIAL_DEVICE_EXTENSION extension = Context;
+    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_CREATE_CLOSE, "++SerialDisableUART()\r\n");
 
-   //
-   // Prepare for the closing by stopping interrupts.
-   //
-   // We do this by adjusting the OUT2 line in the modem control.
-   // In PC's this bit is "anded" with the interrupt line.
-   // on rpi2 there is no out2 so disable interrupts here
+    // Prepare for the closing by stopping interrupts.
+
+    // On PC we do this with 16550 uart by modifying the OUT2 line in the modem control,
+    // since on 16550 this bit is "anded" with the interrupt line.
 
    WRITE_MODEM_CONTROL(extension, extension->Controller,
-                       (UCHAR)(READ_MODEM_CONTROL(extension, extension->Controller)
-                               & ~SERIAL_MCR_OUT2));
+                        (UCHAR)(READ_MODEM_CONTROL(extension, extension->Controller)
+                        & ~SERIAL_MCR_OUT2));
 
-    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_CREATE_CLOSE, "SerialDisableUART() - disable all interrupts\r\n");
+    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_CREATE_CLOSE,
+                "SerialDisableUART() - disable all interrupts\r\n");
+
+    // on RPi there is no OUT2 so we disable interrupts here
 
     WRITE_INTERRUPT_ENABLE(extension, extension->Controller, 0x0); 
 
-   if (extension->FifoPresent) {
-      WRITE_FIFO_CONTROL(extension, extension->Controller, (UCHAR)0);
+    if (extension->FifoPresent) {
+        WRITE_FIFO_CONTROL(extension, extension->Controller, (UCHAR)0);
     }
+
    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_CREATE_CLOSE, "--SerialDisableUART()\r\n");
    return;
 }
 
-
-
-BOOLEAN
-SerialMarkClose(
-    IN WDFINTERRUPT  Interrupt,
-    IN PVOID Context
-    )
 
 /*++
 
@@ -807,7 +957,12 @@ Return Value:
     This routine always returns FALSE.
 
 --*/
-
+_Use_decl_annotations_
+BOOLEAN
+SerialMarkClose(
+    WDFINTERRUPT Interrupt,
+    PVOID Context
+    )
 {
 
     PSERIAL_DEVICE_EXTENSION extension = Context;
@@ -816,18 +971,13 @@ Return Value:
     TraceEvents(TRACE_LEVEL_INFORMATION, DBG_CREATE_CLOSE, "++SerialMarkClose()\r\n");
 
     SerialDisableUART(Context);
+
     extension->DeviceIsOpened = FALSE;
     extension->DeviceState.Reopen   = FALSE;
 
     TraceEvents(TRACE_LEVEL_INFORMATION, DBG_CREATE_CLOSE, "--SerialMarkClose()\r\n");
     return FALSE;
-
 }
-
-LARGE_INTEGER
-SerialGetCharTime(
-    IN PSERIAL_DEVICE_EXTENSION Extension
-    )
 
 /*++
 
@@ -846,7 +996,11 @@ Return Value:
     100 nanosecond intervals in a character time.
 
 --*/
-
+_Use_decl_annotations_
+LARGE_INTEGER
+SerialGetCharTime(
+    PSERIAL_DEVICE_EXTENSION Extension
+    )
 {
     ULONG dataSize = 0;
     ULONG paritySize;
@@ -871,23 +1025,20 @@ Return Value:
             == SERIAL_NONE_PARITY) {
 
         paritySize = 0;
-
     }
 
      stopSize = 1;
 
-    //
     // First we calculate the number of 100 nanosecond intervals
-    // are in a single bit time (Approximately).
-    //
+    // are in a single bit time (approximately).
 
     bitTime = (10000000+(Extension->CurrentBaud-1))/Extension->CurrentBaud;
     charTime = bitTime + ((dataSize+paritySize+stopSize)*bitTime);
 
     tmp.QuadPart = charTime;
 
-    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_CREATE_CLOSE, "--SerialGetCharTime() chartime=%I64d (%08X%08Xh)\r\n", tmp.QuadPart, tmp.HighPart, tmp.LowPart);
+    TraceEvents(TRACE_LEVEL_INFORMATION, DBG_CREATE_CLOSE, "--SerialGetCharTime()"
+        " chartime=%I64d (%08X%08Xh)\r\n", tmp.QuadPart, tmp.HighPart, tmp.LowPart);
     return tmp;
 }
-
 

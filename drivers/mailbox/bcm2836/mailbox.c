@@ -172,7 +172,7 @@ Return Value:
 _Use_decl_annotations_
 NTSTATUS RpiqMailboxProperty (
     DEVICE_CONTEXT* DeviceContextPtr,
-    VOID* DataInPtr,
+    const VOID* DataInPtr,
     ULONG DataSize,
     ULONG Channel,
     WDFREQUEST Request

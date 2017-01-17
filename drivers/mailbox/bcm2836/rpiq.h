@@ -99,7 +99,7 @@ enum RPIQFunction
 #include <pshpack1.h>
 
 //
-// Mailbox Property Interface 
+// Mailbox Property Interface
 //
 
 // Standard mailbox header for all property interface
@@ -615,6 +615,76 @@ __inline VOID INIT_MAILBOX_LOC_MEM (
 }
 
 //
+// Get EDID block
+//
+// Tag : 0x00030020
+//   Request :
+//    Length : 4
+//    Value :
+//    u32 : block number
+//   Response :
+//    Length : 136
+//    Value :
+//    u32 : block number
+//    u32 : status  (keep requesting blocks until this is nonzero)
+//    128 bytes: EDID block
+//
+#define TAG_ID_GET_EDID 0x00030020
+typedef struct _MAILBOX_GET_EDID {
+    MAILBOX_HEADER Header;    
+    ULONG BlockNumber;
+    ULONG Status;
+    BYTE Edid[128];
+    ULONG EndTag;
+} MAILBOX_GET_EDID, *PMAILBOX_GET_EDID;
+
+__inline VOID INIT_MAILBOX_GET_EDID (
+    _Out_ MAILBOX_GET_EDID* PropertyMsgPtr,
+    _In_ ULONG BlockNumber
+    )
+{
+    PropertyMsgPtr->Header.TotalBuffer = sizeof(MAILBOX_GET_EDID);
+    PropertyMsgPtr->Header.RequestResponse = TAG_REQUEST;
+    PropertyMsgPtr->Header.TagID = TAG_ID_GET_EDID;
+    PropertyMsgPtr->Header.ResponseLength = 136;
+    PropertyMsgPtr->Header.Request = TAG_REQUEST;
+    PropertyMsgPtr->BlockNumber = BlockNumber;
+    PropertyMsgPtr->EndTag = 0;
+}
+
+//
+// Get virtual (buffer) width/height
+//
+// Tag : 0x00040004
+//   Request :
+//    Length : 0
+//   Response :
+//    Length : 8
+//    Value :
+//    u32 : width in pixels
+//    u32 : height in pixels
+//
+#define TAG_ID_GET_VIRTUAL_BUFFER_SIZE 0x00040004
+typedef struct _MAILBOX_GET_VIRTUAL_BUFFER_SIZE {
+    MAILBOX_HEADER Header;    
+    ULONG WidthPixels;
+    ULONG HeightPixels;
+    ULONG EndTag;
+} MAILBOX_GET_VIRTUAL_BUFFER_SIZE, *PMAILBOX_GET_VIRTUAL_BUFFER_SIZE;
+
+__inline VOID INIT_MAILBOX_GET_VIRTUAL_BUFFER_SIZE (
+    _Out_ MAILBOX_GET_VIRTUAL_BUFFER_SIZE* PropertyMsgPtr
+    )
+{
+    PropertyMsgPtr->Header.TotalBuffer = sizeof(MAILBOX_GET_VIRTUAL_BUFFER_SIZE);
+    PropertyMsgPtr->Header.RequestResponse = TAG_REQUEST;
+    PropertyMsgPtr->Header.TagID = TAG_ID_GET_VIRTUAL_BUFFER_SIZE;
+    PropertyMsgPtr->Header.ResponseLength = 8;
+    PropertyMsgPtr->Header.Request = TAG_REQUEST;
+    PropertyMsgPtr->EndTag = 0;
+}
+
+//
 // Set Cursor Info
 //
 // Tag: 0x00008010 Error in wiki documentation. Correct value define here
@@ -652,8 +722,8 @@ typedef struct _MAILBOX_SET_CURSOR_INFO {
 
 __inline VOID INIT_MAILBOX_CURSOR_INFO (
     _Out_ MAILBOX_SET_CURSOR_INFO* PropertyMsgPtr,
-    _In_ ULONG Width, 
-    _In_ ULONG Height, 
+    _In_ ULONG Width,
+    _In_ ULONG Height,
     _In_ ULONG Address
     )
 {
@@ -700,8 +770,8 @@ typedef struct _MAILBOX_SET_CURSOR_STATE {
 
 __inline VOID INIT_MAILBOX_CURSOR_STATE (
     _Out_ MAILBOX_SET_CURSOR_STATE* PropertyMsgPtr,
-    _In_ ULONG Enable, 
-    _In_ ULONG HotspotX, 
+    _In_ ULONG Enable,
+    _In_ ULONG HotspotX,
     _In_ ULONG HotspotY
     )
 {
@@ -716,21 +786,73 @@ __inline VOID INIT_MAILBOX_CURSOR_STATE (
     PropertyMsgPtr->EndTag = 0;
 }
 
+//
+// GPIO Expander
+// Tag: 0x00030041 and 0x00038041
+//   Request :
+//    Length : 8
+//    Value :
+//    u32 : Gpio id
+//    u32 : Gpio Set State
+//   Response :
+//    Length : 8
+//    Value :
+//    u32 : Gpio id
+//    u32 : Gpio State
+//
+#define TAG_ID_GET_GPIO_EXPANDER  0x00030041
+#define TAG_ID_SET_GPIO_EXPANDER  0x00038041
+typedef struct _MAILBOX_GET_SET_GPIO_EXPANDER
+{
+    MAILBOX_HEADER Header;
+    ULONG GpioId;
+    ULONG GpioState;
+    ULONG EndTag;
+} MAILBOX_GET_SET_GPIO_EXPANDER, *PMAILBOX_GET_SET_GPIO_EXPANDER;
+
+__inline VOID INIT_MAILBOX_GET_GPIO_EXPANDER (
+    _Out_ MAILBOX_GET_SET_GPIO_EXPANDER* PropertyMsgPtr,
+    _In_ ULONG GpioId)
+{
+    PropertyMsgPtr->Header.TotalBuffer = sizeof(MAILBOX_GET_SET_GPIO_EXPANDER);
+    PropertyMsgPtr->Header.RequestResponse = TAG_REQUEST;
+    PropertyMsgPtr->Header.TagID = TAG_ID_GET_GPIO_EXPANDER;
+    PropertyMsgPtr->Header.ResponseLength = 8;
+    PropertyMsgPtr->Header.Request = TAG_REQUEST;
+    PropertyMsgPtr->GpioId = GpioId;
+    PropertyMsgPtr->EndTag = 0;
+}
+
+__inline VOID INIT_MAILBOX_SET_GPIO_EXPANDER (
+    _Out_ MAILBOX_GET_SET_GPIO_EXPANDER* PropertyMsgPtr,
+    _In_ ULONG GpioId,
+    _In_ ULONG GpioState)
+{
+    PropertyMsgPtr->Header.TotalBuffer = sizeof(MAILBOX_GET_SET_GPIO_EXPANDER);
+    PropertyMsgPtr->Header.RequestResponse = TAG_REQUEST;
+    PropertyMsgPtr->Header.TagID = TAG_ID_SET_GPIO_EXPANDER;
+    PropertyMsgPtr->Header.ResponseLength = 8;
+    PropertyMsgPtr->Header.Request = TAG_REQUEST;
+    PropertyMsgPtr->GpioId = GpioId;
+    PropertyMsgPtr->GpioState = GpioState;
+    PropertyMsgPtr->EndTag = 0;
+}
+
 // Get touch buffer
-//	Tag: 0x0004000f
-//   Request : get touch buffer
+// Tag: 0x0004000f
+//   Request :
 //    Length : 4 bytes
 //    Value :  null
 //   Response :
 //    Length : 4 bytes
 //    Value :  UINT32
-//    u32 : touch buffer address if any, null otherwise
+//    u32 : Touch buffer address if any, null otherwise
 //
 #define TAG_ID_GET_TOUCHBUF  0x0004000f // RPI_FIRMWARE_FRAMEBUFFER_GET_TOUCHBUF=0x0004000f
-typedef struct _MAILBOX_GET_TOUCH_BUF 
+typedef struct _MAILBOX_GET_TOUCH_BUF
 {
     MAILBOX_HEADER Header;
-    ULONG pTouchBuffer;
+    ULONG TouchBuffer;
     ULONG EndTag;
 } MAILBOX_GET_TOUCH_BUF;
 
@@ -743,7 +865,7 @@ __inline VOID INIT_MAILBOX_GET_TOUCH_BUFF (
     PropertyMsgPtr->Header.TagID = TAG_ID_GET_TOUCHBUF;
     PropertyMsgPtr->Header.ResponseLength = 4;
     PropertyMsgPtr->Header.Request = TAG_REQUEST;
-    PropertyMsgPtr->pTouchBuffer = InTouchBuffer;
+    PropertyMsgPtr->TouchBuffer = InTouchBuffer;
     PropertyMsgPtr->EndTag=0;
 }
 

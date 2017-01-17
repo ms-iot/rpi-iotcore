@@ -1,87 +1,58 @@
-/*++
-
-Copyright (c) Microsoft Corporation
-
-Module Name :
-
-    serial.h
-
-Abstract:
-
-    Type definitions and data for the serial port driver
-
---*/
+//
+// Copyright (c) Microsoft Corporation.  All rights reserved.
+//
+// Module Name:
+//
+//     serial.h
+//
+// Abstract:
+//
+//  Header file contains register offsets, register masks, constants, definitions and other 
+//  macros for RPi3 mini Uart driver
 
 #define POOL_TAG 'UNMP'
 
-
 //
-// Some default driver values.  We will check the registry for
-// them first.
+// Some default driver values, which will be used if settings not found in registry
+// In such case these default values will be written back to registry on the first run.
 //
-#define SERIAL_UNINITIALIZED_DEFAULT    1234567
 #define SERIAL_FORCE_FIFO_DEFAULT       1
 #define SERIAL_RX_FIFO_DEFAULT          8
 #define SERIAL_TX_FIFO_DEFAULT          8
 #define SERIAL_PERMIT_SHARE_DEFAULT     0
 #define SERIAL_LOG_FIFO_DEFAULT         0
 
-
-//
-// This define gives the default Object directory
-// that we should use to insert the symbolic links
-// between the NT device name and namespace used by
-// that object directory.
-#define DEFAULT_DIRECTORY L"DosDevices"
-
-//
-// For the above directory, the serial port will
-// use the following name as the suffix of the serial
-// ports for that directory.  It will also append
-// a number onto the end of the name.  That number
-// will start at 1.
-#define DEFAULT_SERIAL_NAME L"COM"
-//
-//
-// This define gives the default NT name for
-// for serial ports detected by the firmware.
-// This name will be appended to Device prefix
-// with a number following it.  The number is
-// incremented each time encounter a serial
-// port detected by the firmware.  Note that
-// on a system with multiple busses, this means
-// that the first port on a bus is not necessarily
-// \Device\Serial0.
-//
-#define DEFAULT_NT_SUFFIX L"Serial"
-#define _DRIVER_NAME_  "Serial.sys"
-
 #define DEVICE_OBJECT_NAME_LENGTH       128
 #define SYMBOLIC_NAME_LENGTH            128
 #define SERIAL_DEVICE_MAP               L"SERIALCOMM"
 
-//
-// GUID_DEVINTERFACE_COMPORT is not defined in the Win2K
-// headers, so we will need this definition to avoid compilation
-// errors.
-//
-#define GUID_DEVINTERFACE_COMPORT GUID_CLASS_COMPORT
+// *********************** IMPORTANT 16550 UART COMPATIBILITY NOTICE ******************************
+// Please note that miniUart hardware has limited compatibility with 16550 like UART device registers.
+// Out of many 16550 UART features only a subset is implemented in mini Uart
+// In addition mini Uart contains featires not found n 16550 UART.
+// Therefore only macros for a subset of 16550 UART is implemented.
 
-//
-// This value - which could be redefined at compile
-// time, define the stride between registers
-//
-#if !defined(SERIAL_REGISTER_STRIDE)
-#define SERIAL_REGISTER_STRIDE 1
-#endif
+// For the first eight(8) registers on mini Uart only lower 8 bits are used (1 byte).
+// However, on mini Uart all registers require DWORD read or write operation regardless of data size
+// to be read or written to register.
+
+// Please note that extended mini Uart registers have variable size of data in them.
+
+// ************************************************************************************************
 
 //
 // Offsets from the base register address of the
-// various registers for the pi mini uart.
-//
-#define AUX_ENABLE_REG              ((ULONG)0x04) // AUX_ENABLES Auxiliary enables - 3
+// various registers for Pi3 mini Uart.
+// ------------------------------------------------------------------------------------------------
+// AUX_ENABLES register
+// offset 04 - Auxiliary enables - bits 3:0
+// bit 0 - 1=enable mini Uart module, 0=disable (default)
 
-// ------------------------------------------------------------------------------------------------------------------------
+#define AUX_ENABLE_REG          ((ULONG)0x04)
+#define MINIUART_ENABLE_MASK    (0x1)
+// ------------------------------------------------------------------------------------------------
+
+// ------------------------------------------------------------------------------------------------
 // The IO_REG register 
 // offset 40 - bits 31:8 Reserved, write zero, read as don’t care
 // is primary used to write data to and read data from the UART FIFOs.
@@ -90,124 +61,139 @@ Abstract:
 
 #define RECEIVE_BUFFER_REGISTER    ((ULONG)0x40) // AUX_MU_IO_REG Mini Uart I / O Data - 8
 #define TRANSMIT_HOLDING_REGISTER  ((ULONG)0x40)
-#define DIVISOR_LATCH_LSB          ((ULONG)0x40) // Access to the LS 8 bits of the 16-bit baudrate register If bit 7 of the line control register (DLAB bit) is set
+#define DIVISOR_LATCH_LSB          ((ULONG)0x40) 
 
-//----------------------------------------------------------------------------------------------------------------------------
+//-------------------------------------------------------------------------------------------------
 
-//----------------------------------------------------------------------------------------------------------------------------
-// The IER_REG register 
+//-------------------------------------------------------------------------------------------------
+// The IER_REG register
 // is primary used to enable interrupts
 // If the DLAB bit in the line control register is set this register gives access to the MS 8 bits
 // of the baud rate. (Note: there is easier access to the baud rate register)
 // offset 44 - always - bits 31:8 Reserved, write zero, read as don’t care
 //                      bits 7:2 Reserved, write zero, read as don’t care
 //
-//             bit 1 - Rx interrupt enable, RW. If this bit is set the interrupt line is asserted whenever
-//                      the receive FIFO holds at least 1 byte.
+//             bit 1 - Rx interrupt enable, RW. If this bit is set the interrupt line is asserted 
+//                      whenever the receive FIFO holds at least 1 byte.
 //                      If this bit is clear no receive interrupts are generated
 
-//             bit 0 - Tx interrupt enable, RW. If this bit is set the interrupt line is asserted whenever
-//                      the transmit FIFO is empty.
+//             bit 0 - Tx interrupt enable, RW. If this bit is set the interrupt line is asserted
+//                      whenever the transmit FIFO is empty.
 //                      If this bit is clear no transmit interrupts are generated
 
-#define INTERRUPT_ENABLE_REGISTER  ((ULONG)0x44) // AUX_MU_IER_REG Mini Uart Interrupt Enable - 8
-#define DIVISOR_LATCH_MSB          ((ULONG)0x44) // Access to the MS 8 bits of the 16-bit baudrate register. If bit 7 of the line control register (DLAB bit) is set)
-//------------------------------------------------------------------------------------------------------------------
+#define INTERRUPT_ENABLE_REGISTER  ((ULONG)0x44)
+#define DIVISOR_LATCH_MSB          ((ULONG)0x44)
+//-------------------------------------------------------------------------------------------------
 
-//------------------------------------------------------------------------------------------------------------------
+//-------------------------------------------------------------------------------------------------
 // The IIR_REG register is primary used to enable interrupts
 // If the DLAB bit in the line control register is set this register gives access to the MS 8 bits
 // of the baud rate. (Note: there is easier access to the baud rate register)
 // offset 48 - bits 31:8 Reserved, write zero, read as don’t care
-//              bits 7:6 FIFO enables. Note - Both bits always read as 1 as the FIFOs are always enabled, RO
+//              bits 7:6 FIFO enables. Note - Both bits always read as 1 as the FIFOs are always
+//                  enabled, RO
 //              bits 5:4 - Always read as zero RO
 //              bit 3 - Always read as zero as the mini UART has no timeout function, RO
 //              bits 2:1    READ: Interrupt ID bits
 //                          WRITE: FIFO clear bits
 // On read this register shows the interrupt ID bit
-//00 : No interrupts
-//01 : Transmit holding register empty
-//10 : Receiver holds valid byte
-//11 : <Not possible>
-//On write:
-//Writing with bit 1 set will clear the receive FIFO
-//Writing with bit 2 set will clear the transmit FIFO
-//              bit 0 0=Interrupt pending. This bit is clear whenever an interrupt is pending. RO. default value=1
+// 00 : No interrupts
+// 01 : Transmit holding register empty
+// 10 : Receiver holds valid byte
+// 11 : <Not possible>
+// On write:
+// Writing with bit 1 set will clear the receive FIFO
+// Writing with bit 2 set will clear the transmit FIFO
+//              bit 0 0=Interrupt pending. This bit is clear whenever an interrupt is pending. RO
+//                  default value=1
 
-#define INTERRUPT_IDENT_REGISTER   ((ULONG)0x48) // AUX_MU_IIR_REG Mini Uart Interrupt Identify - 8
-#define FIFO_CONTROL_REGISTER      ((ULONG)0x48) // AUX_MU_IIR_REG Mini Uart fifo control - 8
-//-----------------------------------------------------------------------------------------------------------------
+#define INTERRUPT_IDENT_REGISTER   ((ULONG)0x48)
+#define FIFO_CONTROL_REGISTER      ((ULONG)0x48)
+//-------------------------------------------------------------------------------------------------
 
-
-//-----------------------------------------------------------------------------------------------------------------
+//-------------------------------------------------------------------------------------------------
 // The LCR_REG register controls the line data format and gives access to the
 // baudrate register
 // offset 4C - bits 31:8 Reserved, write zero, read as don’t care
-//              bit 7 DLAB access If set the first to Mini UART register give access the the Baudrate register. During operation this bit must be cleared. R/W
-//              bit 6 Break If set high the UART1_TX line is pulled low continuously. If held for at least 12 bits times that will indicate a break condition. R/W
+//              bit 7 DLAB access If set the first to Mini UART register give access the the Baudrate
+//                  register. During operation this bit must be cleared. R/W
+//              bit 6 Break If set high the UART1_TX line is pulled low continuously. If held for at
+//                  least 12 bits times that will indicate a break condition. R/W
 //              bits 5:1 Reserved, write zero, read as don’t care
-//              bit 0 data size If clear the UART works in 7-bit mode. If set the UART works in 8-bit mode, RW
+//              bit 0 data size If clear the UART works in 7-bit mode. If set the UART works in 8-bit
+//                  mode, RW
 
-#define LINE_CONTROL_REGISTER      ((ULONG)0x4C) // AUX_MU_LCR_REG Mini Uart Line Control - 8
-//-----------------------------------------------------------------------------------------------------------------
+#define LINE_CONTROL_REGISTER      ((ULONG)0x4C)
+//-------------------------------------------------------------------------------------------------
 
-//-----------------------------------------------------------------------------------------------------------------
+//-------------------------------------------------------------------------------------------------
 // The MCR_REG register controls the 'modem' signals.
 // offset 50 - bits 31:8 Reserved, write zero, read as don’t care
 //              bits 7:2 Reserved, write zero, read as don’t care
 //              bit 1 - RTS If clear the UART1_RTS line is high. If set the UART1_RTS line is low
-//                      This bit is ignored if the RTS is used for auto-flow control. See the Mini Uart Extra Control register description)
+//                      This bit is ignored if the RTS is used for auto-flow control.
+//                      See the Mini Uart Extra Control register description
 //              bit 0 - 0 Reserved, write zero, read as don’t care
 
-#define MODEM_CONTROL_REGISTER     ((ULONG)0x50) // AUX_MU_MCR_REG Mini Uart Modem Control - 8
-//-----------------------------------------------------------------------------------------------------------------
+#define MODEM_CONTROL_REGISTER     ((ULONG)0x50)
+//-------------------------------------------------------------------------------------------------
 
-//-----------------------------------------------------------------------------------------------------------------
+//-------------------------------------------------------------------------------------------------
 // The LSR_REG register shows the data status.
 // offset 54 - bits 31:8 Reserved, write zero, read as don’t care
 //              bit 7  Reserved, write zero, read as don’t care
-//              bit 6 Transmitter idle. This bit is set if the transmit FIFO is empty and the transmitter is idle. (Finished shifting out the last bit).
-//              bit 5 Transmitter empty. This bit is set if the transmit FIFO can accept at least one byte.
+//              bit 6 Transmitter idle. This bit is set if the transmit FIFO is empty and the
+//                  transmitter is idle. (Finished shifting out the last bit).
+//              bit 5 Transmitter empty. This bit is set if the transmit FIFO can accept at least
+//                  one byte.
 //              bits 4:2 Reserved, write zero, read as don’t care
 //              bit 1 Receiver Overrun. RSC
 //              bit 0 Data ready. This bit is set if the receive FIFO holds at least 1 symbol. RO
 
-#define LINE_STATUS_REGISTER       ((ULONG)0x54) // AUX_MU_LSR_REG Mini Uart Line Status - 8
-//-----------------------------------------------------------------------------------------------------------------
+#define LINE_STATUS_REGISTER       ((ULONG)0x54)
+//-------------------------------------------------------------------------------------------------
 
-//-----------------------------------------------------------------------------------------------------------------
+//-------------------------------------------------------------------------------------------------
 // The MSR_REG register shows the 'modem' status.
 // offset 58 - bits 31:6 Reserved, write zero, read as don’t care
 //              bit 5 CTS status This bit is the inverse of the UART1_CTS input
 //              bits 3:0 Reserved, write zero, read as don’t care
 
-#define MODEM_STATUS_REGISTER      ((ULONG)0x58) // AUX_MU_MSR_REG Mini Uart Modem Status - 8
-//-----------------------------------------------------------------------------------------------------------------
-
-#define EXTRA_CONTROL_REG       ((ULONG)0x60) // AUX_MU_CNTL_REG Mini Uart Extra Control - 8
-#define EXTRA_STATUS_REG        ((ULONG)0x64) // AUX_MU_STAT_REG Mini Uart Extra Status - 32
-#define BAUD_DIVISOR_REG        ((ULONG)0x68) // AUX_MU_BAUD_REG Mini Uart Baudrate - 16
-#define SERIAL_REGISTER_SPAN    ((ULONG)(0x6C)) // actual size is 6Ch, ACPI table uses 70h
+#define MODEM_STATUS_REGISTER      ((ULONG)0x58) // AUX_MU_MSR_REG Mini Uart Modem Status
+//-------------------------------------------------------------------------------------------------
 
 //
-// If we have an interrupt status register this is its assumed
-// length.
-//
-#define SERIAL_STATUS_LENGTH       ((ULONG)(1*SERIAL_REGISTER_STRIDE))
-
-//
-// Bitmask definitions for accessing the 8250 device registers.
+// extra registers not typically present on 16550 UART
+// but available on RPi3 mini Uart
 //
 
+//-------------------------------------------------------------------------------------------------
+// The MU_CNTL_REG - extra control
+// offset 60 - 32 bits
 //
-// These bits define the number of data bits trasmitted in
-// the Serial Data Unit (SDU - Start,data, parity, and stop bits)
-//
-#define SERIAL_DATA_LENGTH_5 0x00
-#define SERIAL_DATA_LENGTH_6 0x01
-#define SERIAL_DATA_LENGTH_7 0x02
-#define SERIAL_DATA_LENGTH_8 0x03
+#define EXTRA_CONTROL_REG       ((ULONG)0x60)
+//-------------------------------------------------------------------------------------------------
 
+//-------------------------------------------------------------------------------------------------
+// The MU_STAT_REG - extra status register
+// offset 64 - 32 bits
+#define EXTRA_STATUS_REG        ((ULONG)0x64)
+//-------------------------------------------------------------------------------------------------
+
+//-------------------------------------------------------------------------------------------------
+// The MU_BAUD_REG - extra baud rate register
+// offset 68 - 16 bits
+#define BAUD_DIVISOR_REG        ((ULONG)0x68)
+//-------------------------------------------------------------------------------------------------
+
+//
+// register span describes the lenght of memory range occupied by all mini Uart registers
+// memory resources for mini Uart in ACPI table must have at least that much 
+
+#define SERIAL_REGISTER_SPAN    ((ULONG)(0x6C))
+
+// Bitmask definitions for Broadcom miniUart on RPi3.
+// Please see UART compaibility notice above.
 
 //
 // These masks define the interrupts that can be enabled or disabled.
@@ -249,7 +235,6 @@ Abstract:
 //
 #define SERIAL_IIR_RLS      0x06
 #define SERIAL_IIR_RDA      0x04
-#define SERIAL_IIR_CTI      0x0c
 #define SERIAL_IIR_THR      0x02
 #define SERIAL_IIR_MS       0x00
 
@@ -267,12 +252,10 @@ Abstract:
 //
 #define SERIAL_IIR_NO_INTERRUPT_PENDING 0x01
 
-
 //
 // Use these bits to detect removal of serial card for Stratus implementation
 //
 #define SERIAL_IIR_MUST_BE_ZERO 0x30
-
 
 //
 // These masks define access to the fifo control register.
@@ -304,7 +287,7 @@ Abstract:
 
 //
 // This defines the bit used to control the definition of the "first"
-// two registers for the 8250.  These registers are the input/output
+// two registers for the 16550. These registers are the input/output
 // register and the interrupt enable register.  When the DLAB bit is
 // enabled these registers become the least significant and most
 // significant bytes of the divisor value.
@@ -370,17 +353,10 @@ Abstract:
 #define SERIAL_MCR_OUT2           0x08
 
 //
-// This bit controls the loopback testing mode of the device.  Basically
+// This bit controls the loopback testing mode of the device. Basically
 // the outputs are connected to the inputs (and vice versa).
 //
 #define SERIAL_MCR_LOOP           0x10
-
-//
-// This bit enables auto flow control on a TI TL16C550C/TL16C550CI
-//
-
-#define SERIAL_MCR_TL16C550CAFE   0x20
-
 
 //
 // These masks define access to the line status register.  The line
@@ -452,7 +428,6 @@ Abstract:
 //
 #define SERIAL_LSR_FIFOERR  0x80
 
-
 //
 // These masks are used to access the modem status register.
 // Whenever one of the first four bits in the modem status
@@ -510,26 +485,11 @@ Abstract:
 //
 #define SERIAL_MSR_DCD      0x80
 
-//
-// This should be more than enough space to hold then
-// numeric suffix of the device name.
-//
-#define DEVICE_NAME_DELTA 20
-
-
-//
-// Up to 16 Ports Per card.  However for sixteen
-// port cards the interrupt status register must me
-// the indexing kind rather then the bitmask kind.
-//
-//
-#define SERIAL_MAX_PORTS_INDEXED (16)
-#define SERIAL_MAX_PORTS_NONINDEXED (8)
-
 typedef struct _CONFIG_DATA {
     PHYSICAL_ADDRESS    Controller;
     PHYSICAL_ADDRESS    TrController;
     ULONG               SpanOfController;
+    LARGE_INTEGER       FunctionConfigConnectionId;
     ULONG               ClockRate;
     ULONG               AddressSpace;
     ULONG               DisablePort;
@@ -543,9 +503,7 @@ typedef struct _CONFIG_DATA {
     ULONG               TrVector;
     ULONG               TrIrql;
     KAFFINITY           Affinity;
-    ULONG               TL16C550CAFC;
     } CONFIG_DATA,*PCONFIG_DATA;
-
 
 //
 // This structure contains configuration data, much of which
@@ -576,7 +534,7 @@ typedef struct _SERIAL_FIRMWARE_DATA {
 #define SERIAL_DEF_XOFF 0x13
 
 //
-// Reasons that recption may be held up.
+// Reasons that reception may be held up.
 //
 #define SERIAL_RX_DTR       ((ULONG)0x01)
 #define SERIAL_RX_XOFF      ((ULONG)0x02)
@@ -601,11 +559,6 @@ typedef struct _SERIAL_FIRMWARE_DATA {
 #define SERIAL_COMPLETE_READ_TOTAL ((LONG)-2)
 #define SERIAL_COMPLETE_READ_COMPLETE ((LONG)-3)
 
-//
-// These are default values that shouldn't appear in the registry
-//
-#define SERIAL_BAD_VALUE ((ULONG)-1)
-
 
 typedef struct _SERIAL_DEVICE_STATE {
    //
@@ -627,44 +580,47 @@ typedef struct _SERIAL_DEVICE_STATE {
    // MSR is never written
    // SCR is either scratch or interrupt status
 
-
 } SERIAL_DEVICE_STATE, *PSERIAL_DEVICE_STATE;
 
 
 typedef
 UCHAR
-(*PREAD_PORT_UCHAR)(
-    IN UCHAR *Register
-    );
+(*PREAD_SER_UCHAR)(_In_ UCHAR *Register);
 
 typedef
 VOID
-(*PWRITE_PORT_UCHAR)(
-    IN UCHAR *Register,
-    IN UCHAR  Value
-    );
+(*PWRITE_SER_UCHAR)(
+    _In_ UCHAR *Register,
+    _In_ UCHAR  Value);
 
 typedef struct _SERIAL_DEVICE_EXTENSION {
     //
     // WDF device handle
     //
     WDFDEVICE WdfDevice;
+
     //
     // Points to the device object that contains
     // this device extension.
     //
     PDEVICE_OBJECT DeviceObject;
+
     //
     // We keep a pointer around to our device name for dumps
     // and for creating "external" symbolic links to this
     // device.
     //
     UNICODE_STRING DeviceName;
+
     //
     // Pointer to the driver object
     //
-
     PDRIVER_OBJECT DriverObject;
+
+    //
+    // If the kernel debugger is in use
+    //
+    BOOLEAN DebugPortInUse;
 
     //
     // Records whether we actually created the symbolic link name
@@ -683,7 +639,7 @@ typedef struct _SERIAL_DEVICE_EXTENSION {
     //
     // Did we update system count for serial ports
     //
-    BOOLEAN    IsSystemConfigInfoUpdated;
+    BOOLEAN IsSystemConfigInfoUpdated;
 
     //
     // Should we expose external interfaces?
@@ -691,10 +647,14 @@ typedef struct _SERIAL_DEVICE_EXTENSION {
     ULONG SkipNaming;
 
     //
-    // Support the TI TL16C550C and TL16C550CI auto flow control
+    // If we already enabled device interface.
+    // Since we are enabling the device interface in
+    // SerialEvtPrepareHardware callback due to a potential debugger conflict,
+    // SerialEvtPrepareHardware and SerialEvtReleaseHardware may be called 
+    // after device interface has been enabled when 
+    // the system goes through resources balancing.
     //
-
-    ULONG TL16C550CAFC;
+    BOOLEAN IsDeviceInterfaceEnabled;
 
     //
     // Detect removed hardware in intterrupt routine flag
@@ -829,8 +789,8 @@ typedef struct _SERIAL_DEVICE_EXTENSION {
 
     ULONG AddressSpace;
 
-    PREAD_PORT_UCHAR SerialReadUChar;
-    PWRITE_PORT_UCHAR SerialWriteUChar;
+    PREAD_SER_UCHAR SerialReadUChar;
+    PWRITE_SER_UCHAR SerialWriteUChar;
 
     //
     // Hold the clock rate input to the serial part.
@@ -847,7 +807,6 @@ typedef struct _SERIAL_DEVICE_EXTENSION {
     //
     ULONG PermitShare;
 
-
     //
     // Points to the interrupt object for used by this device.
     //
@@ -857,14 +816,26 @@ typedef struct _SERIAL_DEVICE_EXTENSION {
     // Translated vector
     //
     ULONG Vector;
+
     //
-    // Translated Irql
+    // Translated UART interrupt resource
     //
     KIRQL Irql;
+    KINTERRUPT_MODE InterruptMode;
+    KAFFINITY Affinity;
 
-    KINTERRUPT_MODE     InterruptMode;
+    //
+    // GPIO function configuration connection ID.
+    // Use for RX/TX signals routing on platforms that
+    // have multiple routing configurations.
+    //
+    LARGE_INTEGER FunctionConfigConnectionId;
 
-    KAFFINITY           Affinity;
+    //
+    // Handle to FunctionConfig() resource used in to claim
+    // the required GPIO function configuration.
+    //
+    WDFIOTARGET FunctionConfigHandle;
 
     //
     // This value is set by the read code to hold the time value
@@ -894,13 +865,11 @@ typedef struct _SERIAL_DEVICE_EXTENSION {
     //
     LARGE_INTEGER LastReadTime;
 
-
     //
     // This points the the delta time that we should use to
     // delay for interval timing.
     //
     PLARGE_INTEGER IntervalTimeToUse;
-
 
     //
     // Set at intialization to indicate that on the current
@@ -983,7 +952,6 @@ typedef struct _SERIAL_DEVICE_EXTENSION {
     //
     PVOID LockPtr;
 
-
     //
     // This variable holds the size of whatever buffer we are currently
     // using.
@@ -1046,7 +1014,7 @@ typedef struct _SERIAL_DEVICE_EXTENSION {
     // pointer to the wait request will be used for the "common" request completion
     // path.
     //
-    ULONG *IrpMaskLocation;
+    ULONG* IrpMaskLocation;
 
     //
     // This mask holds all of the reason that transmission
@@ -1080,7 +1048,7 @@ typedef struct _SERIAL_DEVICE_EXTENSION {
     //
     // This keeps a total of the number of characters that
     // are in all of the "write" irps that the driver knows
-    // about.  It is only accessed with the cancel spinlock
+    // about. It is only accessed with the cancel spinlock
     // held.
     //
     ULONG TotalCharsQueued;
@@ -1098,7 +1066,7 @@ typedef struct _SERIAL_DEVICE_EXTENSION {
 
     //
     // This is a count of the number of characters read by the
-    // isr routine.  It is *ONLY* written at isr level.  We can
+    // isr routine. It is *ONLY* written at isr level.  We can
     // read it at dispatch level.
     //
     ULONG ReadByIsr;
@@ -1122,7 +1090,7 @@ typedef struct _SERIAL_DEVICE_EXTENSION {
     // doing transmit toggling.  If it "bumps" into another path
     // (indicated by a false return value from queueing a dpc
     // and a TRUE return value tring to start a timer) it will
-    // decrement the count.  These increments and decrements
+    // decrement the count. These increments and decrements
     // are all done at device level.  Note that in the case
     // of a bump while trying to start the timer, we have to
     // go up to device level to do the decrement.
@@ -1143,7 +1111,7 @@ typedef struct _SERIAL_DEVICE_EXTENSION {
     // lock since more than one request can be in the control dispatch
     // routine at one time.
     //
-    SERIAL_TIMEOUTS Timeouts;
+    SERIAL_TIMEOUTS timeouts;
 
     //
     // This holds the various characters that are used
@@ -1157,11 +1125,10 @@ typedef struct _SERIAL_DEVICE_EXTENSION {
     // This structure holds the handshake and control flow
     // settings for the serial driver.
     //
-    // It is only set at interrupt level.  It can be
+    // It is only set at interrupt level. It can be
     // be read at any level with the control lock held.
     //
     SERIAL_HANDFLOW HandFlow;
-
 
     //
     // Holds performance statistics that applications can query.
@@ -1179,15 +1146,14 @@ typedef struct _SERIAL_DEVICE_EXTENSION {
     //
     UCHAR LineControl;
 
-
     //
-    // This is only accessed at interrupt level.  It keeps track
+    // This is only accessed at interrupt level. It keeps track
     // of whether the holding register is empty.
     //
     BOOLEAN HoldingEmpty;
 
     //
-    // This variable is only accessed at interrupt level.  It
+    // This variable is only accessed at interrupt level. It
     // indicates that we want to transmit a character immediately.
     // That is - in front of any characters that could be transmitting
     // from a normal write.
@@ -1195,7 +1161,7 @@ typedef struct _SERIAL_DEVICE_EXTENSION {
     BOOLEAN TransmitImmediate;
 
     //
-    // This variable is only accessed at interrupt level.  Whenever
+    // This variable is only accessed at interrupt level. Whenever
     // a wait is initiated this variable is set to false.
     // Whenever any kind of character is written it is set to true.
     // Whenever the write queue is found to be empty the code that
@@ -1224,7 +1190,7 @@ typedef struct _SERIAL_DEVICE_EXTENSION {
 
     //
     // This holds the mask that will be used to mask off unwanted
-    // data bits of the received data (valid data bits can be 5,6,7,8)
+    // data bits of the received data (valid data bits can be 7,8)
     // The mask will normally be 0xff.  This is set while the control
     // lock is held since it wouldn't have adverse effects on the
     // isr if it is changed in the middle of reading characters.
@@ -1239,7 +1205,7 @@ typedef struct _SERIAL_DEVICE_EXTENSION {
     // serial driver to insert the line status or the modem
     // status into the RX stream.  The parameter with the ioctl
     // is a pointer to a UCHAR.  If the value of the UCHAR is
-    // zero, then no insertion will ever take place.  If the
+    // zero, then no insertion will ever take place. If the
     // value of the UCHAR is non-zero (and not equal to the
     // xon/xoff characters), then the serial driver will insert.
     //
@@ -1247,7 +1213,7 @@ typedef struct _SERIAL_DEVICE_EXTENSION {
 
     //
     // These two booleans are used to indicate to the isr transmit
-    // code that it should send the xon or xoff character.  They are
+    // code that it should send the xon or xoff character. They are
     // only accessed at open and at interrupt level.
     //
     BOOLEAN SendXonChar;
@@ -1275,9 +1241,8 @@ typedef struct _SERIAL_DEVICE_EXTENSION {
     //
     WDFDPC CompleteReadDpc;
 
-
     //
-    // This dpc is fired off if a comm error occurs.  It will
+    // This dpc is fired off if a comm error occurs. It will
     // execute a dpc routine that will cancel all pending reads
     // and writes.
     //
@@ -1285,14 +1250,14 @@ typedef struct _SERIAL_DEVICE_EXTENSION {
 
     //
     // This dpc is fired off if an event occurs and there was
-    // a request waiting on that event.  A dpc routine will execute
+    // a request waiting on that event. A dpc routine will execute
     // that completes the request.
     //
     WDFDPC CommWaitDpc;
 
     //
     // This dpc is fired off when the transmit immediate char
-    // character is given to the hardware.  It will simply complete
+    // character is given to the hardware. It will simply complete
     // the request.
     //
     WDFDPC CompleteImmediateDpc;
@@ -1337,7 +1302,7 @@ typedef struct _SERIAL_DEVICE_EXTENSION {
 
     //
     // This timer is used to invoke a dpc one character time
-    // after the timer is set.  That dpc will be used to check
+    // after the timer is set. That dpc will be used to check
     // whether we should lower the RTS line if we are doing
     // transmit toggling.
     //
@@ -1421,16 +1386,25 @@ typedef struct _SERIAL_INTERRUPT_CONTEXT {
 WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(SERIAL_INTERRUPT_CONTEXT,
                                         SerialGetInterruptContext)
 
+//
+// To enable basic functional debugging, when the
+// debugger is connected, without modifying the hardware,
+// set SERIAL_IS_DONT_CHANGE_HW to 1.
+//
 
-#define SERIAL_FLAGS_CLEAR                  0x0L
-#define SERIAL_FLAGS_STARTED                0x1L
-#define SERIAL_FLAGS_STOPPED                0x2L
-#define SERIAL_FLAGS_BROKENHW               0x4L
-#define SERIAL_FLAGS_LEGACY_ENUMED          0x8L
+#if DBG
+    #define SERIAL_IS_DONT_CHANGE_HW 0
+#else
+    #define SERIAL_IS_DONT_CHANGE_HW 0
+#endif // !DBG
 
-//============================================================================
-// on Pi platform miniuart needs DWORD reads and writes even if only lower 8 bits are useful
-__inline UCHAR SerialReadRegisterUChar(IN  UCHAR* x)
+//
+// on RPi3 platform for miniUart hardware to function correctly,
+// driver software must perform DWORD reads and writes 
+// even if only actually one BYTE (lower 8 bits) is needed to read or written
+// 
+
+__inline UCHAR SerialReadRegisterUChar(_In_ UCHAR* x)
 {
     volatile UCHAR uchReturnValue=0x00;
     volatile ULONG* pulReg=(volatile ULONG*)x;
@@ -1438,25 +1412,32 @@ __inline UCHAR SerialReadRegisterUChar(IN  UCHAR* x)
     return uchReturnValue;
 }
 
-__inline VOID SerialWriteRegisterUChar(IN  UCHAR* x, IN  UCHAR y)
+__inline VOID SerialWriteRegisterUChar(_In_ UCHAR* x, _In_ UCHAR y)
 {
     ULONG ulTemp=(ULONG)y;
     volatile ULONG* pulReg=(volatile ULONG*)x;
-
-    WRITE_REGISTER_ULONG(pulReg,ulTemp);
+#if SERIAL_IS_DONT_CHANGE_HW
+    ulTemp = READ_REGISTER_ULONG(pulReg);
+#else
+    WRITE_REGISTER_ULONG(pulReg, ulTemp);
+#endif // !SERIAL_IS_DONT_CHANGE_HW
 }
 
-#define IDLETIMEµs	1000 // generic 1 msec idle time value in microseconds
-//================================================================================
+//
+// idle time delay, in microseconds
+//
 
-#define MINIUART_ENABLE_MASK    (0x1)
+#define IDLETIMEµs  1000 
+
+//
+// mini Uart register access macros for features not found in 16550 UART
+//
 
 #define READ_MINIUART_ENABLE(Extension, BaseAddress)         \
     (Extension->SerialReadUChar((BaseAddress)+AUX_ENABLE_REG))
 
 #define WRITE_MINIUART_ENABLE(Extension, BaseAddress, Enable)           \
     (Extension->SerialWriteUChar((BaseAddress)+AUX_ENABLE_REG, Enable))
-
 
 #define WRITE_MINIUARTRXTX_ENABLE(Extension, BaseAddress, Enable)           \
     (Extension->SerialWriteUChar((BaseAddress)+EXTRA_CONTROL_REG, Enable))
@@ -1486,30 +1467,30 @@ __inline VOID SerialWriteRegisterUChar(IN  UCHAR* x, IN  UCHAR y)
 // DesiredDivisor - The value to which the divisor latch register should
 //                  be set.
 //
-#define WRITE_DIVISOR_LATCH(Extension, BaseAddress,DesiredDivisor)           \
+#define WRITE_DIVISOR_LATCH(Extension, BaseAddress,DesiredDivisor) \
 do                                                                \
 {                                                                 \
     PUCHAR Address = BaseAddress;                                 \
     SHORT Divisor = DesiredDivisor;                               \
     UCHAR LineControl;                                            \
     LineControl = Extension->SerialReadUChar(Address+LINE_CONTROL_REGISTER); \
-    Extension->SerialWriteUChar(                                             \
+    Extension->SerialWriteUChar(                                  \
         Address+LINE_CONTROL_REGISTER,                            \
         (UCHAR)(LineControl | SERIAL_LCR_DLAB)                    \
         );                                                        \
-    Extension->SerialWriteUChar(                                             \
+    Extension->SerialWriteUChar(                                  \
         Address+DIVISOR_LATCH_LSB,                                \
         (UCHAR)(Divisor & 0xff)                                   \
         );                                                        \
-    Extension->SerialWriteUChar(                                             \
+    Extension->SerialWriteUChar(                                  \
         Address+DIVISOR_LATCH_MSB,                                \
         (UCHAR)((Divisor & 0xff00) >> 8)                          \
         );                                                        \
-    Extension->SerialWriteUChar(                                             \
+    Extension->SerialWriteUChar(                                  \
         Address+LINE_CONTROL_REGISTER,                            \
         LineControl                                               \
         );                                                        \
-} WHILE (0)
+} while (0)
 
 //
 // Reads the divisor latch register.  The divisor latch register
@@ -1527,7 +1508,7 @@ do                                                                \
 // DesiredDivisor - A pointer to the 2 byte word which will contain
 //                  the value of the divisor.
 //
-#define READ_DIVISOR_LATCH(Extension, BaseAddress,PDesiredDivisor)           \
+#define READ_DIVISOR_LATCH(Extension, BaseAddress,PDesiredDivisor)  \
 do                                                                \
 {                                                                 \
     PUCHAR Address = BaseAddress;                                 \
@@ -1536,19 +1517,17 @@ do                                                                \
     UCHAR Lsb;                                                    \
     UCHAR Msb;                                                    \
     LineControl = Extension->SerialReadUChar(Address+LINE_CONTROL_REGISTER); \
-    Extension->SerialWriteUChar(                                             \
+    Extension->SerialWriteUChar(                                  \
         Address+LINE_CONTROL_REGISTER,                            \
-        (UCHAR)(LineControl | SERIAL_LCR_DLAB)                    \
-        );                                                        \
-    Lsb = Extension->SerialReadUChar(Address+DIVISOR_LATCH_LSB);             \
-    Msb = Extension->SerialReadUChar(Address+DIVISOR_LATCH_MSB);             \
+        (UCHAR)(LineControl | SERIAL_LCR_DLAB));                  \
+    Lsb = Extension->SerialReadUChar(Address+DIVISOR_LATCH_LSB);  \
+    Msb = Extension->SerialReadUChar(Address+DIVISOR_LATCH_MSB);  \
     *PDivisor = Lsb;                                              \
     *PDivisor = *PDivisor | (((USHORT)Msb) << 8);                 \
-    Extension->SerialWriteUChar(                                             \
+    Extension->SerialWriteUChar(                                  \
         Address+LINE_CONTROL_REGISTER,                            \
-        LineControl                                               \
-        );                                                        \
-} WHILE (0)
+        LineControl);                                             \
+} while (0)
 
 //
 // This macro reads the interrupt enable register.
@@ -1558,7 +1537,7 @@ do                                                                \
 // BaseAddress - A pointer to the address from which the hardware
 //               device registers are located.
 //
-#define READ_INTERRUPT_ENABLE(Extension, BaseAddress)                     \
+#define READ_INTERRUPT_ENABLE(Extension, BaseAddress)       \
     (Extension->SerialReadUChar((BaseAddress)+INTERRUPT_ENABLE_REGISTER))
 
 #define READ_BAUD_DIVISOR(Extension, BaseAddress)          \
@@ -1574,14 +1553,13 @@ do                                                                \
 //
 // Values - The values to write to the interrupt enable register.
 //
-#define WRITE_INTERRUPT_ENABLE(Extension, BaseAddress,Values)                \
+#define WRITE_INTERRUPT_ENABLE(Extension, BaseAddress,Values)     \
 do                                                                \
 {                                                                 \
-    Extension->SerialWriteUChar(                                             \
+    Extension->SerialWriteUChar(                                  \
         BaseAddress+INTERRUPT_ENABLE_REGISTER,                    \
-        Values                                                    \
-        );                                                        \
-} WHILE (0)
+        Values);                                                  \
+} while (0)
 
 //
 // This macro disables all interrupts on the hardware.
@@ -1592,11 +1570,11 @@ do                                                                \
 //               device registers are located.
 //
 //
-#define DISABLE_ALL_INTERRUPTS(Extension, BaseAddress)       \
-do                                                \
-{                                                 \
-    WRITE_INTERRUPT_ENABLE(Extension, BaseAddress,0);        \
-} WHILE (0)
+#define DISABLE_ALL_INTERRUPTS(Extension, BaseAddress)      \
+do                                                          \
+{                                                           \
+    WRITE_INTERRUPT_ENABLE(Extension, BaseAddress,0);       \
+} while (0)
 
 //
 // This macro enables all interrupts on the hardware.
@@ -1607,19 +1585,18 @@ do                                                \
 //               device registers are located.
 //
 //
-#define ENABLE_ALL_INTERRUPTS(Extension, BaseAddress)        \
-do                                                \
-{                                                 \
-                                                  \
-    WRITE_INTERRUPT_ENABLE(                       \
-        (Extension), (BaseAddress),                            \
-        (UCHAR)(SERIAL_IER_RDA | \
-                SERIAL_IER_THR | \
-                SERIAL_IER_RLS | \
-                SERIAL_IER_MS)   \
-        );                                        \
-                                                  \
-} WHILE (0)
+#define ENABLE_ALL_INTERRUPTS(Extension, BaseAddress)   \
+do                                                      \
+{                                                       \
+                                                        \
+    WRITE_INTERRUPT_ENABLE(                             \
+        (Extension), (BaseAddress),                     \
+        (UCHAR)(SERIAL_IER_RDA |                        \
+                SERIAL_IER_THR |                        \
+                SERIAL_IER_RLS |                        \
+                SERIAL_IER_MS));                        \
+                                                        \
+} while (0)
 
 //
 // This macro reads the interrupt identification register
@@ -1638,7 +1615,7 @@ do                                                \
 #define READ_INTERRUPT_ID_REG(Extension, BaseAddress)                          \
     (Extension->SerialReadUChar((BaseAddress)+INTERRUPT_IDENT_REGISTER))
 
-#define WRITE_INTERRUPT_ID_REG(Extension, BaseAddress, Value)                          \
+#define WRITE_INTERRUPT_ID_REG(Extension, BaseAddress, Value)                  \
     (Extension->SerialWriteUChar((BaseAddress)+INTERRUPT_IDENT_REGISTER,Value))
 
 //
@@ -1689,7 +1666,7 @@ do                                                \
 #define READ_LINE_STATUS(Extension, BaseAddress)                          \
     (Extension->SerialReadUChar((BaseAddress)+LINE_STATUS_REGISTER))
 
-#define WRITE_BAUD_DIVISOR(Extension, DesiredDivisor)           \
+#define WRITE_BAUD_DIVISOR(Extension, DesiredDivisor)                     \
     (WRITE_REGISTER_USHORT((volatile USHORT*)(Extension->Controller + BAUD_DIVISOR_REG), DesiredDivisor))
 //
 // This macro writes the line control register
@@ -1700,14 +1677,13 @@ do                                                \
 //               device registers are located.
 //
 //
-#define WRITE_LINE_CONTROL(Extension, BaseAddress,NewLineControl)           \
-do                                                               \
-{                                                                \
-    Extension->SerialWriteUChar(                                            \
-        (BaseAddress)+LINE_CONTROL_REGISTER,                     \
-        (NewLineControl)                                         \
-        );                                                       \
-} WHILE (0)
+#define WRITE_LINE_CONTROL(Extension, BaseAddress,NewLineControl)   \
+do                                                                  \
+{                                                                   \
+    Extension->SerialWriteUChar(                                    \
+        (BaseAddress)+LINE_CONTROL_REGISTER,                        \
+        (NewLineControl));                                          \
+} while (0)
 
 //
 // This macro reads the line control register
@@ -1733,17 +1709,16 @@ do                                                               \
 // TransmitChar - The character to send down the wire.
 //
 //
-#define WRITE_TRANSMIT_HOLDING(Extension, BaseAddress,TransmitChar)       \
-do                                                             \
-{                                                              \
-    Extension->SerialWriteUChar(                                          \
-        (BaseAddress)+TRANSMIT_HOLDING_REGISTER,               \
-        (TransmitChar)                                         \
-        );                                                     \
-} WHILE (0)
+#define WRITE_TRANSMIT_HOLDING(Extension, BaseAddress,TransmitChar) \
+do                                                                  \
+{                                                                   \
+    Extension->SerialWriteUChar(                                    \
+        (BaseAddress)+TRANSMIT_HOLDING_REGISTER,                    \
+        (TransmitChar));                                            \
+} while (0)
 
 //
-// This macro writes to the transmit FIFO register
+// This macro writes to mini Uart transmit FIFO register
 //
 // Arguments:
 //
@@ -1755,9 +1730,12 @@ do                                                             \
 // TxN - number of charactes to send.
 //
 //
-__inline void WRITE_TRANSMIT_FIFO_HOLDING(PSERIAL_DEVICE_EXTENSION Extension, PUCHAR BaseAddress, PUCHAR TransmitChars, LONG TxN)
+__inline 
+void WRITE_TRANSMIT_FIFO_HOLDING(
+    PUCHAR BaseAddress,
+    PUCHAR TransmitChars,
+    LONG TxN)
 {                     
-    UNREFERENCED_PARAMETER(Extension);
     LONG lCnt=0;
     UCHAR ulByteOut=0x00;
     volatile ULONG* pFifoTxReg=(volatile ULONG*)((BaseAddress)+TRANSMIT_HOLDING_REGISTER);
@@ -1768,26 +1746,9 @@ __inline void WRITE_TRANSMIT_FIFO_HOLDING(PSERIAL_DEVICE_EXTENSION Extension, PU
     };
     return;
 }
-                                             \
-/*
-#define WRITE_TRANSMIT_FIFO_HOLDING(Extension, BaseAddress,TransmitChars,TxN)  \
-do                                                             \
-{                     
-    WRITE_REGISTER_BUFFER_UCHAR( \
-    (BaseAddress)+TRANSMIT_HOLDING_REGISTER, \
-    (TransmitChars), \
-    (TxN) \
-    ); \
-} WHILE (0) \
 
-/*    WRITE_PORT_BUFFER_UCHAR(                                   \
-        (BaseAddress)+TRANSMIT_HOLDING_REGISTER,               \
-        (TransmitChars),                                       \
-        (TxN)                                                  \
-        );      */
-
 //
-// This macro writes to the control register
+// This macro writes to mini Uart control register
 //
 // Arguments:
 //
@@ -1797,14 +1758,13 @@ do                                                             \
 // ControlValue - The value to set the fifo control register too.
 //
 //
-#define WRITE_FIFO_CONTROL(Extension, BaseAddress,ControlValue)           \
-do                                                             \
-{                                                              \
-    Extension->SerialWriteUChar(                                          \
-        (BaseAddress)+FIFO_CONTROL_REGISTER,                   \
-        (ControlValue)                                         \
-        );                                                     \
-} WHILE (0)
+#define WRITE_FIFO_CONTROL(Extension, BaseAddress,ControlValue) \
+do                                                              \
+{                                                               \
+    Extension->SerialWriteUChar(                                \
+        (BaseAddress)+FIFO_CONTROL_REGISTER,                    \
+        (ControlValue));                                        \
+} while (0)
 
 //
 // This macro writes to the modem control register
@@ -1817,14 +1777,13 @@ do                                                             \
 // ModemControl - The control bits to send to the modem control.
 //
 //
-#define WRITE_MODEM_CONTROL(Extension, BaseAddress,ModemControl)          \
-do                                                             \
-{                                                              \
-    Extension->SerialWriteUChar(                                          \
-        (BaseAddress)+MODEM_CONTROL_REGISTER,                  \
-        (ModemControl)                                         \
-        );                                                     \
-} WHILE (0)
+#define WRITE_MODEM_CONTROL(Extension, BaseAddress,ModemControl)    \
+do                                                                  \
+{                                                                   \
+    Extension->SerialWriteUChar(                                    \
+        (BaseAddress)+MODEM_CONTROL_REGISTER,                       \
+        (ModemControl));                                            \
+} while (0)
 
 
 //
@@ -1849,15 +1808,14 @@ do                                                             \
 // should break at driver entry.
 //
 
-extern SERIAL_FIRMWARE_DATA    driverDefaults;
-
+extern SERIAL_FIRMWARE_DATA DriverDefaults;
 
 //
 // This is exported from the kernel.  It is used to point
 // to the address that the kernel debugger is using.
 //
 
-extern PUCHAR *KdComPortInUse;
+extern PUCHAR* KdComPortInUse;
 
 
 typedef enum _SERIAL_MEM_COMPARES {
@@ -1871,5 +1829,5 @@ typedef enum _SERIAL_MEM_COMPARES {
 typedef struct   _SUPPORTED_BAUD_RATES {
     UINT32 BaudRate;
     ULONG Mask;
-}SUPPORTED_BAUD_RATES;
+} SUPPORTED_BAUD_RATES;
 

@@ -127,6 +127,9 @@ PL011TxPioTransmitStart(
     txPioPtr->TxBufferOut = 0;
     txPioPtr->TxBufferCount = 0;
 
+    //
+    // Disable TX interrupt
+    //
     PL011HwMaskInterrupts(
         WdfDevice,
         UARTIMSC_TXIM,
@@ -274,6 +277,8 @@ PL011SerCx2EvtPioTransmitWriteBuffer(
         "PIO TX: written %lu chars", totalBytesCopied
         );
 
+    PL011_ASSERT(totalBytesCopied <= Length);
+
     return totalBytesCopied;
 }
 
@@ -302,10 +307,15 @@ PL011SerCx2EvtPioTransmitEnableReadyNotification(
         PL011SerCxPioTransmitGetContext(SerCx2PioTransmit);
     PL011_DEVICE_EXTENSION* devExtPtr = txPioPtr->DevExtPtr;
 
+    (void)PL011TxPioStateSet(
+        SerCx2PioTransmit,
+        PL011_TX_PIO_STATE::TX_PIO_STATE__SEND_DATA
+        );
+
     //
-    // Check if TX FIFO is not full, we are ready for more data
+    // Check if we are ready for more data
     //
-    if (!PL011HwIsTxFifoFull(devExtPtr)) {
+    if (PL011TxPendingByteCount(txPioPtr) < PL011_TX_BUFFER_SIZE_BYTES) {
 
         SerCx2PioTransmitReady(SerCx2PioTransmit);
         return;
@@ -325,9 +335,14 @@ PL011SerCx2EvtPioTransmitEnableReadyNotification(
         //
         // More TX data can already be sent...
         //
-        PL011_ASSERT(PL011TxPioStateGet(SerCx2PioTransmit) ==
+        PL011_ASSERT(
+            PL011TxPioStateGet(SerCx2PioTransmit) ==
             PL011_TX_PIO_STATE::TX_PIO_STATE__DATA_SENT
             );
+        PL011_ASSERT(
+            PL011TxPendingByteCount(txPioPtr) < PL011_TX_BUFFER_SIZE_BYTES
+            );
+
         SerCx2PioTransmitReady(SerCx2PioTransmit);
         return;
     }
@@ -453,7 +468,7 @@ PL011SerCx2EvtPioTransmitDrainFifo(
 
         (void)PL011TxPioFifoCopy(devExtPtr, nullptr);
 
-    } while ((PL011pTxPendingByteCount(txPioPtr) != 0) || 
+    } while ((PL011TxPendingByteCount(txPioPtr) != 0) || 
         PL011HwIsTxBusy(devExtPtr));
 
     //
@@ -629,7 +644,7 @@ PL011TxPurgeFifo(
 //
 //  STATUS_SUCCESS - Data was successfully copied from TX buffer
 //      TX FIFO.
-//  STATUS_NO_MORE_FILES - TX FIFO is full, and no chars were copied.
+//  STATUS_NO_MORE_FILES - TX BUFFER and TX FIFO are full, no chars were copied.
 //  STATUS_DEVICE_BUSY - A previous call to  PL011TxFifoCopy is currently in
 //      progress.
 //
@@ -672,15 +687,22 @@ PL011TxPioFifoCopy(
     ULONG txOut = txPioPtr->TxBufferOut;
     volatile LONG* txPendingCountPtr = &txPioPtr->TxBufferCount;
 
-    while (PL011pTxPendingByteCount(txPioPtr) > 0) {
+    while (PL011TxPendingByteCount(txPioPtr) > 0) {
         //
         // Check if TX FIFO is full
         //
         if ((PL011HwReadRegisterUlong(regUARTFRPtr) & UARTFR_TXFF) != 0) {
 
-            status = charsTransferred == 0 ?
-                STATUS_NO_MORE_FILES :
-                STATUS_SUCCESS;
+            if ((charsTransferred == 0) &&
+                (PL011TxPendingByteCount(txPioPtr) == 
+                 PL011_TX_BUFFER_SIZE_BYTES)) {
+
+                status = STATUS_NO_MORE_FILES;
+
+            } else {
+
+                status = STATUS_SUCCESS;
+            }
             break;
         }
 
@@ -746,7 +768,7 @@ _Use_decl_annotations_
 ULONG
 PL011pTxPioBufferCopy(
     PL011_DEVICE_EXTENSION* DevExtPtr,
-    UCHAR* BufferPtr,
+    const UCHAR* BufferPtr,
     ULONG Length
     )
 {
@@ -757,10 +779,9 @@ PL011pTxPioBufferCopy(
     // Get number of bytes we can copy.
     // Is TX Buffer full?
     //
-    ULONG bytesToCopy = min(
-        (PL011_TX_BUFFER_SIZE_BYTES - PL011pTxPendingByteCount(txPioPtr)),
-        Length
-        );
+    ULONG bytesToCopy = PL011_TX_BUFFER_SIZE_BYTES - 
+        PL011TxPendingByteCount(txPioPtr);
+    bytesToCopy = min(bytesToCopy, Length);
     if (bytesToCopy == 0) {
         
         return 0;
@@ -792,7 +813,7 @@ PL011pTxPioBufferCopy(
     txPioPtr->TxBufferIn = txIn;
     InterlockedAdd(&txPioPtr->TxBufferCount, bytesCopied);
 
-    PL011_ASSERT(PL011pTxPendingByteCount(txPioPtr) <= PL011_TX_BUFFER_SIZE_BYTES);
+    PL011_ASSERT(PL011TxPendingByteCount(txPioPtr) <= PL011_TX_BUFFER_SIZE_BYTES);
 
     if (bytesCopied != 0) {
 

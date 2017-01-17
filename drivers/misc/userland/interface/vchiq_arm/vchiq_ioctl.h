@@ -54,10 +54,17 @@ SOFTWARE.
 #include <ntstrsafe.h>
 #include <wdm.h>
 #include <Ntstrsafe.h>
-#include <..\vchiq\vchiq.h>
 #else
 #include <Windows.h>
 #endif
+
+#define FILE_DEVICE_VCHIQ          2835
+#define VCHIQ_NAME "VCHIQ"
+#define VCHIQ_NAME_W L"VCHIQ"
+#define VCHIQ_SYMBOLIC_NAME "\\DosDevices\\" VCHIQ_NAME
+#define VCHIQ_SYMBOLIC_NAME_W L"\\DosDevices\\" VCHIQ_NAME_W
+#define VCHIQ_USERMODE_PATH "\\\\.\\" VCHIQ_NAME
+#define VCHIQ_USERMODE_PATH_W L"\\\\.\\" VCHIQ_NAME_W
 
 #ifdef _IO
 #undef _IO

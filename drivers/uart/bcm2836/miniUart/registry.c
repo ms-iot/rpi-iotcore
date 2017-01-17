@@ -1,21 +1,14 @@
-/*++
-
-Copyright (c) Microsoft Corporation
-
-Module Name:
-
-    registry.c
-
-Abstract:
-
-    This module contains the code that is used to get values from the
-    registry and to manipulate entries in the registry.
-
-Environment:
-
-    Kernel mode
-
---*/
+// Copyright (c) Microsoft Corporation.  All rights reserved.
+//
+// Module Name:
+//
+//   registry.c
+//
+// Abstract:
+//
+//    This module contains the code that is used to get values from the
+//    registry and to manipulate entries in the registry.
+//
 
 #include "precomp.h"
 #include "registry.tmh"
@@ -25,17 +18,9 @@ Environment:
 #pragma alloc_text(PAGESRP0,SerialGetRegistryKeyValue)
 #pragma alloc_text(PAGESRP0,SerialPutRegistryKeyValue)
 #pragma alloc_text(PAGESRP0,SerialGetFdoRegistryKeyValue)
-#endif // ALLOC_PRAGMA
-
+#endif
 
 #define PARAMATER_NAME_LEN 80
-
-
-NTSTATUS
-SerialGetConfigDefaults(
-    IN PSERIAL_FIRMWARE_DATA    DriverDefaultsPtr,
-    IN WDFDRIVER          Driver
-    )
 
 /*++
 
@@ -61,17 +46,22 @@ Return Value:
     The only way to fail this call is if the  STATUS_INSUFFICIENT_RESOURCES.
 
 --*/
-
+_Use_decl_annotations_
+NTSTATUS
+SerialGetConfigDefaults(
+    PSERIAL_FIRMWARE_DATA DriverDefaultsPtr,
+    WDFDRIVER Driver
+    )
 {
 
-    NTSTATUS status = STATUS_SUCCESS;    // return value
+    NTSTATUS status = STATUS_SUCCESS;
     WDFKEY hKey;
     DECLARE_UNICODE_STRING_SIZE(valueName,PARAMATER_NAME_LEN);
 
     status = WdfDriverOpenParametersRegistryKey(Driver,
-                                  STANDARD_RIGHTS_ALL,
-                                  WDF_NO_OBJECT_ATTRIBUTES,
-                                  &hKey);
+                                              STANDARD_RIGHTS_ALL,
+                                              WDF_NO_OBJECT_ATTRIBUTES,
+                                              &hKey);
     if (!NT_SUCCESS (status)) {
         return status;
     }
@@ -83,8 +73,8 @@ Return Value:
     }
 
     status = WdfRegistryQueryULong (hKey,
-                              &valueName,
-                              &DriverDefaultsPtr->ShouldBreakOnEntry);
+                                    &valueName,
+                                    &DriverDefaultsPtr->ShouldBreakOnEntry);
 
     if (!NT_SUCCESS (status)) {
         DriverDefaultsPtr->ShouldBreakOnEntry = 0;
@@ -96,8 +86,8 @@ Return Value:
     }
 
     status = WdfRegistryQueryULong (hKey,
-                              &valueName,
-                              &DriverDefaultsPtr->DebugLevel);
+                                  &valueName,
+                                  &DriverDefaultsPtr->DebugLevel);
 
     if (!NT_SUCCESS (status)) {
         DriverDefaultsPtr->DebugLevel = 0;
@@ -110,21 +100,20 @@ Return Value:
     }
 
     status = WdfRegistryQueryULong (hKey,
-              &valueName,
-              &DriverDefaultsPtr->ForceFifoEnableDefault);
+                                    &valueName,
+                                    &DriverDefaultsPtr->ForceFifoEnableDefault);
 
     if (!NT_SUCCESS (status)) {
 
-        //
         // If it isn't then write out values so that it could
         // be adjusted later.
-        //
+
         DriverDefaultsPtr->ForceFifoEnableDefault = SERIAL_FORCE_FIFO_DEFAULT;
 
         status = WdfRegistryAssignULong(hKey,
-                            &valueName,
-                            DriverDefaultsPtr->ForceFifoEnableDefault
-                            );
+                                        &valueName,
+                                        DriverDefaultsPtr->ForceFifoEnableDefault);
+
         if (!NT_SUCCESS (status)) {
             goto End;
         }
@@ -137,17 +126,17 @@ Return Value:
     }
 
     status = WdfRegistryQueryULong (hKey,
-              &valueName,
-              &DriverDefaultsPtr->RxFIFODefault);
+                                  &valueName,
+                                  &DriverDefaultsPtr->RxFIFODefault);
 
     if (!NT_SUCCESS (status)) {
 
         DriverDefaultsPtr->RxFIFODefault = SERIAL_RX_FIFO_DEFAULT;
 
         status = WdfRegistryAssignULong(hKey,
-                            &valueName,
-                            DriverDefaultsPtr->RxFIFODefault
-                            );
+                                        &valueName,
+                                        DriverDefaultsPtr->RxFIFODefault);
+
         if (!NT_SUCCESS (status)) {
             goto End;
         }
@@ -160,17 +149,17 @@ Return Value:
     }
 
     status = WdfRegistryQueryULong (hKey,
-              &valueName,
-              &DriverDefaultsPtr->TxFIFODefault);
+                                    &valueName,
+                                    &DriverDefaultsPtr->TxFIFODefault);
 
     if (!NT_SUCCESS (status)) {
 
         DriverDefaultsPtr->TxFIFODefault = SERIAL_TX_FIFO_DEFAULT;
 
         status = WdfRegistryAssignULong(hKey,
-                            &valueName,
-                            DriverDefaultsPtr->TxFIFODefault
-                            );
+                                        &valueName,
+                                        DriverDefaultsPtr->TxFIFODefault);
+
         if (!NT_SUCCESS (status)) {
             goto End;
         }
@@ -183,73 +172,65 @@ Return Value:
     }
 
     status = WdfRegistryQueryULong (hKey,
-              &valueName,
-              &DriverDefaultsPtr->PermitShareDefault);
+                                  &valueName,
+                                  &DriverDefaultsPtr->PermitShareDefault);
 
     if (!NT_SUCCESS (status)) {
 
         DriverDefaultsPtr->PermitShareDefault = SERIAL_PERMIT_SHARE_DEFAULT;
 
         status = WdfRegistryAssignULong(hKey,
-                            &valueName,
-                            DriverDefaultsPtr->PermitShareDefault
-                            );
+                                        &valueName,
+                                        DriverDefaultsPtr->PermitShareDefault);
+
         if (!NT_SUCCESS (status)) {
             goto End;
         }
 
     }
 
-    status = RtlUnicodeStringPrintf(&valueName,L"LogFifo");
+    status = RtlUnicodeStringPrintf(&valueName, L"LogFifo");
     if (!NT_SUCCESS (status)) {
             goto End;
     }
 
     status = WdfRegistryQueryULong (hKey,
-              &valueName,
-              &DriverDefaultsPtr->LogFifoDefault);
+                                  &valueName,
+                                  &DriverDefaultsPtr->LogFifoDefault);
 
     if (!NT_SUCCESS (status)) {
 
         DriverDefaultsPtr->LogFifoDefault = SERIAL_LOG_FIFO_DEFAULT;
 
         status = WdfRegistryAssignULong(hKey,
-                            &valueName,
-                            DriverDefaultsPtr->LogFifoDefault
-                            );
+                                        &valueName,
+                                        DriverDefaultsPtr->LogFifoDefault);
+
         if (!NT_SUCCESS (status)) {
             goto End;
         }
 
-            DriverDefaultsPtr->LogFifoDefault = 1;
+        DriverDefaultsPtr->LogFifoDefault = 1;
     }
 
-
-    status = RtlUnicodeStringPrintf(&valueName,L"UartRemovalDetect");
+    status = RtlUnicodeStringPrintf(&valueName, L"UartRemovalDetect");
     if (!NT_SUCCESS (status)) {
             goto End;
     }
 
     status = WdfRegistryQueryULong (hKey,
-              &valueName,
-              &DriverDefaultsPtr->UartRemovalDetect);
+                                  &valueName,
+                                  &DriverDefaultsPtr->UartRemovalDetect);
 
     if (!NT_SUCCESS (status)) {
         DriverDefaultsPtr->UartRemovalDetect = 0;
     }
 
-
 End:
-       WdfRegistryClose(hKey);
+    WdfRegistryClose(hKey);
     return (status);
 }
 
-BOOLEAN
-SerialGetRegistryKeyValue(
-    IN WDFDEVICE  WdfDevice,
-    _In_ PCWSTR   Name,
-    OUT PULONG    Value
-    )
 /*++
 
 Routine Description:
@@ -270,31 +251,38 @@ Return Value:
    FALSE if not present/error in reading registry
 
 --*/
+_Use_decl_annotations_
+BOOLEAN
+SerialGetRegistryKeyValue(
+    WDFDEVICE WdfDevice,
+    PCWSTR Name,
+    PULONG Value
+    )
 {
-    WDFKEY      hKey = NULL;
-    NTSTATUS    status;
-    BOOLEAN     retValue = FALSE;
+    WDFKEY hKey = NULL;
+    NTSTATUS status;
+    BOOLEAN retValue = FALSE;
     UNICODE_STRING valueName;
 
     PAGED_CODE();
 
-    TraceEvents(TRACE_LEVEL_VERBOSE, DBG_PNP, ">SerialGetRegistryKeyValue(XXX)\n");
+    TraceEvents(TRACE_LEVEL_VERBOSE, DBG_PNP, "++SerialGetRegistryKeyValue()\r\n");
 
     *Value = 0;
 
     status = WdfDeviceOpenRegistryKey(WdfDevice,
-                                  PLUGPLAY_REGKEY_DEVICE,
-                                  STANDARD_RIGHTS_ALL,
-                                  WDF_NO_OBJECT_ATTRIBUTES,
-                                  &hKey);
+                                      PLUGPLAY_REGKEY_DEVICE,
+                                      STANDARD_RIGHTS_ALL,
+                                      WDF_NO_OBJECT_ATTRIBUTES,
+                                      &hKey);
 
     if (NT_SUCCESS (status)) {
 
         RtlInitUnicodeString(&valueName,Name);
 
         status = WdfRegistryQueryULong (hKey,
-                                  &valueName,
-                                  Value);
+                                      &valueName,
+                                      Value);
 
         if (NT_SUCCESS (status)) {
             retValue = TRUE;
@@ -303,20 +291,16 @@ Return Value:
         WdfRegistryClose(hKey);
     }
 
-    TraceEvents(TRACE_LEVEL_VERBOSE, DBG_PNP, "<--SerialGetRegistryKeyValue %ws %d \n",
-                            Name, *Value);
+    TraceEvents(TRACE_LEVEL_VERBOSE, DBG_PNP,
+                "--SerialGetRegistryKeyValue %ws %d\r\n",
+                Name,
+                *Value);
 
     return retValue;
 }
 
 #define PARAMATER_NAME_LEN 80
 
-BOOLEAN
-SerialPutRegistryKeyValue(
-    IN WDFDEVICE  WdfDevice,
-    _In_ PCWSTR   Name,
-    IN ULONG      Value
-    )
 /*++
 
 Routine Description:
@@ -333,19 +317,25 @@ Return Value:
    FALSE - otherwise
 
 --*/
+_Use_decl_annotations_
+BOOLEAN
+SerialPutRegistryKeyValue(
+    WDFDEVICE WdfDevice,
+    PCWSTR Name,
+    ULONG Value
+    )
 {
-    WDFKEY          hKey = NULL;
-    NTSTATUS        status;
-    BOOLEAN         retValue = FALSE;
+    WDFKEY hKey = NULL;
+    NTSTATUS status;
+    BOOLEAN retValue = FALSE;
     UNICODE_STRING valueName;
 
     PAGED_CODE();
 
-    TraceEvents(TRACE_LEVEL_VERBOSE, DBG_PNP,  "Entered PciDrvWriteRegistryValue\n");
+    TraceEvents(TRACE_LEVEL_VERBOSE, DBG_PNP,  "++SerialPutRegistryKeyValue\r\n");
 
-    //
     // write the value out to the registry
-    //
+
     status = WdfDeviceOpenRegistryKey(WdfDevice,
                                       PLUGPLAY_REGKEY_DEVICE,
                                       STANDARD_RIGHTS_ALL,
@@ -357,9 +347,8 @@ Return Value:
         RtlInitUnicodeString(&valueName,Name);
 
         status = WdfRegistryAssignULong (hKey,
-                                  &valueName,
-                                  Value
-                                );
+                                          &valueName,
+                                          Value);
 
         if (NT_SUCCESS (status)) {
             retValue = TRUE;
@@ -367,17 +356,10 @@ Return Value:
 
         WdfRegistryClose(hKey);
     }
-
+    TraceEvents(TRACE_LEVEL_VERBOSE, DBG_PNP,  "--SerialPutRegistryKeyValue\r\n");
     return retValue;
-
 }
 
-BOOLEAN
-SerialGetFdoRegistryKeyValue(
-    IN PWDFDEVICE_INIT  DeviceInit,
-    _In_ PCWSTR         Name,
-    OUT PULONG          Value
-    )
 /*++
 
 Routine Description:
@@ -398,24 +380,31 @@ Return Value:
    FALSE if not present/error in reading registry
 
 --*/
+_Use_decl_annotations_
+BOOLEAN
+SerialGetFdoRegistryKeyValue(
+    PWDFDEVICE_INIT  DeviceInit,
+    PCWSTR Name,
+    PULONG Value
+    )
 {
-    WDFKEY      hKey = NULL;
-    NTSTATUS    status;
-    BOOLEAN     retValue = FALSE;
+    WDFKEY hKey = NULL;
+    NTSTATUS status;
+    BOOLEAN retValue = FALSE;
     UNICODE_STRING valueName;
 
     PAGED_CODE();
 
     TraceEvents(TRACE_LEVEL_VERBOSE, DBG_PNP,
-                     "-->SerialGetFdoRegistryKeyValue\n");
+                "++SerialGetFdoRegistryKeyValue\r\n");
 
     *Value = 0;
 
     status = WdfFdoInitOpenRegistryKey(DeviceInit,
-                                  PLUGPLAY_REGKEY_DEVICE,
-                                  STANDARD_RIGHTS_ALL,
-                                  WDF_NO_OBJECT_ATTRIBUTES,
-                                  &hKey);
+                                      PLUGPLAY_REGKEY_DEVICE,
+                                      STANDARD_RIGHTS_ALL,
+                                      WDF_NO_OBJECT_ATTRIBUTES,
+                                      &hKey);
 
     if (NT_SUCCESS (status)) {
 
@@ -431,8 +420,9 @@ Return Value:
     }
 
     TraceEvents(TRACE_LEVEL_VERBOSE, DBG_PNP,
-                     "<--SerialGetFdoRegistryKeyValue %ws %d \n",
-                            Name, *Value);
+                "--SerialGetFdoRegistryKeyValue %ws %d\r\n",
+                Name,
+                *Value);
 
     return retValue;
 }
