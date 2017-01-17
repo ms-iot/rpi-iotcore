@@ -649,7 +649,6 @@ exit:
     return status;
 }
 
-_Use_decl_annotations_
 VOID
 ControllerConfigClock(
     PPBC_DEVICE pDevice,
@@ -693,7 +692,6 @@ ControllerConfigClock(
     FuncExit(TRACE_FLAG_TRANSFER);
 }
 
-_Use_decl_annotations_
 VOID
 ControllerActivateTransfer(
     PPBC_DEVICE pDevice)
@@ -712,7 +710,6 @@ ControllerActivateTransfer(
     FuncExit(TRACE_FLAG_TRANSFER);
 }
 
-_Use_decl_annotations_
 VOID
 ControllerDeactivateTransfer(
     PPBC_DEVICE pDevice)

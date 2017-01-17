@@ -69,7 +69,9 @@
   </PropertyGroup>
   <!-- The WrappedTaskItems label is used by the conversion tool to identify the location where items 
         associated with wrapped tasks will reside.-->
-  <ItemGroup Label="WrappedTaskItems" />
+  <ItemGroup Label="WrappedTaskItems">
+    <PkgGen Include="SerPL011.pkg.xml" />
+  </ItemGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Arm'">
     <ClCompile>
       <WarningVersion>18</WarningVersion>

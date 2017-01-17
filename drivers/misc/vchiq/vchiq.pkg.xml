@@ -1,0 +1,26 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<!-- TODO: Make sure to set the Package attributes -->
+<Package xmlns="urn:Microsoft.WindowsPhone/PackageSchema.v8.00"
+  Owner="RASPBERRYPI"
+  OwnerType="OEM"
+  Platform="RaspberryPi"
+  Component="RaspberryPi"
+  SubComponent="vchiq"
+  ReleaseType="Production" >
+
+  <Components>
+    <Driver InfSource="$(_RELEASEDIR)$(TARGETNAME).inf">
+      <Reference Source="$(_RELEASEDIR)$(TARGETNAME)$(TARGETEXT)" />
+      <Reference Source="vchiq_arm_kern.dll" />
+      <Reference Source="vcos_win32_kern.dll" />
+      <Files>
+        <!-- For kernel mode drivers, $(DRIVER_DEST) evaluates to "drivers" by default -->
+        <!-- For user mode drivers, $(DRIVER_DEST) evaluates to "drivers\umdf" by default -->
+        <File Source="$(_RELEASEDIR)$(TARGETNAME)$(TARGETEXT)" DestinationDir="$(runtime.system32)\$(DRIVER_DEST)" />
+        <File Source="vchiq_arm_kern.dll" DestinationDir="$(runtime.system32)\drivers" Name="vchiq_arm_kern.dll"/>
+        <File Source="vcos_win32_kern.dll" DestinationDir="$(runtime.system32)\drivers" Name="vcos_win32_kern.dll"/>
+      </Files>
+    </Driver>
+
+  </Components>
+</Package>

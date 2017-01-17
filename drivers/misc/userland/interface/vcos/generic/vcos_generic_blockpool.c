@@ -411,7 +411,7 @@ VCOS_UNSIGNED vcos_generic_blockpool_available_count(VCOS_BLOCKPOOL_T *pool)
    vcos_mutex_lock(&pool->mutex);
    for (i = 0; i < pool->num_subpools; ++i)
    {
-      VCOS_BLOCKPOOL_SUBPOOL_T *subpool = &pool->subpools[i];
+      const VCOS_BLOCKPOOL_SUBPOOL_T *subpool = &pool->subpools[i];
       ASSERT_SUBPOOL(subpool);
 
       /* Assume the malloc of sub pool would succeed */
@@ -434,7 +434,7 @@ VCOS_UNSIGNED vcos_generic_blockpool_used_count(VCOS_BLOCKPOOL_T *pool)
 
    for (i = 0; i < pool->num_subpools; ++i)
    {
-      VCOS_BLOCKPOOL_SUBPOOL_T *subpool = &pool->subpools[i];
+      const VCOS_BLOCKPOOL_SUBPOOL_T *subpool = &pool->subpools[i];
       ASSERT_SUBPOOL(subpool);
       if (subpool->start)
          ret += (subpool->num_blocks - subpool->available_blocks);
@@ -562,7 +562,7 @@ uint32_t vcos_generic_blockpool_is_valid_elem(
 
    for (i = 0; i < pool->num_subpools; ++i)
    {
-      VCOS_BLOCKPOOL_SUBPOOL_T *subpool = &pool->subpools[i];
+      const VCOS_BLOCKPOOL_SUBPOOL_T *subpool = &pool->subpools[i];
       ASSERT_SUBPOOL(subpool);
 
       if (subpool->mem && subpool->start)

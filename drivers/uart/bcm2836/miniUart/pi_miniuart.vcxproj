@@ -45,7 +45,7 @@
     <ClInclude Include="Trace.h" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <ProjectGuid>{BD0C7A4E-D4AF-4FAB-941D-D15B3E3B8A67}</ProjectGuid>
+    <ProjectGuid>{1E4385E1-88E2-4F13-9AE2-B67C6B7A0F49}</ProjectGuid>
     <TemplateGuid>{497e31cb-056b-4f31-abb8-447fd55ee5a5}</TemplateGuid>
     <TargetFrameworkVersion>v4.5</TargetFrameworkVersion>
     <MinimumVisualStudioVersion>12.0</MinimumVisualStudioVersion>
@@ -256,6 +256,9 @@
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="pi_miniuart.rc" />
+  </ItemGroup>
+  <ItemGroup>
+    <PkgGen Include="piminiuart.pkg.xml" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

@@ -41,7 +41,7 @@ NTSTATUS RpiqMailboxWrite (
 _IRQL_requires_max_(PASSIVE_LEVEL)
 NTSTATUS RpiqMailboxProperty (
     _In_ DEVICE_CONTEXT* DeviceContextPtr,
-    _In_reads_bytes_(DataSize) VOID* DataInPtr,
+    _In_reads_bytes_(DataSize) const VOID* DataInPtr,
     _In_ ULONG DataSize,
     _In_ ULONG Channel,
     _In_ WDFREQUEST Request

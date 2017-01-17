@@ -1,7 +1,7 @@
 //
 // Copyright (c) Microsoft Corporation.  All rights reserved.
 //
-// Module Name: 
+// Module Name:
 //
 //    PL011device.h
 //
@@ -46,6 +46,18 @@ typedef struct _PL011_RESOURCE_DATA
     //
     // DMA channels
     //
+    
+    //
+    // Optional UartSerialBus Connection ID for creating the device interface 
+    // reference string.
+    //
+    LARGE_INTEGER       ConnectionId;
+    
+    //
+    // Optional FunctionConfig Connection ID for reserving pins in the case of
+    // a kernel debugger conflict.
+    //
+    LARGE_INTEGER       FunctionConfigConnectionId;
 
 } PL011_RESOURCE_DATA, *PPL011_RESOURCE_DATA;
 
@@ -58,11 +70,11 @@ typedef struct _PL011_RESOURCE_DATA
 typedef struct _PL011_DEVICE_EXTENSION
 {
     //
-    // The WDFDEVICE associated with this instance of the 
+    // The WDFDEVICE associated with this instance of the
     // controller driver.
     //
     WDFDEVICE                       WdfDevice;
-    
+
     //
     // Device lock
     //
@@ -150,9 +162,9 @@ typedef struct _PL011_DEVICE_EXTENSION
     //  Runtime...
     //
 
-    // 
+    //
     // The encountered UART error types to be reported
-    // through 
+    // through
     // IOCTL_SERIAL_GET_MODEMSTATUS::SERIAL_STATUS.Errors
     //
     // Please refer to SERIAL_ERROR_???
@@ -164,12 +176,17 @@ typedef struct _PL011_DEVICE_EXTENSION
     // Does not include the RX/TX relate events.
     //
     ULONG                           WaitEventMask;
-    
+
     //
     // Interrupt events mask captured in UART ISR
     // that require DPC handling.
     //
     ULONG                           IntEventsForDpc;
+    
+    //
+    // Handle to FunctionConfig() resource used in case of debugger conflict.
+    //
+    WDFIOTARGET                     FunctionConfigHandle;
 
 } PL011_DEVICE_EXTENSION;
 
@@ -226,13 +243,26 @@ PL011DeviceNotifyEvents(
         _In_ WDFDEVICE WdfDevice,
         _In_ WDFCMRESLIST ResourcesTranslated
         );
-
+        
     _IRQL_requires_max_(PASSIVE_LEVEL)
     static NTSTATUS
     PL011pDeviceMapResources(
         _In_ WDFDEVICE WdfDevice,
         _In_ WDFCMRESLIST ResourcesRaw,
         _In_ WDFCMRESLIST ResourcesTranslated
+        );
+        
+    _IRQL_requires_max_(PASSIVE_LEVEL)
+    static NTSTATUS
+    PL011pDeviceCreateDeviceInterface(
+        _In_ WDFDEVICE WdfDevice,
+        _In_ LARGE_INTEGER ConnectionId
+        );
+        
+    _IRQL_requires_max_(PASSIVE_LEVEL)
+    static NTSTATUS
+    PL011pDeviceReserveFunctionConfigResource(
+        _In_ PL011_DEVICE_EXTENSION* DevExtPtr
         );
 
     _IRQL_requires_max_(PASSIVE_LEVEL)

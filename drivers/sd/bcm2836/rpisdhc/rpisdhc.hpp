@@ -81,10 +81,10 @@ __forceinline void __cdecl operator delete ( void* Ptr, size_t ) throw ()
 #endif
 
 //
-// When enabled, logs on successful completion of each data read request useful
+// When enabled, logs on request completion of each data transfer request useful
 // measurements that aid in SDHC performance assessment
 //
-#define ENABLE_PERFORMANCE_LOGGING  0
+#define ENABLE_PERFORMANCE_LOGGING  1
 
 extern "C" DRIVER_INITIALIZE DriverEntry;
 
@@ -98,14 +98,35 @@ class SDHC {
 private: // non-paged
 
     //
-    // Arbitrary numbers chosen that seem to work with Sdport and SDHC
-    // Numbers are chosen such that any waitFor* method timeout will take
-    // a lower bound of _POLL_WAIT_US * _POLL_RETRY_COUNT microseconds
-    // i.e 10us * 100000 = 1s
+    // Empirically chosen timeout numbers that seem to work with Sdport and SDHC
+    // Numbers are chosen such that any waitFor* method will timeout after
+    // a lower bound of 1 second of call blocking, either because of polling
+    // timeout or due to HW Read/Write/Erase timeout on the SDHC
     //
     enum : ULONG {
-        _POLL_WAIT_US = 10,
+        //
+        // Number of register maximum polls
+        //
         _POLL_RETRY_COUNT = 100000,
+
+        //
+        // Waits between each registry poll
+        //
+        _POLL_WAIT_US = 10,
+
+        //
+        // Threshold used to catch very long waits on SDHC FSM state transitions
+        // This is very helpful in catching poorly behaving SDCards with high latency
+        // of finishing block writes
+        //
+        _LONG_FSM_WAIT_TIME_THRESHOLD_US = 100000,
+
+        //
+        // Divider used to determine SDHC HW timeout for Read/Write/Erase
+        // The time-out value set in TOUT register is SDCLK / _RWE_TIMEOUT_CLOCK_DIV
+        // A value of 1 means 1s HW timeout, a value of 4 means 1/4 of a second timeout
+        //
+        _RWE_TIMEOUT_CLOCK_DIV = 1,
     }; // enum
 
     enum class _REGISTER : ULONG {
@@ -405,13 +426,13 @@ private: // non-paged
         ::WRITE_REGISTER_NOFENCE_ULONG(regPtr, RegUnion.AsUint32);
     } // writeRegisterNoFence<...> ( _T_REG_UNION )
 
-    NTSTATUS readFromDataRegister (
-        _Out_writes_all_(Size) void* BufferPtr,
+    NTSTATUS readFromFifo (
+        _Out_writes_bytes_(Size) void* BufferPtr,
         ULONG Size
         ) throw ();
 
-    NTSTATUS writeToDataRegister (
-        _In_reads_(Size) const void* BufferPtr,
+    NTSTATUS writeToFifo (
+        _In_reads_bytes_(Size) const void* BufferPtr,
         ULONG Size
         ) throw ();
 
@@ -450,7 +471,7 @@ private: // non-paged
     _HCFG maskInterrupts ( _HCFG Mask ) throw ();
 
     _IRQL_requires_(DISPATCH_LEVEL)
-    NTSTATUS sendRequestCommand ( SDPORT_REQUEST* RequestPtr ) throw ();
+    NTSTATUS sendRequestCommand ( _Inout_ SDPORT_REQUEST* RequestPtr ) throw ();
 
     _IRQL_requires_(DISPATCH_LEVEL)
     NTSTATUS sendCommandInternal (
@@ -460,14 +481,14 @@ private: // non-paged
         ) throw ();
 
     _IRQL_requires_(DISPATCH_LEVEL)
-    NTSTATUS startTransfer ( SDPORT_REQUEST* RequestPtr ) throw ();
+    NTSTATUS startTransfer ( _Inout_ SDPORT_REQUEST* RequestPtr ) throw ();
 
     _IRQL_requires_(DISPATCH_LEVEL)
-    NTSTATUS startTransferPio ( SDPORT_REQUEST* RequestPtr ) throw ();
+    NTSTATUS startTransferPio ( _Inout_ SDPORT_REQUEST* RequestPtr ) throw ();
 
-    NTSTATUS transferSingleBlockPio ( SDPORT_REQUEST* RequestPtr ) throw ();
+    NTSTATUS transferSingleBlockPio ( _Inout_ SDPORT_REQUEST* RequestPtr ) throw ();
 
-    NTSTATUS transferMultiBlockPio ( SDPORT_REQUEST* RequestPtr ) throw ();
+    NTSTATUS transferMultiBlockPio ( _Inout_ SDPORT_REQUEST* RequestPtr ) throw ();
 
     _IRQL_requires_max_(DISPATCH_LEVEL)
     NTSTATUS sendNoTransferCommand (
@@ -491,7 +512,7 @@ private: // non-paged
 
     _IRQL_requires_max_(DISPATCH_LEVEL)
     void completeRequest (
-        _In_ SDPORT_REQUEST* RequestPtr,
+        _Inout_ SDPORT_REQUEST* RequestPtr,
         NTSTATUS Status
         ) throw ();
 
@@ -503,7 +524,7 @@ private: // non-paged
         SDPORT_RESPONSE_TYPE ResponseType
         ) throw ();
 
-    NTSTATUS prepareTransferPio ( SDPORT_REQUEST* RequestPtr) throw ();
+    NTSTATUS prepareTransferPio ( _Inout_ SDPORT_REQUEST* RequestPtr) throw ();
 
     NTSTATUS waitForLastCommandCompletion () throw ();
 
@@ -617,14 +638,36 @@ private: // non-paged
     //
     const BOOLEAN crashdumpMode;
 
+#if ENABLE_PERFORMANCE_LOGGING
+
     //
     // Performance Logging
     //
 
-    USHORT currentRequestBlockCount;
-    LARGE_INTEGER transferStartTimestamp;
-    LONGLONG allBlocksDataRegisterWaitTimeUs;
-    LONGLONG allBlocksTransferElapsedTicks;
+    struct _REQUEST_STATISTICS {
+        LARGE_INTEGER StartTimestamp;
+        LONGLONG FifoIoTimeTicks;
+        LONGLONG FifoWaitCount;
+        LONGLONG FifoWaitTimeUs;
+        LONGLONG FifoMaxWaitTimeUs;
+        LONGLONG FsmStateWaitTimeUs;
+        LONGLONG FsmStateWaitCount;
+        LONGLONG FsmStateMinWaitTimeUs;
+        LONGLONG FsmStateMaxWaitTimeUs;
+        LONGLONG LongFsmStateWaitCount;
+        LONGLONG LongFsmStateWaitTimeUs;
+        USHORT BlockCount;
+    } currRequestStats;
+
+    struct _SDHC_STATISTICS {
+        LONGLONG BlocksWrittenCount;
+        LONGLONG PageSized4KWritesCount;
+        LONGLONG TotalFsmStateWaitTimeUs;
+        LONGLONG LongFsmStateWaitCount;
+        LONGLONG TotalLongFsmStateWaitTimeUs;
+    } sdhcStats;
+
+#endif // ENABLE_PERFORMANCE_LOGGING
 
     //
     // PIO Transfer Worker State Management

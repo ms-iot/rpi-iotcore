@@ -24,12 +24,12 @@
 SDHC_NONPAGED_SEGMENT_BEGIN; //================================================
 
 _Use_decl_annotations_
-NTSTATUS SDHC::readFromDataRegister (
+NTSTATUS SDHC::readFromFifo (
     void* BufferPtr,
     ULONG Size
     ) throw ()
 {
-    ULONG* targetPtr = static_cast<ULONG*>(BufferPtr);
+    ULONG* wordPtr = static_cast<ULONG*>(BufferPtr);
     ULONG count = Size / sizeof(ULONG);
     SDHC_ASSERT((Size % sizeof(ULONG)) == 0);
     ULONG waitTimeUs = 0;
@@ -50,9 +50,21 @@ NTSTATUS SDHC::readFromDataRegister (
             return waitStatus;
         } // if
 
-        *targetPtr = this->readRegisterNoFence<_DATA>().AsUint32;
-        this->allBlocksDataRegisterWaitTimeUs += waitTimeUs;
-        ++targetPtr;
+        *wordPtr = this->readRegisterNoFence<_DATA>().AsUint32;
+
+#if ENABLE_PERFORMANCE_LOGGING
+
+        if (waitTimeUs > 0) {
+            ++this->currRequestStats.FifoWaitCount;
+            this->currRequestStats.FifoWaitTimeUs += waitTimeUs;
+        } // if
+
+        this->currRequestStats.FifoMaxWaitTimeUs =
+            max(this->currRequestStats.FifoMaxWaitTimeUs, waitTimeUs);
+
+#endif // ENABLE_PERFORMANCE_LOGGING
+
+        ++wordPtr;
         --count;
     } // while (count)
 
@@ -60,20 +72,20 @@ NTSTATUS SDHC::readFromDataRegister (
 
     LARGE_INTEGER endTimestamp = KeQueryPerformanceCounter(NULL);
     LONGLONG elapsedHpcTicks = endTimestamp.QuadPart - startTimestamp.QuadPart;
-    this->allBlocksTransferElapsedTicks += elapsedHpcTicks;
+    this->currRequestStats.FifoIoTimeTicks += elapsedHpcTicks;
 
 #endif // ENABLE_PERFORMANCE_LOGGING
 
     return STATUS_SUCCESS;
-} // SDHC::readFromDataRegister (...)
+} // SDHC::readFromFifo (...)
 
 _Use_decl_annotations_
-NTSTATUS SDHC::writeToDataRegister (
+NTSTATUS SDHC::writeToFifo (
     const void* BufferPtr,
     ULONG Size
     ) throw ()
 {
-    const ULONG* sourcePtr = static_cast<const ULONG*>(BufferPtr);
+    const ULONG* wordPtr = static_cast<const ULONG*>(BufferPtr);
     ULONG count = Size / sizeof(ULONG);
     SDHC_ASSERT((Size % sizeof(ULONG)) == 0);
     ULONG waitTimeUs = 0;
@@ -94,9 +106,21 @@ NTSTATUS SDHC::writeToDataRegister (
             return waitStatus;
         } // if
 
-        this->writeRegisterNoFence(_DATA{ *sourcePtr });
-        this->allBlocksDataRegisterWaitTimeUs += waitTimeUs;
-        ++sourcePtr;
+        this->writeRegisterNoFence(_DATA{ *wordPtr });
+
+#if ENABLE_PERFORMANCE_LOGGING
+
+        if (waitTimeUs > 0) {
+            ++this->currRequestStats.FifoWaitCount;
+            this->currRequestStats.FifoWaitTimeUs += waitTimeUs;
+        } // if
+
+        this->currRequestStats.FifoMaxWaitTimeUs =
+            max(this->currRequestStats.FifoMaxWaitTimeUs, waitTimeUs);
+
+#endif // ENABLE_PERFORMANCE_LOGGING
+
+        ++wordPtr;
         --count;
     } // while (count)
 
@@ -104,12 +128,12 @@ NTSTATUS SDHC::writeToDataRegister (
 
     LARGE_INTEGER endTimestamp = KeQueryPerformanceCounter(NULL);
     LONGLONG elapsedHpcTicks = endTimestamp.QuadPart - startTimestamp.QuadPart;
-    this->allBlocksTransferElapsedTicks += elapsedHpcTicks;
+    this->currRequestStats.FifoIoTimeTicks += elapsedHpcTicks;
 
 #endif // ENABLE_PERFORMANCE_LOGGING
 
     return STATUS_SUCCESS;
-} // SDHC::writeToDataRegister (...)
+} // SDHC::readFromFifo (...)
 
 _Use_decl_annotations_
 NTSTATUS SDHC::waitForDataFlag (
@@ -145,7 +169,6 @@ NTSTATUS SDHC::waitForDataFlag (
 
 } // SDHC::waitForDataFlag ()
 
-_Use_decl_annotations_
 NTSTATUS SDHC::waitForFsmState (
     ULONG state
     ) throw ()
@@ -153,29 +176,76 @@ NTSTATUS SDHC::waitForFsmState (
     ULONG retry = _POLL_RETRY_COUNT;
     _HSTS hsts; this->readRegisterNoFence(&hsts);
     _EDM edm; this->readRegisterNoFence(&edm);
+    ULONG waitTimeUs = 0;
 
     while ((edm.Fields.StateMachine != state) &&
            !(hsts.AsUint32 & _HSTS::UINT32_ERROR_MASK) &&
             retry) {
 
         ::SdPortWait(_POLL_WAIT_US);
+        waitTimeUs += _POLL_WAIT_US;
         this->readRegisterNoFence(&hsts);
         this->readRegisterNoFence(&edm);
         --retry;
     } // while (...)
 
+#if ENABLE_PERFORMANCE_LOGGING
+
+    if (waitTimeUs > 0) {
+        ++this->currRequestStats.FsmStateWaitCount;
+        this->currRequestStats.FsmStateWaitTimeUs += waitTimeUs;
+    }
+
+    this->currRequestStats.FsmStateMaxWaitTimeUs =
+        max(this->currRequestStats.FsmStateMaxWaitTimeUs, waitTimeUs);
+    this->currRequestStats.FsmStateMinWaitTimeUs =
+        min(this->currRequestStats.FsmStateMinWaitTimeUs, waitTimeUs);
+
+#endif // ENABLE_PERFORMANCE_LOGGING
+
     if (hsts.AsUint32 & _HSTS::UINT32_ERROR_MASK) {
+        if (hsts.Fields.RewTimeOut) {
+            SDHC_LOG_ERROR(
+                "HW Read/Erase/Write timeout after %luus waiting on FSM state 0x%lx. (edm.Fields.StateMachine = 0x%lx)",
+                waitTimeUs,
+                state,
+                edm.Fields.StateMachine);
+        }
         return this->getErrorStatus(hsts);
     } else if (!retry) {
+        SDHC_LOG_ERROR(
+            "Poll timeout after %luus waiting on FSM state 0x%lx. (edm.Fields.StateMachine = 0x%lx)",
+            waitTimeUs,
+            state,
+            edm.Fields.StateMachine);
         return STATUS_IO_TIMEOUT;
     } else {
+        //
+        // Use a threshold to catch bad SDCards taking too long time to
+        // finish an FSM transition (e.g. taking too long to finish writing
+        // a block physically)
+        //
+        if (waitTimeUs > _LONG_FSM_WAIT_TIME_THRESHOLD_US) {
+
+#if ENABLE_PERFORMANCE_LOGGING
+
+            ++this->currRequestStats.LongFsmStateWaitCount;
+            this->currRequestStats.LongFsmStateWaitTimeUs += waitTimeUs;
+
+#endif // ENABLE_PERFORMANCE_LOGGING
+
+            SDHC_LOG_WARNING(
+                "Long wait detected on FSM state 0x%lx for %luus",
+                state,
+                waitTimeUs);
+        }
+
         SDHC_ASSERT(edm.Fields.StateMachine == state);
         return STATUS_SUCCESS;
     } // iff
 
 } // SDHC::waitForFsmState ()
 
-_Use_decl_annotations_
 NTSTATUS SDHC::waitForLastCommandCompletion () throw ()
 {
     ULONG retry = _POLL_RETRY_COUNT;
@@ -438,10 +508,10 @@ NTSTATUS SDHC::sdhcIssueRequest (
 #if ENABLE_PERFORMANCE_LOGGING
 
         if (RequestPtr->Type == SdRequestTypeCommandWithTransfer) {
-            thisPtr->transferStartTimestamp = KeQueryPerformanceCounter(NULL);
-            thisPtr->allBlocksDataRegisterWaitTimeUs = 0;
-            thisPtr->allBlocksTransferElapsedTicks = 0;
-            thisPtr->currentRequestBlockCount = RequestPtr->Command.BlockCount;
+            RtlZeroMemory(&thisPtr->currRequestStats, sizeof(_REQUEST_STATISTICS));
+            thisPtr->currRequestStats.StartTimestamp = KeQueryPerformanceCounter(NULL);
+            thisPtr->currRequestStats.FsmStateMinWaitTimeUs = MAXLONGLONG;
+            thisPtr->currRequestStats.BlockCount= RequestPtr->Command.BlockCount;
         } // if
 
 #endif // ENABLE_PERFORMANCE_LOGGING
@@ -1077,10 +1147,11 @@ NTSTATUS SDHC::setClock (
     ULONG actualSdFreqHz = (coreClockFreqHz / (clockDiv + 2));
 
     //
-    // Specify 1 second (actualSdFreqHz cycles) as the read/write/erase timeout
+    // Specify Freq / _RWE_TIMEOUT_CLOCK_DIV as the read/write/erase timeout in seconds
+    // e.g. If _RWE_TIMEOUT_CLOCK_DIV = 4, then the timeout is 1/4 second
     //
     _TOUT tout{ 0 };
-    tout.Fields.Timeout = actualSdFreqHz;
+    tout.Fields.Timeout = actualSdFreqHz / _RWE_TIMEOUT_CLOCK_DIV;
     this->writeRegisterNoFence(tout);
 
     SDHC_LOG_INFORMATION(
@@ -1336,21 +1407,13 @@ NTSTATUS SDHC::startTransferPio (
         (RequestPtr->Command.TransferDirection == SdTransferDirectionRead) ||
         (RequestPtr->Command.TransferDirection == SdTransferDirectionWrite));
     SDHC_ASSERT(RequestPtr->Command.BlockCount);
+    SDHC_ASSERT(
+        (RequestPtr->Command.TransferType == SdTransferTypeSingleBlock) ||
+        (RequestPtr->Command.TransferType == SdTransferTypeMultiBlock) ||
+        (RequestPtr->Command.TransferType == SdTransferTypeMultiBlockNoStop));
 
-    if (RequestPtr->Command.TransferType == SdTransferTypeSingleBlock) {
-        //
-        // Transfer single block and complete request inline before returning
-        //
-        NTSTATUS status = this->transferSingleBlockPio(RequestPtr);
-        this->completeRequest(RequestPtr, status);
-        if (!NT_SUCCESS(status)) {
-            return status;
-        } // if
-    } else {
-
-        SDHC_ASSERT(
-            (RequestPtr->Command.TransferType == SdTransferTypeMultiBlock) ||
-            (RequestPtr->Command.TransferType == SdTransferTypeMultiBlockNoStop));
+    if ((RequestPtr->Command.TransferType == SdTransferTypeMultiBlock) ||
+        (RequestPtr->Command.TransferType == SdTransferTypeMultiBlockNoStop)) {
 
         //
         // Specify we require a busy signal to complete multi-block request after issuing
@@ -1358,8 +1421,20 @@ NTSTATUS SDHC::startTransferPio (
         //
         _HSTS* requiredEventsPtr = reinterpret_cast<_HSTS*>(&RequestPtr->RequiredEvents);
         requiredEventsPtr->Fields.BusyIrpt = 1;
+    }
 
-        if (this->crashdumpMode) {
+    //
+    // In Crashdump mode, inline perform and complete transfer requests
+    //
+    if (this->crashdumpMode) {
+
+        if (RequestPtr->Command.TransferType == SdTransferTypeSingleBlock) {
+            NTSTATUS status = this->transferSingleBlockPio(RequestPtr);
+            this->completeRequest(RequestPtr, status);
+            if (!NT_SUCCESS(status)) {
+                return status;
+            } // if
+        } else {
             //
             // Perform multi-block transfers and complete them inline since there is no
             // transfer worker in the crashdump mode
@@ -1369,24 +1444,24 @@ NTSTATUS SDHC::startTransferPio (
             if (!NT_SUCCESS(status)) {
                 return status;
             } // if
+        } // if
 
-        } else {
-            //
-            // Wake-up the transfer worker thread to do IO and return to Sdport with
-            // STATUS_PENDING to indicate that completion will happen asynchronously
-            //
-            if (InterlockedCompareExchangePointer(
-                    reinterpret_cast<PVOID volatile *>(&this->outstandingRequestPtr),
-                    RequestPtr,
-                    nullptr)) {
-                this->updateAllRegistersDump();
-                SDHC_LOG_ASSERTION(
-                    "A stale request not acquired by transfer worker");
-                return STATUS_DEVICE_PROTOCOL_ERROR;
-            } // if
+    } else {
+        //
+        // Wake-up the transfer worker thread to do IO and return to Sdport with
+        // STATUS_PENDING to indicate that completion will happen asynchronously
+        //
+        if (InterlockedCompareExchangePointer(
+                reinterpret_cast<PVOID volatile *>(&this->outstandingRequestPtr),
+                RequestPtr,
+                nullptr)) {
+            this->updateAllRegistersDump();
+            SDHC_LOG_ASSERTION(
+                "A stale request not acquired by transfer worker");
+            return STATUS_DEVICE_PROTOCOL_ERROR;
+        } // if
 
-            (void)KeSetEvent(&this->transferWorkerDoIoEvt, 0, FALSE);
-        } // iff
+        (void)KeSetEvent(&this->transferWorkerDoIoEvt, 0, FALSE);
     } // iff
 
     return STATUS_SUCCESS;
@@ -1401,13 +1476,13 @@ NTSTATUS SDHC::transferSingleBlockPio (
 
     switch (RequestPtr->Command.TransferDirection) {
     case SdTransferDirectionRead:
-        status = this->readFromDataRegister(
+        status = this->readFromFifo(
             RequestPtr->Command.DataBuffer,
             RequestPtr->Command.BlockSize);
         break;
 
     case SdTransferDirectionWrite:
-        status = this->writeToDataRegister(
+        status = this->writeToFifo(
             RequestPtr->Command.DataBuffer,
             RequestPtr->Command.BlockSize);
         //
@@ -1512,6 +1587,13 @@ void SDHC::completeRequest (
         (Status == STATUS_DEVICE_POWER_FAILURE) ||
         (Status == STATUS_IO_DEVICE_ERROR));
 
+#if ENABLE_PERFORMANCE_LOGGING
+
+    LARGE_INTEGER hpcFreqHz;
+    LARGE_INTEGER requestEndTimestamp = KeQueryPerformanceCounter(&hpcFreqHz);
+
+#endif // ENABLE_PERFORMANCE_LOGGING
+
     //
     // This SDHC is not a standard host, we need to be very aggressive about state
     // integrity, and what host state to expect on claiming successful completion
@@ -1541,68 +1623,108 @@ void SDHC::completeRequest (
                 "Completing request successfully despite HW FSM not in expected state");
         } // if
 
-        if (RequestPtr->Type == SdRequestTypeStartTransfer) {
-
-#if ENABLE_PERFORMANCE_LOGGING
-
-            LARGE_INTEGER hpcFreqHz;
-            LARGE_INTEGER transferEndTimestamp = KeQueryPerformanceCounter(&hpcFreqHz);
-
-            //
-            // Assume HighSpeed mode with 25MB/s where MB in the transfer rating of SDCards
-            // means 25 * 1000 * 1000 byte according to SD specs
-            //
-            LONGLONG optimalTransferTotalTimeUs =
-                (LONGLONG(RequestPtr->Command.Length) * 1000000ll) / 25000000ll;
-
-            LONGLONG transferTotalTimeUs;
-            transferTotalTimeUs = transferEndTimestamp.QuadPart - transferStartTimestamp.QuadPart;
-            transferTotalTimeUs *= 1000000ll;
-            transferTotalTimeUs /= hpcFreqHz.QuadPart;
-
-            //
-            // Transfers taking less than 1us to complete will not have full info, their log will show:
-            // Actual: 0us @ 0MB/s, Utilization = 0%
-            //
-            LONGLONG actualTransferRateMBs{ 0 };
-            LONGLONG utilization = 0;
-
-            if (transferTotalTimeUs > 0) {
-                actualTransferRateMBs =
-                    (LONGLONG(RequestPtr->Command.Length) * 1000000ll) / (transferTotalTimeUs * 1024ll * 1024ll);
-                utilization = (optimalTransferTotalTimeUs * 100ll) / transferTotalTimeUs;
-            } // if
-
-            LONGLONG allBlocksTransferElapsedUs = this->allBlocksTransferElapsedTicks;
-            allBlocksTransferElapsedUs *= 1000000ll;
-            allBlocksTransferElapsedUs /= hpcFreqHz.QuadPart;
-
-            SDHC_LOG_INFORMATION(
-                "%s(%luB) %lldus/%lldus @ %lld/25MB/s, Bus Util = %lld%% - "
-                "Xfr: Blk Avg = %lldus, Waits = %lldus",
-                ((RequestPtr->Command.TransferDirection == SdTransferDirectionRead) ? "Read" : "Write"),
-                RequestPtr->Command.Length,
-                transferTotalTimeUs,
-                optimalTransferTotalTimeUs,
-                actualTransferRateMBs,
-                utilization,
-                (allBlocksTransferElapsedUs / LONGLONG(this->currentRequestBlockCount)),
-                this->allBlocksDataRegisterWaitTimeUs);
-
-#endif // ENABLE_PERFORMANCE_LOGGING
-
-        } // if (RequestPtr->Type == SdRequestTypeStartTransfer)
     }  // iff (NT_SUCCESS(Status))
 
     if (RequestPtr->Type == SdRequestTypeStartTransfer) {
+
+#if ENABLE_PERFORMANCE_LOGGING
+
+        //
+        // Collect SDCH wide statistics tied to inserted SDCard
+        // Since RaspberryPi uses SDCard as the boot media, the SDCard will always stay
+        // inserted while the OS is running
+        //
+        this->sdhcStats.TotalFsmStateWaitTimeUs += this->currRequestStats.FsmStateWaitTimeUs;
+        this->sdhcStats.LongFsmStateWaitCount += this->currRequestStats.LongFsmStateWaitCount;
+        this->sdhcStats.TotalLongFsmStateWaitTimeUs += this->currRequestStats.LongFsmStateWaitTimeUs;
+
+        if ((RequestPtr->Command.TransferDirection == SdTransferDirectionWrite)) {
+            this->sdhcStats.BlocksWrittenCount += this->currRequestStats.BlockCount;
+
+            if (RequestPtr->Command.Length == PAGE_SIZE) {
+                ++this->sdhcStats.PageSized4KWritesCount;
+            } // if
+        } // if
+
+        //
+        // Assume no overhead with HighSpeed mode 25MB/s where MB in the transfer rating of SDCards
+        // means 25 * 1000 * 1000 byte according to SD specs
+        //
+        LONGLONG optimalRequestServiceTimeUs =
+            (LONGLONG(RequestPtr->Command.Length) * 1000000ll) / 25000000ll;
+
+        auto& logData = this->currRequestStats;
+        LONGLONG requestServiceTimeUs;
+        requestServiceTimeUs = requestEndTimestamp.QuadPart - logData.StartTimestamp.QuadPart;
+        requestServiceTimeUs *= 1000000ll;
+        requestServiceTimeUs /= hpcFreqHz.QuadPart;
+
+        //
+        // Transfers taking less than 1us to complete will not have full info, their log will show:
+        // Actual: 0us @ 0MB/s, Utilization = 0%
+        //
+        LONGLONG actualTransferRateMBs{ 0 };
+        LONGLONG utilization = 0;
+
+        if (requestServiceTimeUs > 0) {
+            actualTransferRateMBs =
+                (LONGLONG(RequestPtr->Command.Length) * 1000000ll) / (requestServiceTimeUs * 1024ll * 1024ll);
+            utilization = (optimalRequestServiceTimeUs * 100ll) / requestServiceTimeUs;
+        } // if
+
+        LONGLONG fifoIoTimeUs = this->currRequestStats.FifoIoTimeTicks;
+        fifoIoTimeUs *= 1000000ll;
+        fifoIoTimeUs /= hpcFreqHz.QuadPart;
+
         SDHC_LOG_INFORMATION(
-            "%s%d %s(%luB) (RequestPtr = 0x%p, RequestPtr->Status = %!STATUS!)",
+            "%s%d %s(0x%lx, %luB) %lldus %lldMB/s, Util:%lld%%, "
+            "Fifo Time:%lldus, "
+            "Fifo Waits:%lldus Max:%lldus Avg:%lldus, "
+            "Fsm Waits:%lldus Max:%lldus Avg:%lldus Min:%lldus. "
+            "(RequestPtr = 0x%p, RequestPtr->Status = %!STATUS!)",
             ((RequestPtr->Command.Class == SdCommandClassApp) ? "ACMD" : "CMD"),
             RequestPtr->Command.Index,
             ((RequestPtr->Command.TransferDirection == SdTransferDirectionRead) ? "Read" : "Write"),
+            RequestPtr->Command.Argument,
+            RequestPtr->Command.Length,
+            requestServiceTimeUs,
+            actualTransferRateMBs,
+            utilization,
+            fifoIoTimeUs,
+            logData.FifoWaitTimeUs,
+            logData.FifoMaxWaitTimeUs,
+            ((logData.FifoWaitCount > 0) ?
+                (logData.FifoWaitTimeUs / LONGLONG(logData.FifoWaitCount)) : 0ll),
+            logData.FsmStateWaitTimeUs,
+            logData.FsmStateMaxWaitTimeUs,
+            ((logData.FsmStateWaitCount > 0) ?
+                (logData.FsmStateWaitTimeUs / LONGLONG(logData.FsmStateWaitCount)) : 0ll),
+            (logData.FsmStateMinWaitTimeUs == MAXLONGLONG ? 0ll : logData.FsmStateMinWaitTimeUs),
+            RequestPtr,
+            Status);
+
+        SDHC_LOG_INFORMATION(
+            "SDHC Stats: Fsm Waits:%lldus, #Long Waits:%lld %lldus, #Block Writes:%lld, #4K Writes:%lld",
+            this->sdhcStats.TotalFsmStateWaitTimeUs,
+            this->sdhcStats.LongFsmStateWaitCount,
+            this->sdhcStats.TotalLongFsmStateWaitTimeUs,
+            this->sdhcStats.BlocksWrittenCount,
+            this->sdhcStats.PageSized4KWritesCount);
+
+#else
+
+        SDHC_LOG_INFORMATION(
+            "%s%d %s(0x%lx, %luB) (RequestPtr = 0x%p, RequestPtr->Status = %!STATUS!)",
+            ((RequestPtr->Command.Class == SdCommandClassApp) ? "ACMD" : "CMD"),
+            RequestPtr->Command.Index,
+            ((RequestPtr->Command.TransferDirection == SdTransferDirectionRead) ? "Read" : "Write"),
+            RequestPtr->Command.Argument,
             RequestPtr->Command.Length,
             RequestPtr,
             Status);
+
+#endif // ENABLE_PERFORMANCE_LOGGING
+
     } else if (RequestPtr->Type != SdRequestTypeCommandWithTransfer) {
         SDHC_LOG_INFORMATION(
             "%s%d (RequestPtr = 0x%p, RequestPtr->Status = %!STATUS!)",
@@ -1799,7 +1921,21 @@ VOID SDHC::transferWorker (
                 KeGetCurrentProcessorNumberEx(NULL),
                 requestPtr);
 
-            (void)thisPtr->transferMultiBlockPio(requestPtr);
+            if (requestPtr->Command.TransferType == SdTransferTypeSingleBlock) {
+                //
+                // Single block transfers do not require a STOP_TRANSMISSION, and hence
+                // completing the request inline is appropriate
+                //
+                NTSTATUS status = thisPtr->transferSingleBlockPio(requestPtr);
+                thisPtr->completeRequest(requestPtr, status);
+            } else {
+                //
+                // Multi block transfers require a STOP_TRANSMISSION, and hence the
+                // request completion will happen async in the STOP_TRANSMISSION command
+                // completion DPC
+                //
+                (void)thisPtr->transferMultiBlockPio(requestPtr);
+            } // iff
 
             SDHC_LOG_TRACE("Finished servicing IO transfer");
 

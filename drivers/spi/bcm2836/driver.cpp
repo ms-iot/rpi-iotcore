@@ -34,6 +34,7 @@ DriverEntry(
     )
 {
     WDF_DRIVER_CONFIG driverConfig;
+    WDF_OBJECT_ATTRIBUTES driverAttributes;
 
     WDFDRIVER fxDriver;
 
@@ -45,12 +46,14 @@ DriverEntry(
 
     WDF_DRIVER_CONFIG_INIT(&driverConfig, OnDeviceAdd);
     driverConfig.DriverPoolTag = BCMS_POOL_TAG;
-    driverConfig.EvtDriverUnload = OnDriverUnload;
+
+    WDF_OBJECT_ATTRIBUTES_INIT(&driverAttributes);
+    driverAttributes.EvtCleanupCallback = OnDriverCleanup;
 
     status = WdfDriverCreate(
         DriverObject,
         RegistryPath,
-        WDF_NO_OBJECT_ATTRIBUTES,
+        &driverAttributes,
         &driverConfig,
         &fxDriver);
 
@@ -80,11 +83,13 @@ exit:
 
 _Use_decl_annotations_
 VOID
-OnDriverUnload(
-    WDFDRIVER Driver
+OnDriverCleanup(
+    WDFOBJECT Object
     )
 {
-    WPP_CLEANUP(Driver);
+    UNREFERENCED_PARAMETER(Object);
+
+    WPP_CLEANUP(NULL);
 }
 
 _Use_decl_annotations_

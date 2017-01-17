@@ -191,7 +191,7 @@ static VCOS_THREAD_T vcos_thread_main;
 static void vcos_thread_entry(void *arg)
 {
    int i;
-   void *ret;
+   const void *ret;
    VCOS_THREAD_T *thread = (VCOS_THREAD_T *)arg;
 
    vcos_assert(thread != NULL);
@@ -267,7 +267,7 @@ VCOS_STATUS_T vcos_thread_create(VCOS_THREAD_T *thread,
                                  void *arg)
 {
     VCOS_STATUS_T st;
-    VCOS_THREAD_ATTR_T *local_attrs = attrs ? attrs : &default_attrs;
+    const VCOS_THREAD_ATTR_T *local_attrs = attrs ? attrs : &default_attrs;
 
     vcos_assert(thread);
     memset(thread, 0, sizeof(VCOS_THREAD_T));
@@ -375,6 +375,8 @@ uint64_t vcos_getmicrosecs64_internal(void)
 {
 #ifdef WIN32_KERN
     LARGE_INTEGER time;
+
+    __pragma(prefast(suppress:25003, "Nonconst local within KeQueryTickCount"))
     KeQueryTickCount(&time);
 
     return time.QuadPart;
@@ -516,6 +518,7 @@ void vcos_platform_deinit(void)
 #pragma warning(disable : 28167)
 #endif
 
+_Acquires_lock_(lock)
 void vcos_global_lock(void)
 {
 #ifdef WIN32_KERN 
@@ -533,12 +536,10 @@ void vcos_global_lock(void)
 #endif
 }
 
+_Releases_lock_(lock)
 void vcos_global_unlock(void)
 {
-#ifdef WIN32_KERN 
-    if (global_lock_init == FALSE) {
-        return;
-    }
+#ifdef WIN32_KERN
     ExReleaseFastMutex(&lock);
 #else
     if (global_lock_init == FALSE) {
@@ -757,8 +758,15 @@ VCOS_STATUS_T vcos_once(VCOS_ONCE_T *once_control,
                         void (*init_routine)(void))
 {
 #ifdef WIN32_KERN
-#pragma warning(suppress : 4152 )
-    if (RtlRunOnceExecuteOnce (once_control, InitHandleFunction, init_routine, NULL) != STATUS_SUCCESS) {
+    __try
+    {
+        #pragma warning(suppress : 4152 )
+        if (RtlRunOnceExecuteOnce (once_control, InitHandleFunction, init_routine, NULL) != STATUS_SUCCESS) {
+            return VCOS_EINVAL;
+        }
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER)
+    {
         return VCOS_EINVAL;
     }
 

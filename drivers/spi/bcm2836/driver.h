@@ -32,6 +32,6 @@ DriverEntry(
 
 EVT_WDF_DRIVER_DEVICE_ADD       OnDeviceAdd;
 EVT_WDF_DEVICE_CONTEXT_CLEANUP  OnDeviceCleanup;
-EVT_WDF_DRIVER_UNLOAD           OnDriverUnload;
+EVT_WDF_OBJECT_CONTEXT_CLEANUP  OnDriverCleanup;
 
 #endif

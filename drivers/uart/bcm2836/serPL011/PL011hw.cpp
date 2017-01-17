@@ -653,7 +653,7 @@ _Use_decl_annotations_
 NTSTATUS
 PL011HwSetFlowControl(
     WDFDEVICE WdfDevice,
-    SERIAL_HANDFLOW* SerialFlowControlPtr
+    const SERIAL_HANDFLOW* SerialFlowControlPtr
     )
 {
     PL011_DEVICE_EXTENSION* devExtPtr = PL011DeviceGetExtension(WdfDevice);
@@ -764,7 +764,7 @@ _Use_decl_annotations_
 NTSTATUS
 PL011HwSetLineControl(
     WDFDEVICE WdfDevice,
-    SERIAL_LINE_CONTROL* SerialLineControlPtr
+    const SERIAL_LINE_CONTROL* SerialLineControlPtr
     )
 {
     NTSTATUS status = STATUS_NOT_SUPPORTED;
@@ -996,7 +996,8 @@ PL011HwSetModemControl(
     UCHAR ModemControl
     )
 {
-    PL011_DEVICE_EXTENSION* devExtPtr = PL011DeviceGetExtension(WdfDevice);
+    const PL011_DEVICE_EXTENSION* devExtPtr = 
+        PL011DeviceGetExtension(WdfDevice);
 
     //
     // Get current UART control

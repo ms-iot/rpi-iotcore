@@ -2,7 +2,7 @@
 //
 // Copyright (c) Microsoft Corporation.  All rights reserved.
 //
-// Module Name: 
+// Module Name:
 //
 //    PL011device.cpp
 //
@@ -44,6 +44,8 @@
     #pragma alloc_text(PAGE, PL011pDeviceSerCx2Init)
     #pragma alloc_text(PAGE, PL011pDeviceParseResources)
     #pragma alloc_text(PAGE, PL011pDeviceMapResources)
+    #pragma alloc_text(PAGE, PL011pDeviceCreateDeviceInterface)
+    #pragma alloc_text(PAGE, PL011pDeviceReserveFunctionConfigResource)
     #pragma alloc_text(PAGE, PL011pDeviceGetSupportedFeatures)
 #endif // ALLOC_PRAGMA
 
@@ -61,7 +63,7 @@ extern "C" extern PUCHAR* KdComPortInUse;
 //  PL011EvtDeviceAdd is called by the framework in response to AddDevice
 //  call from the PnP manager.
 //  The function creates and initializes a new PL011 WDF device, and registers it
-//  with the SerCx framework.    
+//  with the SerCx framework.
 //
 // Arguments:
 //
@@ -83,7 +85,7 @@ PL011EvtDeviceAdd(
     UNREFERENCED_PARAMETER(WdfDriver);
 
     //
-    // Set P&P and Power callbacks 
+    // Set P&P and Power callbacks
     //
     {
         WDF_PNPPOWER_EVENT_CALLBACKS wdfPnppowerEventCallbacks;
@@ -96,7 +98,7 @@ PL011EvtDeviceAdd(
     } // P&P and Power
 
     //
-    // Call SerCx2InitializeDeviceInit() to attach the SerCX2 to the 
+    // Call SerCx2InitializeDeviceInit() to attach the SerCX2 to the
     // WDF pipeline.
     //
     // Note:
@@ -108,6 +110,24 @@ PL011EvtDeviceAdd(
 
         PL011_LOG_ERROR(
             "SerCx2InitializeDeviceInit failed, (status = %!STATUS!)", status
+            );
+        return status;
+    }
+
+    DECLARE_CONST_UNICODE_STRING(
+        SDDL_DEVOBJ_SERCX_SYS_ALL_ADM_ALL_UMDF_ALL_USERS_RDWR,
+        L"D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GA;;;UD)(A;;GRGW;;;BU)"
+        );
+    status = WdfDeviceInitAssignSDDLString(
+            DeviceInitPtr,
+            &SDDL_DEVOBJ_SERCX_SYS_ALL_ADM_ALL_UMDF_ALL_USERS_RDWR
+            );
+    if (!NT_SUCCESS(status)) {
+
+        PL011_LOG_ERROR(
+            "WdfDeviceInitAssignSDDLString failed. (status = %!STATUS!, SDDL_DEVOBJ_SERCX_SYS_ALL_ADM_ALL_UMDF_ALL_USERS_RDWR = %wZ)",
+            status,
+            &SDDL_DEVOBJ_SERCX_SYS_ALL_ADM_ALL_UMDF_ALL_USERS_RDWR
             );
         return status;
     }
@@ -156,7 +176,7 @@ PL011EvtDeviceAdd(
 //
 // Routine Description:
 //
-//  PL011EvtDevicePrepareHardware() is called by the framework when a PL011 
+//  PL011EvtDevicePrepareHardware() is called by the framework when a PL011
 //  device is coming online, after being it's resources have been negotiated and
 //  translated.
 //  The routine reads and map the device resources and initializes the device.
@@ -187,7 +207,7 @@ PL011EvtDevicePrepareHardware(
     UNREFERENCED_PARAMETER(ResourcesRaw);
 
     NTSTATUS status = PL011pDeviceParseResources(
-        WdfDevice, 
+        WdfDevice,
         ResourcesTranslated
         );
     if (!NT_SUCCESS(status)) {
@@ -196,24 +216,75 @@ PL011EvtDevicePrepareHardware(
     }
 
     //
-    // Check if we are conflicting with the debugger. If we do,
-    // do not fail the driver loading otherwise we block RHPROXY and the
-    // rest of buses. Just mark it, and block any Open requests.
+    // Check if we are conflicting with the debugger, and if so, do not
+    // create a device interface or initialize hardware.
     //
     PL011_DEVICE_EXTENSION* devExtPtr = PL011DeviceGetExtension(WdfDevice);
     if (devExtPtr->IsDebuggerConflict) {
+
+        //
+        // If we don't have an FunctionConfig() resource that we need to hold
+        // on to, fail the load of the driver.
+        //
+        if (devExtPtr->PL011ResourceData.FunctionConfigConnectionId.QuadPart == 0LL) {
+
+            PL011_LOG_ERROR("Detected conflict with kernel debugger, failing load.");
+
+            // Tell WDF not to attempt it's usual retry loop
+            WdfDeviceSetFailed(WdfDevice, WdfDeviceFailedNoRestart);
+            return STATUS_UNSUCCESSFUL;
+        }
+
+        //
+        // Reserve the FunctionConfig() resource so that another client can't
+        // steal the pins away from the kernel debugger.
+        //
+        status = PL011pDeviceReserveFunctionConfigResource(devExtPtr);
+        if (!NT_SUCCESS(status)) {
+
+            PL011_LOG_ERROR(
+                "PL011pDeviceReserveFunctionConfigResource(...) failed. (status = %!STATUS!, FunctionConfigConnectionId = %llx)",
+                status,
+                devExtPtr->PL011ResourceData.FunctionConfigConnectionId.QuadPart
+                );
+            return status;
+        }
 
         return STATUS_SUCCESS;
     }
 
     status = PL011pDeviceMapResources(
-        WdfDevice, 
-        ResourcesRaw, 
+        WdfDevice,
+        ResourcesRaw,
         ResourcesTranslated
         );
     if (!NT_SUCCESS(status)) {
 
         return status;
+    }
+
+    //
+    // If we received a UartSerialBus resource, make device accessible
+    // to usermode.
+    //
+    if (devExtPtr->PL011ResourceData.ConnectionId.QuadPart != 0LL) {
+
+        status = PL011pDeviceCreateDeviceInterface(
+                WdfDevice,
+                devExtPtr->PL011ResourceData.ConnectionId
+                );
+        if (!NT_SUCCESS(status)) {
+
+            PL011_LOG_ERROR(
+                "PL011pDeviceCreateDeviceInterface failed. (status = %!STATUS!, devExtPtr->PL011ResourceData.ConnectionId = %llx)",
+                status,
+                devExtPtr->PL011ResourceData.ConnectionId.QuadPart
+                );
+            return status;
+        }
+    } else {
+
+        PL011_LOG_INFORMATION("Skipping creation of device interface due to absence of UartSerialBus() descriptor.");
     }
 
     return PL011HwInitController(WdfDevice);
@@ -223,7 +294,7 @@ PL011EvtDevicePrepareHardware(
 //
 // Routine Description:
 //
-//  PL011EvtDeviceReleaseHardware() is called by the framework when a PL011 
+//  PL011EvtDeviceReleaseHardware() is called by the framework when a PL011
 //  device is offline and not accessible anymore.
 //  The routine just releases device resources.
 //
@@ -257,7 +328,7 @@ PL011EvtDeviceReleaseHardware(
         PL011_ASSERT(resourceDataPtr->RegsSpan == ULONG(PL011_REG_FILE::REG_FILE_SIZE));
 
         MmUnmapIoSpace(
-            PVOID(devExtPtr->PL011RegsPtr), 
+            PVOID(devExtPtr->PL011RegsPtr),
             resourceDataPtr->RegsSpan
             );
     }
@@ -425,7 +496,7 @@ PL011pDeviceExtensionInit(
 {
     PAGED_CODE();
 
-    PL011_DRIVER_EXTENSION* drvExtPtr = PL011DriverGetExtension(WdfGetDriver());
+    const PL011_DRIVER_EXTENSION* drvExtPtr = PL011DriverGetExtension(WdfGetDriver());
     PL011_DEVICE_EXTENSION* devExtPtr = PL011DeviceGetExtension(WdfDevice);
 
     devExtPtr->WdfDevice = WdfDevice;
@@ -448,7 +519,7 @@ PL011pDeviceExtensionInit(
 // Routine Description:
 //
 //  PL011DeviceSerCx2Init is called by PL011EvtDeviceAdd to initialize the
-//  SerCx2 class extension with the device. 
+//  SerCx2 class extension with the device.
 //  The routine registers the driver callbacks with SerCx2 class extension.
 //
 // Arguments:
@@ -640,6 +711,8 @@ PL011pDeviceParseResources(
     ULONG numMemResourcesFound = 0;
     ULONG numIntResourcesFound = 0;
     ULONG numDmaResourcesFound = 0;
+    ULONG numSerialConnectionResourcesFound = 0;
+    ULONG numFunctionConfigResourcesFound = 0;
 
     for (ULONG resInx = 0; resInx < numResourses; ++resInx) {
 
@@ -653,13 +726,13 @@ PL011pDeviceParseResources(
             PL011_ASSERT(numMemResourcesFound == 1);
 
             if (resDescPtr->u.Memory.Length == ULONG(PL011_REG_FILE::REG_FILE_SIZE)) {
-                // 
+                //
                 // Make sure the debugger is not configured to the
                 // same port as this PL011 device.
                 //
                 if (PL011IsDebuggerPresent()) {
 
-                    PHYSICAL_ADDRESS kdComPA = 
+                    PHYSICAL_ADDRESS kdComPA =
                         MmGetPhysicalAddress(*KdComPortInUse);
 
                     if (kdComPA.QuadPart ==
@@ -673,7 +746,6 @@ PL011pDeviceParseResources(
                             // and let the device to load. We will block any open request.
                             //
                             devExtPtr->IsDebuggerConflict = TRUE;
-                            return STATUS_SUCCESS;
                         #endif //!IS_DONT_CHANGE_HW
 
                     } // Debugger resource conflict
@@ -712,6 +784,48 @@ PL011pDeviceParseResources(
             // To be implemented...
             //
 
+            break;
+
+        case CmResourceTypeConnection:
+            switch (resDescPtr->u.Connection.Class) {
+
+            case CM_RESOURCE_CONNECTION_CLASS_SERIAL:
+                switch (resDescPtr->u.Connection.Type) {
+
+                case CM_RESOURCE_CONNECTION_TYPE_SERIAL_UART:
+                    ++numSerialConnectionResourcesFound;
+                    PL011_ASSERT(numSerialConnectionResourcesFound == 1);
+
+                    resourceDataPtr->ConnectionId.LowPart =
+                        resDescPtr->u.Connection.IdLowPart;
+                    resourceDataPtr->ConnectionId.HighPart =
+                        resDescPtr->u.Connection.IdHighPart;
+
+                    PL011_ASSERT(resourceDataPtr->ConnectionId.QuadPart != 0LL);
+                    break; // CM_RESOURCE_CONNECTION_TYPE_SERIAL_UART
+
+                } // switch (resDescPtr->u.Connection.Type)
+                break; // CM_RESOURCE_CONNECTION_CLASS_SERIAL
+
+            case CM_RESOURCE_CONNECTION_CLASS_FUNCTION_CONFIG:
+                switch (resDescPtr->u.Connection.Type) {
+
+                case CM_RESOURCE_CONNECTION_TYPE_FUNCTION_CONFIG:
+                    ++numFunctionConfigResourcesFound;
+                    PL011_ASSERT(numFunctionConfigResourcesFound == 1);
+
+                    resourceDataPtr->FunctionConfigConnectionId.LowPart =
+                        resDescPtr->u.Connection.IdLowPart;
+                    resourceDataPtr->FunctionConfigConnectionId.HighPart =
+                        resDescPtr->u.Connection.IdHighPart;
+
+                    PL011_ASSERT(resourceDataPtr->FunctionConfigConnectionId.QuadPart != 0LL);
+                    break; // CM_RESOURCE_CONNECTION_TYPE_FUNCTION_CONFIG
+
+                } // switch (resDescPtr->u.Connection.Type)
+                break; // CM_RESOURCE_CONNECTION_CLASS_FUNCTION_CONFIG
+
+            } // switch (resDescPtr->u.Connection.Class)
             break;
 
         default:
@@ -885,6 +999,298 @@ PL011pDeviceMapResources(
 //
 // Routine Description:
 //
+//  Creates a device interface, using the supplied resource hub connection ID
+//  as a reference string. When SerCx2 receives a FileCreate request, it
+//  looks for the connection ID in the filename, and queries the resource
+//  hub to determine initial connection settings.
+//
+//  The _DDN ACPI method is queried to determine the device friendly name
+//  as seen by WinRT. If the _DDN method is not present, no friendly name
+//  will be assigned.
+//
+// Arguments:
+//
+//  WdfDevice - The WdfDevice object the represent the PL011 this instance of
+//      the PL011 controller.
+//
+//  ConnectionId - A valid resource hub Connection Id.
+//
+// Return Value:
+//
+//  STATUS_SUCCESS - On success
+//
+_Use_decl_annotations_
+NTSTATUS
+PL011pDeviceCreateDeviceInterface(
+    WDFDEVICE WdfDevice,
+    LARGE_INTEGER ConnectionId
+    )
+{
+    PAGED_CODE();
+
+    NT_ASSERT(ConnectionId.QuadPart != 0LL);
+
+    DECLARE_UNICODE_STRING_SIZE(
+        referenceString,
+        RESOURCE_HUB_CONNECTION_FILE_SIZE
+        );
+    NTSTATUS status = RESOURCE_HUB_ID_TO_FILE_NAME(
+            ConnectionId.LowPart,
+            ConnectionId.HighPart,
+            referenceString.Buffer
+            );
+    if (!NT_SUCCESS(status)) {
+
+        PL011_LOG_ERROR(
+            "RESOURCE_HUB_ID_TO_FILE_NAME() failed. (status = %!STATUS!)",
+            status
+            );
+        return status;
+    }
+    referenceString.Length = RESOURCE_HUB_CONNECTION_FILE_SIZE - sizeof(WCHAR);
+
+    status = WdfDeviceCreateDeviceInterface(
+            WdfDevice,
+            &GUID_DEVINTERFACE_COMPORT,
+            &referenceString
+            );
+    if (!NT_SUCCESS(status)) {
+
+        PL011_LOG_ERROR(
+            "WdfDeviceCreateDeviceInterface failed. (status = %!STATUS!, GUID_DEVINTERFACE_COMPORT = %!GUID!, referenceString = %wZ)",
+            status,
+            &GUID_DEVINTERFACE_COMPORT,
+            &referenceString
+            );
+        return status;
+    }
+
+    struct _SYMLINK_NAME {
+        WDFSTRING WdfString = WDF_NO_HANDLE;
+        ~_SYMLINK_NAME ()
+        {
+            if (this->WdfString != WDF_NO_HANDLE)
+                WdfObjectDelete(this->WdfString);
+        }
+    } symlinkName;
+    status = WdfStringCreate(
+            nullptr,
+            WDF_NO_OBJECT_ATTRIBUTES,
+            &symlinkName.WdfString
+            );
+    if (!NT_SUCCESS(status)) {
+
+        PL011_LOG_ERROR(
+            "WdfStringCreate failed. (status = %!STATUS!)",
+            status
+            );
+        return status;
+    }
+
+    status = WdfDeviceRetrieveDeviceInterfaceString(
+            WdfDevice,
+            &GUID_DEVINTERFACE_COMPORT,
+            &referenceString,
+            symlinkName.WdfString
+            );
+    if (!NT_SUCCESS(status)) {
+
+        PL011_LOG_ASSERTION(
+            "WdfDeviceRetrieveDeviceInterfaceString() failed. (status = %!STATUS!, GUID_DEVINTERFACE_COMPORT = %!GUID!)",
+            status,
+            &GUID_DEVINTERFACE_COMPORT
+            );
+        return status;
+    }
+
+    UNICODE_STRING symlinkNameWsz;
+    WdfStringGetUnicodeString(symlinkName.WdfString, &symlinkNameWsz);
+
+    //
+    // IsRestricted interface property works in conjunction with the
+    // RestrictedOverrideForSystemContainerAllowed flag set on the interface
+    // class to allow access to internal devices (belonging to system
+    // container) through the device broker. Setting it to FALSE is required
+    // to explicitly grant access.
+    //
+
+    DEVPROP_BOOLEAN isRestricted = DEVPROP_FALSE;
+    status = IoSetDeviceInterfacePropertyData(
+            &symlinkNameWsz,
+            &DEVPKEY_DeviceInterface_Restricted,
+            0,
+            0, // Flags
+            DEVPROP_TYPE_BOOLEAN,
+            sizeof(isRestricted),
+            &isRestricted
+            );
+    if (!NT_SUCCESS(status)) {
+
+        PL011_LOG_ERROR(
+            "IoSetDeviceInterfacePropertyData(...DEVPKEY_DeviceInterface_Restricted...) failed. (status = %!STATUS!, symlinkNameWsz = %wZ)",
+            status,
+            &symlinkNameWsz
+            );
+        return status;
+    }
+
+    //
+    // Get DosDeviceName from registry
+    //
+    struct _PARAMETERS_KEY {
+        WDFKEY WdfKey = WDF_NO_HANDLE;
+        ~_PARAMETERS_KEY ()
+        {
+            if (this->WdfKey != WDF_NO_HANDLE)
+                WdfRegistryClose(this->WdfKey);
+        }
+    } parametersKey;
+    status = WdfDeviceOpenRegistryKey(
+            WdfDevice,
+            PLUGPLAY_REGKEY_DEVICE,
+            KEY_QUERY_VALUE,
+            WDF_NO_OBJECT_ATTRIBUTES,
+            &parametersKey.WdfKey
+            );
+    if (!NT_SUCCESS(status)) {
+
+        PL011_LOG_ERROR(
+            "Failed to open device parameters registry key. (status = %!STATUS!)",
+            status
+            );
+        return status;
+    }
+
+    DECLARE_CONST_UNICODE_STRING(dosDeviceNameRegvalStr, L"DosDeviceName");
+    DECLARE_UNICODE_STRING_SIZE(portName, 64);
+    status = WdfRegistryQueryUnicodeString(
+            parametersKey.WdfKey,
+            &dosDeviceNameRegvalStr,
+            nullptr, // ValueByteLength
+            &portName
+            );
+    if (NT_SUCCESS(status) &&
+       ((portName.Length + sizeof(WCHAR)) < portName.MaximumLength)) {
+
+        // Null-terminate PortName
+        portName.Buffer[portName.Length / sizeof(WCHAR)] = UNICODE_NULL;
+
+        // Set the port friendly name
+        status = IoSetDeviceInterfacePropertyData(
+                &symlinkNameWsz,
+                &DEVPKEY_DeviceInterface_Serial_PortName,
+                LOCALE_NEUTRAL,
+                0, // Flags
+                DEVPROP_TYPE_STRING,
+                portName.Length + sizeof(WCHAR),
+                portName.Buffer
+                );
+        if (!NT_SUCCESS(status)) {
+
+            PL011_LOG_ERROR(
+                "IoSetDeviceInterfacePropertyData(...DEVPKEY_DeviceInterface_Serial_PortName...) failed. (status = %!STATUS!, symlinkNameWsz = %wZ, portName = %wZ)",
+                status,
+                &symlinkNameWsz,
+                &portName
+                );
+            return status;
+        }
+
+        PL011_LOG_INFORMATION(
+            "Successfully assigned PortName to device interface. (symlinkNameWsz = %wZ, portName = %wZ)",
+            &symlinkNameWsz,
+            &portName
+            );
+
+    } else {
+        PL011_LOG_WARNING(
+            "Failed to query DosDeviceName from registry. Skipping assignment of PortName. (status = %!STATUS!, dosDeviceNameRegvalStr = %wZ, portName.Length = %d, portName.MaximumLength = %d)",
+            status,
+            &dosDeviceNameRegvalStr,
+            portName.Length,
+            portName.MaximumLength
+            );
+    }
+
+    PL011_LOG_INFORMATION(
+        "Successfully created device interface. (symlinkNameWsz = %wZ)",
+        &symlinkNameWsz
+        );
+
+    return STATUS_SUCCESS;
+}
+
+
+_Use_decl_annotations_
+NTSTATUS
+PL011pDeviceReserveFunctionConfigResource(
+    PL011_DEVICE_EXTENSION* DevExtPtr
+    )
+{
+    PAGED_CODE();
+
+    NT_ASSERT(
+        (DevExtPtr->FunctionConfigHandle == WDF_NO_HANDLE) &&
+        (DevExtPtr->PL011ResourceData.FunctionConfigConnectionId.QuadPart != 0LL));
+
+    DECLARE_UNICODE_STRING_SIZE(devicePath, RESOURCE_HUB_PATH_CHARS);
+    NTSTATUS status = RESOURCE_HUB_CREATE_PATH_FROM_ID(
+            &devicePath,
+            DevExtPtr->PL011ResourceData.FunctionConfigConnectionId.LowPart,
+            DevExtPtr->PL011ResourceData.FunctionConfigConnectionId.HighPart
+            );
+    if (!NT_SUCCESS(status)) {
+
+        PL011_LOG_ERROR(
+            "RESOURCE_HUB_CREATE_PATH_FROM_ID failed. (status = %!STATUS!)",
+            status
+            );
+        return status;
+    }
+
+    WDF_OBJECT_ATTRIBUTES wdfObjectAttributes;
+    WDF_OBJECT_ATTRIBUTES_INIT(&wdfObjectAttributes);
+    wdfObjectAttributes.ParentObject = DevExtPtr->WdfDevice;
+
+    status = WdfIoTargetCreate(
+            DevExtPtr->WdfDevice,
+            &wdfObjectAttributes,
+            &DevExtPtr->FunctionConfigHandle
+            );
+    if (!NT_SUCCESS(status)) {
+
+        PL011_LOG_ERROR(
+            "WdfIoTargetCreate() failed. (status = %!STATUS!)",
+            status
+            );
+        return status;
+    }
+
+    WDF_IO_TARGET_OPEN_PARAMS openParams;
+    WDF_IO_TARGET_OPEN_PARAMS_INIT_OPEN_BY_NAME(
+        &openParams,
+        &devicePath,
+        FILE_GENERIC_READ | FILE_GENERIC_WRITE
+        );
+
+    status = WdfIoTargetOpen(DevExtPtr->FunctionConfigHandle, &openParams);
+    if (!NT_SUCCESS(status)) {
+
+        PL011_LOG_ERROR(
+            "WdfIoTargetOpen failed. (status = %!STATUS!, devicePath = %wZ)",
+            status,
+            &devicePath
+            );
+        return status;
+    }
+
+    return STATUS_SUCCESS;
+}
+
+
+//
+// Routine Description:
+//
 //  PL011pDeviceGetSupportedFeatures() is called by PL011pDeviceExtensionInit() to
 //  get the HW capabilities supported by the board.
 //  The PL011 supports HW flow control, and manual control, but some boards like
@@ -911,9 +1317,9 @@ PL011pDeviceGetSupportedFeatures(
 {
     PAGED_CODE();
 
-    PL011_DRIVER_EXTENSION* drvExtPtr = 
+    const PL011_DRIVER_EXTENSION* drvExtPtr =
         PL011DriverGetExtension(WdfGetDriver());
-    PL011_DEVICE_EXTENSION* devExtPtr = 
+    PL011_DEVICE_EXTENSION* devExtPtr =
         PL011DeviceGetExtension(WdfDevice);
 
     USHORT uartFlowControlParams =
@@ -939,7 +1345,7 @@ PL011pDeviceGetSupportedFeatures(
     case UART_SERIAL_FLAG_FLOW_CTL_XONXOFF:
     {
         PL011_LOG_ERROR(
-            "Software flow control is not implemented, (status = %!STATUS!)", 
+            "Software flow control is not implemented, (status = %!STATUS!)",
             STATUS_NOT_IMPLEMENTED
             );
         return STATUS_NOT_IMPLEMENTED;

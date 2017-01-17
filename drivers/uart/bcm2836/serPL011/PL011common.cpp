@@ -49,6 +49,7 @@
 //  The previous state
 //
 #if DBG
+    _Use_decl_annotations_
     ULONG
     PL011StateSet(
         ULONG* StateVarPtr,
@@ -102,6 +103,7 @@
 //  TRUE if NextState was set, otherwise FALSE.
 //
 #if DBG
+    _Use_decl_annotations_
     BOOLEAN
     PL011StateSetCompare(
         ULONG* StateVarPtr,

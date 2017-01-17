@@ -126,6 +126,9 @@
   <ItemGroup>
     <ClInclude Exclude="@(ClInclude)" Include="*.h;*.hpp;*.hxx;*.hm;*.inl;*.xsd" />
   </ItemGroup>
+  <ItemGroup>
+    <PkgGen Include="bcm2836sdhc.pkg.xml" />
+  </ItemGroup>
   <!-- /Necessary to pick up proper files from local directory when in the IDE-->
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>

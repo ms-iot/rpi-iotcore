@@ -100,7 +100,7 @@ public: // NONPAGED
             return this->GPHEN | this->GPLEN | this->GPAREN | this->GPAFEN;
         } // EnabledMask ()
 
-        NTSTATUS Add (
+        void Add (
             ULONG Mask,
             KINTERRUPT_MODE InterruptMode,
             KINTERRUPT_POLARITY Polarity
@@ -173,29 +173,46 @@ public: // NONPAGED
     static GPIO_CLIENT_START_CONTROLLER StartController;
     static GPIO_CLIENT_STOP_CONTROLLER StopController;
 
+    static GPIO_CLIENT_ENABLE_INTERRUPT EnableInterrupt;
+    static GPIO_CLIENT_DISABLE_INTERRUPT DisableInterrupt;
+
+    static GPIO_CLIENT_CONNECT_FUNCTION_CONFIG_PINS ConnectFunctionConfigPins;
+    static GPIO_CLIENT_DISCONNECT_FUNCTION_CONFIG_PINS DisconnectFunctionConfigPins;
+
 private: // NONPAGED
 
     static EVT_WDF_DPC evtDpcFunc;
 
     void programInterruptRegisters ( ULONG BankId );
 
-    enum class _SIGNATURE {
-        UNINITIALIZED = 'gmcb',
-        CONSTRUCTED = 'GMCB',
-        DESTRUCTED = 0
-    } signature;
+    _IRQL_requires_max_(PASSIVE_LEVEL)
+    void setDriveMode (
+        BANK_ID BankId,
+        PIN_NUMBER PinNumber,
+        BCM_GPIO_FUNCTION Function,
+        UCHAR AcpiPullConfig
+        );
+
+    _IRQL_requires_max_(PASSIVE_LEVEL)
+    void revertPinToDefault (BANK_ID BankId, PIN_NUMBER PinNumber);
 
     BCM_GPIO_REGISTERS* registersPtr;
-    ULONG registersLength;
     _INTERRUPT_CONTEXT interruptContext[BCM_GPIO_BANK_COUNT];
     BITFIELD_ARRAY<BCM_GPIO_PIN_COUNT, 3> gpfsel;
+    BITFIELD_ARRAY<BCM_GPIO_PIN_COUNT, 3> initialGpfsel;
     BITFIELD_ARRAY<BCM_GPIO_PIN_COUNT, 2> pullConfig;
     BITFIELD_ARRAY<BCM_GPIO_PIN_COUNT, 2> defaultPullConfig;
+    ULONG openIoPins[BCM_GPIO_BANK_COUNT];
+    ULONG openInterruptPins[BCM_GPIO_BANK_COUNT];
+    
+    ULONG registersLength;
+    enum class _SIGNATURE {
+        UNINITIALIZED = 0,
+        CONSTRUCTED = 'GMCB',
+        DESTRUCTED = 'gmcb',
+    } signature;
 
 public: // PAGED
-
-    static GPIO_CLIENT_ENABLE_INTERRUPT EnableInterrupt;
-    static GPIO_CLIENT_DISABLE_INTERRUPT DisableInterrupt;
 
     static GPIO_CLIENT_CONNECT_IO_PINS ConnectIoPins;
     static GPIO_CLIENT_DISCONNECT_IO_PINS DisconnectIoPins;
