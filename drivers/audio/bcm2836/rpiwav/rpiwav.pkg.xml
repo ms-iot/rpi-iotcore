@@ -1,7 +1,7 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <!-- TODO: Make sure to set the Package attributes -->
 <Package xmlns="urn:Microsoft.WindowsPhone/PackageSchema.v8.00"
-  Owner="RASPBERRYPI"
+  Owner="OEM_NAME"
   OwnerType="OEM"
   Platform="RaspberryPi"
   Component="RaspberryPi"
