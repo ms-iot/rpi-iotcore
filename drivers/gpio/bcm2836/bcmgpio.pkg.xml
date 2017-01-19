@@ -4,7 +4,7 @@
   Owner="$(OEMNAME)"
   OwnerType="OEM"
   Component="RPi"
-  SubComponent="GPIO"
+  SubComponent="bcmgpio"
   ReleaseType="Production"
   Platform="$(BSPARCH)">
 
