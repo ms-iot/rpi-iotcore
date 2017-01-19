@@ -1,20 +1,20 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <!-- TODO: Make sure to set the Package attributes -->
 <Package xmlns="urn:Microsoft.WindowsPhone/PackageSchema.v8.00"
-  Owner="OEM_NAME"
+  Owner="$(OEMNAME)"
   OwnerType="OEM"
-  Platform="RaspberryPi"
-  Component="RaspberryPi"
+  Platform="$(BSPARCH)"
+  Component="RPi"
   SubComponent="SerPL011"
   ReleaseType="Production" >
 
   <Components>
-    <Driver InfSource="$(_RELEASEDIR)$(TARGETNAME).inf">
-      <Reference Source="$(_RELEASEDIR)$(TARGETNAME)$(TARGETEXT)" />
+    <Driver InfSource="$(_RELEASEDIR)SerPL011.inf">
+      <Reference Source="$(_RELEASEDIR)SerPL011.sys" />
       <Files>
         <!-- For kernel mode drivers, $(DRIVER_DEST) evaluates to "drivers" by default -->
         <!-- For user mode drivers, $(DRIVER_DEST) evaluates to "drivers\umdf" by default -->
-        <File Source="$(_RELEASEDIR)$(TARGETNAME)$(TARGETEXT)" DestinationDir="$(runtime.system32)\$(DRIVER_DEST)" />
+        <File Source="$(_RELEASEDIR)SerPL011.sys" DestinationDir="$(runtime.system32)\drivers" />
       </Files>
     </Driver>
 
