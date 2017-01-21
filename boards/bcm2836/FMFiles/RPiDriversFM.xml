@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FeatureManifest 
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+  xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
+  xmlns="http://schemas.microsoft.com/embedded/2004/10/ImageUpdate">
+  <BasePackages>
+    <!-- Drivers required for boot/reading partitions for UpdateOS -->
+    <PackageFile Path="%PKGBLD_DIR%" Name="SV.PlatExtensions.UpdateOS.cab"/>
+    <!-- Mandatory device drivers -->
+    <PackageFile Path="%PKGBLD_DIR%" Name="%OEM_NAME%.RPi.bcm2836sdhc.cab"/>
+    <PackageFile Path="%PKGBLD_DIR%" Name="%OEM_NAME%.RPi.rpisdhc.cab"/>
+    <PackageFile Path="%PKGBLD_DIR%" Name="%OEM_NAME%.RPi.rpiq.cab"/>
+  </BasePackages>
+  <Features>
+    <Microsoft />
+    <MSFeatureGroups />
+    <OEM>
+      <!-- Optional Device Drivers -->
+      <PackageFile Path="%PKGBLD_DIR%" Name="%OEM_NAME%.RPi.bcm2836pwm.cab">
+        <FeatureIDs>
+          <FeatureID>RPi_DRIVERS</FeatureID>
+        </FeatureIDs>
+      </PackageFile>
+      <PackageFile Path="%PKGBLD_DIR%" Name="%OEM_NAME%.RPi.rpiwav.cab">
+        <FeatureIDs>
+          <FeatureID>RPi_DRIVERS</FeatureID>
+        </FeatureIDs>
+      </PackageFile>
+      <PackageFile Path="%PKGBLD_DIR%" Name="%OEM_NAME%.RPi.SerPL011.cab">
+        <FeatureIDs>
+          <FeatureID>RPi_DRIVERS</FeatureID>
+        </FeatureIDs>
+      </PackageFile>
+      <PackageFile Path="%PKGBLD_DIR%" Name="%OEM_NAME%.RPi.bcmgpio.cab">
+        <FeatureIDs>
+          <FeatureID>RPi_DRIVERS</FeatureID>
+        </FeatureIDs>
+      </PackageFile>
+      <PackageFile Path="%PKGBLD_DIR%" Name="%OEM_NAME%.RPi.bcmi2c.cab">
+        <FeatureIDs>
+          <FeatureID>RPi_DRIVERS</FeatureID>
+        </FeatureIDs>
+      </PackageFile>
+      <PackageFile Path="%PKGBLD_DIR%" Name="%OEM_NAME%.RPi.bcmspi.cab">
+        <FeatureIDs>
+          <FeatureID>RPi_DRIVERS</FeatureID>
+        </FeatureIDs>
+      </PackageFile>
+      <PackageFile Path="%PKGBLD_DIR%" Name="%OEM_NAME%.RPi.bcmauxspi.cab">
+        <FeatureIDs>
+          <FeatureID>RPi_DRIVERS</FeatureID>
+        </FeatureIDs>
+      </PackageFile>
+       <PackageFile Path="%PKGBLD_DIR%" Name="%OEM_NAME%.RPi.vchiq.cab">
+        <FeatureIDs>
+          <FeatureID>RPi_DRIVERS</FeatureID>
+        </FeatureIDs>
+      </PackageFile>
+      <PackageFile Path="%PKGBLD_DIR%" Name="%OEM_NAME%.RPi.piminiuart.cab">
+        <FeatureIDs>
+          <FeatureID>RPi_DRIVERS</FeatureID>
+        </FeatureIDs>
+      </PackageFile>
+    </OEM>
+    <OEMFeatureGroups />
+  </Features>
+</FeatureManifest>
