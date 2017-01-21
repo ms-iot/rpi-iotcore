@@ -14,7 +14,7 @@
       <DisableSpecificWarnings>4595;%(DisableSpecificWarnings)</DisableSpecificWarnings>
     </ClCompile>
     <PkgGen>
-      <Variables>"OEMNAME=Contoso;BSPARCH=$(Platform);_RELEASEDIR=$(PackageDir);TARGETNAME=$(TargetName);TARGETEXT=$(TargetExt);$(PkgGen_DefaultDriverDest)"</Variables>
+      <Variables>"OEMNAME=Contoso;BSPARCH=$(Platform);_RELEASEDIR=$(SolutionDir)$(Platform)\$(Configuration)\;TARGETNAME=$(TargetName);TARGETEXT=$(TargetExt);$(PkgGen_DefaultDriverDest)"</Variables>
       <AdditionalOptions>/onecore %(AdditionalOptions)</AdditionalOptions>
     </PkgGen>	
    </ItemDefinitionGroup>
