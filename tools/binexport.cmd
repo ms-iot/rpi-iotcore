@@ -49,6 +49,7 @@ REM Export the pkgxml files
 for /f "delims=" %%i in ('dir /s /b %REPO_BUILD_ROOT%\drivers\*.pkg.xml') do (
     copy %%i %TDIR% > nul
 )
+copy %REPO_BUILD_ROOT%\boards\bcm2836\Packages\SV.PlatExtensions\SV.PlatExtensions.pkg.xml %TDIR% > nul
 popd
 exit /b
 
