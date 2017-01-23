@@ -27,12 +27,16 @@ if [%2] == [] goto Usage
 pushd
 setlocal ENABLEDELAYEDEXPANSION
 
-if not defined OUTPUT_DIR (
-    call SetupBuildEnv.cmd
-    )
+REM
+REM Set source root
+REM
+set REPO_BUILD_TOOL=%~dp0
+cd /d "%REPO_BUILD_TOOL%.."
+set REPO_SOURCE_ROOT=%cd%\
 
+set OUTPUT_DIR=%REPO_SOURCE_ROOT%\build\bcm2836\ARM
 set BINTYPE=%1
-set TDIR=%2
+set TDIR=%2\
 
 if not exist %TDIR% ( mkdir %TDIR% )
 if not exist %OUTPUT_DIR%\%BINTYPE% (
@@ -46,10 +50,12 @@ copy %OUTPUT_DIR%\%BINTYPE%\*.sys %TDIR% > nul
 copy %OUTPUT_DIR%\%BINTYPE%\*.dll %TDIR% > nul
 
 REM Export the pkgxml files
-for /f "delims=" %%i in ('dir /s /b %REPO_BUILD_ROOT%\drivers\*.pkg.xml') do (
+for /f "delims=" %%i in ('dir /s /b %REPO_SOURCE_ROOT%\drivers\*.pkg.xml') do (
     copy %%i %TDIR% > nul
 )
-copy %REPO_BUILD_ROOT%\boards\bcm2836\Packages\SV.PlatExtensions\SV.PlatExtensions.pkg.xml %TDIR% > nul
+copy %REPO_SOURCE_ROOT%\boards\bcm2836\Packages\SV.PlatExtensions\SV.PlatExtensions.pkg.xml %TDIR% > nul
+copy %REPO_SOURCE_ROOT%\boards\bcm2836\Packages\build.txt %TDIR%\build.cmd > nul
+
 popd
 exit /b
 

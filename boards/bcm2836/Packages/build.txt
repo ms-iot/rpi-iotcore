@@ -1,0 +1,10 @@
+@echo off
+
+REM Run this command from the IoTCoreShell prompt only
+set RELEASE_DIR=%~dp0
+REM ToDo : Add signing of binaries
+echo Building packages in %RELEASE_DIR%
+buildpkg %RELEASE_DIR%
+echo Done.
+
+
