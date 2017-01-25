@@ -5,11 +5,11 @@ set RELEASE_DIR=%~dp0
 REM signing of binaries
 for /f "delims=" %%i in ('dir /s /b %RELEASE_DIR%\*.sys') do (
     echo signing %%i
-    call sign.cmd -hal %%i >> %RELEASE_DIR%\signlog.txt
+    call sign.cmd %%i >> %RELEASE_DIR%\signlog.txt
 )
 for /f "delims=" %%i in ('dir /s /b %RELEASE_DIR%\*.dll') do (
     echo signing %%i    
-	call sign.cmd -hal %%i >> %RELEASE_DIR%\signlog.txt
+	call sign.cmd %%i >> %RELEASE_DIR%\signlog.txt
 )
 
 echo Building packages in %RELEASE_DIR%
