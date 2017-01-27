@@ -21,6 +21,6 @@
             <File Source="$(_RELEASEDIR)rpisdhc.sys" DestinationDir="$(runtime.system32)\drivers" />
           </Files>
         </Driver>
-        </Components>
+    </Components>
  </Package>
  
