@@ -20,7 +20,7 @@
   <PropertyGroup Label="PropertySheets">
     <ConversionToolVersion>1.0</ConversionToolVersion>
     <BUILD_ALT_DIR>$(Configuration.Replace(' ',''))</BUILD_ALT_DIR>
-    <IntDir Condition="'$(Platform)'!='Win32'">$(BUILD_ALT_DIR)\$(Platform)\</IntDir>
+    <IntDir Condition="'$(Platform)'!='Win32'">$(SolutionDir)$(Platform)\$(Configuration)\$(TargetName)\Out\</IntDir>
     <OutDir>$(IntDir)</OutDir>
   </PropertyGroup>
   <ImportGroup Label="PreConfiguration">
@@ -29,6 +29,7 @@
   <PropertyGroup Label="Globals">
     <ProjectGuid>{824BAE1C-53BC-4137-A07F-AF6582316A7C}</ProjectGuid>
     <RootNamespace>$(MSBuildProjectName)</RootNamespace>
+    <WindowsTargetPlatformVersion>$(LatestTargetPlatformVersion)</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM'" Label="Configuration">
     <TargetVersion>Windows10</TargetVersion>
@@ -41,7 +42,7 @@
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <PropertyGroup>
-    <OutDir>$(IntDir)</OutDir>
+    <OutDir>$(SolutionDir)$(Platform)\$(Configuration)</OutDir>
   </PropertyGroup>
   <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM'" Label="PropertySheets">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" />

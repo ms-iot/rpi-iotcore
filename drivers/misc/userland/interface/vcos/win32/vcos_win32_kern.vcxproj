@@ -21,7 +21,7 @@
   <PropertyGroup Label="PropertySheets">
     <ConversionToolVersion>1.0</ConversionToolVersion>
     <BUILD_ALT_DIR>$(Configuration.Replace(' ',''))</BUILD_ALT_DIR>
-    <IntDir Condition="'$(Platform)'!='Win32'">$(BUILD_ALT_DIR)\$(Platform)\</IntDir>
+    <IntDir Condition="'$(Platform)'!='Win32'">$(SolutionDir)$(Platform)\$(Configuration)\$(TargetName)\Out\</IntDir>
     <OutDir>$(IntDir)</OutDir>
   </PropertyGroup>
   <ImportGroup Label="PreConfiguration">
@@ -43,7 +43,7 @@
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <PropertyGroup>
-    <OutDir>..\..\..\..\vchiq</OutDir>
+    <OutDir>$(SolutionDir)$(Platform)\$(Configuration)</OutDir>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM'">
     <Link>

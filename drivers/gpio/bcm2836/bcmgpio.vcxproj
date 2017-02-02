@@ -21,8 +21,6 @@
   <PropertyGroup Label="PropertySheets">
     <ConversionToolVersion>1.0</ConversionToolVersion>
     <BUILD_ALT_DIR>$(Configuration.Replace(' ',''))</BUILD_ALT_DIR>
-    <IntDir Condition="'$(Platform)'!='Win32'">$(BUILD_ALT_DIR)\$(Platform)\</IntDir>
-    <OutDir>$(IntDir)</OutDir>
   </PropertyGroup>
   <ImportGroup Label="PreConfiguration">
     <Import Project="$(VCTargetsPath)\WDKConversion\PreConfiguration.props" />
@@ -30,6 +28,7 @@
   <PropertyGroup Label="Globals">
     <ProjectGuid>{381A9C49-78D7-4B6F-98CD-5084F70B1207}</ProjectGuid>
     <RootNamespace>$(MSBuildProjectName)</RootNamespace>
+    <WindowsTargetPlatformVersion>$(LatestTargetPlatformVersion)</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM'" Label="Configuration">
     <TargetVersion>Windows10</TargetVersion>
@@ -52,11 +51,11 @@
   </ImportGroup>
   <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM'" Label="PropertySheets">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" />
-    <Import Project="..\..\..\build\bsp.props" />
+    <Import Project="$(SolutionDir)\..\bsp.props" />
   </ImportGroup>
   <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM'" Label="PropertySheets">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" />
-    <Import Project="..\..\..\build\bsp.props" />
+    <Import Project="$(SolutionDir)\..\bsp.props" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <!-- The WrappedTaskItems label is used by the conversion tool to identify the location where items 
