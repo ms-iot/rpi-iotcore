@@ -22,7 +22,12 @@ REM Input validation
 if [%1] == [/?] goto Usage
 if [%1] == [-?] goto Usage
 if [%1] == [] goto Usage
-if [%2] == [] goto Usage
+if [%2] == [] (
+    if defined BSPSRC_DIR ( set TDIR=%BSPSRC_DIR%\RPi2\Packages\bspdrivers\
+    ) else ( goto Usage )
+) else (
+    set TDIR=%2\
+)
 
 pushd
 setlocal ENABLEDELAYEDEXPANSION
@@ -36,13 +41,13 @@ set REPO_SOURCE_ROOT=%cd%\
 
 set OUTPUT_DIR=%REPO_SOURCE_ROOT%\build\bcm2836\ARM
 set BINTYPE=%1
-set TDIR=%2\
+
 
 if not exist %TDIR% ( mkdir %TDIR% )
 if not exist %OUTPUT_DIR%\%BINTYPE% (
     echo %BINTYPE% directory not found. Do %BINTYPE% build
     goto usage
-    )
+)
 
 REM Export the built binaries
 copy %OUTPUT_DIR%\%BINTYPE%\*.inf %TDIR% > nul
