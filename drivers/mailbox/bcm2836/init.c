@@ -216,7 +216,7 @@ NTSTATUS RpiSetDeviceMacAddress (
 	
 	status = RtlWriteRegistryValue(
         RTL_REGISTRY_CONTROL,
-        L"\\Class\\{4d36e972-e325-11ce-bfc1-08002be10318}\\0001",
+        L"\\Class\\{4d36e972-e325-11ce-bfc1-08002be10318}\\0003",
         L"NetworkAddress",
         REG_SZ,
         &macAddrStr,
