@@ -211,6 +211,20 @@ NTSTATUS RpiSetDeviceMacAddress (
         RPIQ_LOG_ERROR(
             "Failed to set MAC value at NetworkAddress registry %!STATUS!",
             status);
+        //goto End;
+    }
+	
+	status = RtlWriteRegistryValue(
+        RTL_REGISTRY_CONTROL,
+        L"\\Class\\{4d36e972-e325-11ce-bfc1-08002be10318}\\0001",
+        L"NetworkAddress",
+        REG_SZ,
+        &macAddrStr,
+        sizeof(macAddrStr));
+    if (!NT_SUCCESS(status)) {
+        RPIQ_LOG_ERROR(
+            "Failed to set MAC value at NetworkAddress registry %!STATUS!",
+            status);
         goto End;
     }
 
