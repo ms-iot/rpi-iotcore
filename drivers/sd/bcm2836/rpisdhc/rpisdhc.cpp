@@ -1371,15 +1371,12 @@ NTSTATUS SDHC::sendCommandInternal (
             // Clear all ERROR mask set and return Success
             // Temp clear error flags for read/write test command
             //
-            if(((Cmd.Fields.Command == 0x1) && (hsts.Fields.Crc7Error))) //||
-                //(Cmd.Fields.Command == 0xe) ||
-                //(Cmd.Fields.Command == 0x13))
+            if((Cmd.Fields.Command == 0x1) && (hsts.Fields.Crc7Error))
                {
                 //
                 // CMD1 alwary return CRC7 error on EMMC device
                 // Clear all ERROR mask set and return Success
                 //
-                //hsts.AsUint32 |= _HSTS::UINT32_CRC7_ERROR_MASK;
                 this->writeRegisterNoFence(hsts);
                 SDHC_LOG_ERROR(
                     "Ignore CRC7 error for CMD1");
