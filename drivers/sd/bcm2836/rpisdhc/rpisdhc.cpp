@@ -844,6 +844,7 @@ NTSTATUS SDHC::sdhcIssueBusOperation (
         ULONG(BusOperationPtr->Type));
 
     NTSTATUS status;
+    _HCFG hcfg{ 0 };
 
     switch (BusOperationPtr->Type) {
     case SdResetHost:
@@ -872,7 +873,6 @@ NTSTATUS SDHC::sdhcIssueBusOperation (
 
     case SdResetHw:
     case SdSetVoltage:
-    case SdSetBusWidth:
     case SdSetBusSpeed:
     case SdSetSignalingVoltage:
     case SdSetDriveStrength:
@@ -885,6 +885,16 @@ NTSTATUS SDHC::sdhcIssueBusOperation (
             ULONG(BusOperationPtr->Type));
         return STATUS_SUCCESS;
 
+    case SdSetBusWidth:
+        thisPtr->readRegisterNoFence(&hcfg);
+        if((BusOperationPtr->Parameters.BusWidth == SdBusWidth8Bit) || (BusOperationPtr->Parameters.BusWidth == SdBusWidth4Bit)) {
+            hcfg.Fields.WideExtBus = 1;
+        }
+        if(BusOperationPtr->Parameters.BusWidth == SdBusWidth1Bit) {
+            hcfg.Fields.WideExtBus = 0;
+        }
+        thisPtr->writeRegisterNoFence(hcfg);
+        return STATUS_SUCCESS;
     default:
         SDHC_LOG_ASSERTION(
             "Ignored request for unsupported bus operation. (BusOperationPtr->Type = %lu)",
@@ -1076,6 +1086,9 @@ NTSTATUS SDHC::resetHost (
         edm.Fields.ReadThreshold = 4;
         edm.Fields.WriteThreshold = 4;
         this->writeRegisterNoFence(edm);
+        _HBCT hbct{ 0 };
+        hbct.Fields.ByteCount = 512;
+        this->writeRegisterNoFence(hbct);
 
         status = STATUS_SUCCESS;
         break;
@@ -1348,12 +1361,34 @@ NTSTATUS SDHC::sendCommandInternal (
 
         status = this->getLastCommandCompletionStatus();
         if (!NT_SUCCESS(status)) {
+            //
+            // Need to read status register again to get real error code
+            //
+            _HSTS hsts{ 0 };
+            this->readRegisterNoFence(&hsts);
+            //
+            // CMD1 alwary return CRC7 error on EMMC device
+            // Clear all ERROR mask set and return Success
+            // Temp clear error flags for read/write test command
+            //
+            if((Cmd.Fields.Command == 0x1) && (hsts.Fields.Crc7Error))
+               {
+                //
+                // CMD1 alwary return CRC7 error on EMMC device
+                // Clear all ERROR mask set and return Success
+                //
+                this->writeRegisterNoFence(hsts);
+                SDHC_LOG_ERROR(
+                    "Ignore CRC7 error for CMD1");
+                return STATUS_SUCCESS;
+            } else {
             this->updateAllRegistersDump();
             SDHC_LOG_ERROR(
                 "Device command failed. (cmd.Fields.Command = 0x%lx, status = %!STATUS!)",
                 ULONG(Cmd.Fields.Command),
                 status);
             return status;
+            }
         } // if
     } // if
 
