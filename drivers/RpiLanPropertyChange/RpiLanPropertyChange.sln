@@ -1,0 +1,37 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 15
+VisualStudioVersion = 15.0.28307.136
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "RpiLanPropertyChange", "RpiLanPropertyChange\RpiLanPropertyChange.vcxproj", "{AC8330FD-8CB9-4210-9EE0-8B51E972860F}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|arm = Debug|arm
+		Debug|x64 = Debug|x64
+		Debug|x86 = Debug|x86
+		Release|arm = Release|arm
+		Release|x64 = Release|x64
+		Release|x86 = Release|x86
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{AC8330FD-8CB9-4210-9EE0-8B51E972860F}.Debug|arm.ActiveCfg = Debug|arm
+		{AC8330FD-8CB9-4210-9EE0-8B51E972860F}.Debug|arm.Build.0 = Debug|arm
+		{AC8330FD-8CB9-4210-9EE0-8B51E972860F}.Debug|x64.ActiveCfg = Debug|x64
+		{AC8330FD-8CB9-4210-9EE0-8B51E972860F}.Debug|x64.Build.0 = Debug|x64
+		{AC8330FD-8CB9-4210-9EE0-8B51E972860F}.Debug|x86.ActiveCfg = Debug|Win32
+		{AC8330FD-8CB9-4210-9EE0-8B51E972860F}.Debug|x86.Build.0 = Debug|Win32
+		{AC8330FD-8CB9-4210-9EE0-8B51E972860F}.Release|arm.ActiveCfg = Release|arm
+		{AC8330FD-8CB9-4210-9EE0-8B51E972860F}.Release|arm.Build.0 = Release|arm
+		{AC8330FD-8CB9-4210-9EE0-8B51E972860F}.Release|x64.ActiveCfg = Release|x64
+		{AC8330FD-8CB9-4210-9EE0-8B51E972860F}.Release|x64.Build.0 = Release|x64
+		{AC8330FD-8CB9-4210-9EE0-8B51E972860F}.Release|x86.ActiveCfg = Release|Win32
+		{AC8330FD-8CB9-4210-9EE0-8B51E972860F}.Release|x86.Build.0 = Release|Win32
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {75211AFC-2FBB-4DC5-83A8-17A6324225C9}
+	EndGlobalSection
+EndGlobal
