@@ -102,6 +102,9 @@ Return Value:
     NTSTATUS value
 
 --*/
+
+WCHAR macAddrStrGlobal[13] = { 0 };
+
 _Use_decl_annotations_
 NTSTATUS RpiSetDeviceMacAddress (
     DEVICE_CONTEXT* DeviceContextPtr
@@ -194,6 +197,23 @@ NTSTATUS RpiSetDeviceMacAddress (
     if (!NT_SUCCESS(status)) {
         RPIQ_LOG_ERROR(
             "Failed to print MAC address %!STATUS!",
+            status);
+        goto End;
+    }
+
+    status = RtlStringCchPrintfW(
+        macAddrStrGlobal,
+        ARRAYSIZE(macAddrStrGlobal),
+        L"%02X%02X%02X%02X%02X%02X",
+        macAddrProperty->MACAddress[0],
+        macAddrProperty->MACAddress[1],
+        macAddrProperty->MACAddress[2],
+        macAddrProperty->MACAddress[3],
+        macAddrProperty->MACAddress[4],
+        macAddrProperty->MACAddress[5]);
+    if (!NT_SUCCESS(status)) {
+        RPIQ_LOG_ERROR(
+            "Failed to print MAC address global %!STATUS!",
             status);
         goto End;
     }

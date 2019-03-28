@@ -1,0 +1,11 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="14.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <TARGETNAME Condition="'$(OVERRIDE_TARGETNAME)'!='true'">RpiLanPropertyChange</TARGETNAME>
+    <INF_NAME Condition="'$(OVERRIDE_INF_NAME)'!='true'">$(TARGETNAME)</INF_NAME>
+    <KMDF_VERSION_MAJOR Condition="'$(OVERRIDE_KMDF_VERSION_MAJOR)'!='true'">1</KMDF_VERSION_MAJOR>
+    <MSC_WARNING_LEVEL Condition="'$(OVERRIDE_MSC_WARNING_LEVEL)'!='true'">/W4 /WX</MSC_WARNING_LEVEL>
+    <TARGET_DESTINATION Condition="'$(OVERRIDE_TARGET_DESTINATION)'!='true'">retail</TARGET_DESTINATION>
+    <MUI_VERIFY_NO_LOC_RESOURCE Condition="'$(OVERRIDE_MUI_VERIFY_NO_LOC_RESOURCE)'!='true'">1</MUI_VERIFY_NO_LOC_RESOURCE>
+  </PropertyGroup>
+</Project>
