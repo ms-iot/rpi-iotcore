@@ -1,3 +1,6 @@
+//
+// Copyright (c) Microsoft Corporation.  All rights reserved.
+//
 #pragma once
 
 // Including SDKDDKVer.h defines the highest available Windows platform.

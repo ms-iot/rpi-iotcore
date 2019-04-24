@@ -441,6 +441,7 @@ NTSTATUS RpiqSetNdisMacAddress()
     UNICODE_STRING DriverDesc = RTL_CONSTANT_STRING ( L"DriverDesc" );
     UNICODE_STRING Desc;
     UNICODE_STRING DescLAN7800 = RTL_CONSTANT_STRING ( L"LAN7800" );
+    UNICODE_STRING DescLAN951x = RTL_CONSTANT_STRING ( L"LAN9512/LAN9514" );
     UNICODE_STRING NetworkAddress = RTL_CONSTANT_STRING ( L"NetworkAddress" );
     UNICODE_STRING PropertyChangeStatus = RTL_CONSTANT_STRING ( L"PropertyChangeStatus" );
     UNICODE_STRING KeyName;
@@ -456,8 +457,8 @@ NTSTATUS RpiqSetNdisMacAddress()
     DWORD value;
 
     if(MacSet) {
-    return status;
-        }
+        return status;
+    }
 
     MacSet = TRUE;
 
@@ -480,6 +481,9 @@ NTSTATUS RpiqSetNdisMacAddress()
     KeyName.MaximumLength = 8;
     KeyName.Buffer = KeyInstance;
 
+    // iterates through all enumerated NDIS adapters looking for the instances interested
+    // such as LAN7800 or LAN9512/9514
+    // Sets MAC address and property change flag to the device if the values are not set
     while(STATUS_OBJECT_NAME_NOT_FOUND != status)
     {
         status = RtlStringCchPrintfW(KeyInstance,
@@ -552,7 +556,10 @@ NTSTATUS RpiqSetNdisMacAddress()
             Desc.Buffer = (PWSTR)((PCHAR)infoBuffer +
                                           infoBuffer->DataOffset);
 
-            if(RtlPrefixUnicodeString (&DescLAN7800, &Desc, TRUE) == TRUE) {
+            // Use OR to match multiple devices here
+            // It is better to make a list for more devices
+            if (   (RtlPrefixUnicodeString (&DescLAN7800, &Desc, TRUE) == TRUE) 
+                || (RtlPrefixUnicodeString (&DescLAN951x, &Desc, TRUE) == TRUE)){
                 status = ZwQueryValueKey(
                                 SubKey,
                                 &PropertyChangeStatus,

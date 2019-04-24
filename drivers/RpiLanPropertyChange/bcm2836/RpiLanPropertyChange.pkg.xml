@@ -7,25 +7,34 @@
   Component="RPi"
   SubComponent="RpiLanPropertyChange"
   ReleaseType="Production" >
-
+  
   <Components>
-    <service
-      description="@%SystemRoot%\system32\RpiLanPropertyChange.dll,-201"
-      displayName="@%SystemRoot%\system32\RpiLanPropertyChange.dll,-200"
-      errorControl="normal"
-      imagePath="%SystemRoot%\system32\svchost.exe -k LocalSystemNetworkRestricted"
-      name="RpiLanPropertyChange"
-      objectName="LocalSystem"
-      requiredPrivileges="SeChangeNotifyPrivilege,SeCreateGlobalPrivilege"
-      sidType="unrestricted"
-      start="auto"
-      subCategory="LocalSystemNetworkRestricted"
-      type="win32UserShareProcess"
-      >
-    <Files>
-      <!-- For kernel mode drivers, $(DRIVER_DEST) evaluates to "drivers" by default -->
-      <!-- For user mode drivers, $(DRIVER_DEST) evaluates to "drivers\umdf" by default -->
-      <File Source="$(_RELEASEDIR)RpiLanPropertyChange.dll" DestinationDir="$(runtime.system32)" />
-    </Files>
+    <OSComponent>
+      <Files>
+        <File Source="$(_RELEASEDIR)RpiLanPropertyChange.dll" DestinationDir="$(runtime.system32)" />
+      </Files>
+    </OSComponent>
+    <Service
+        Description="RpiLanPropertyChange"
+        DisplayName="RpiLanPropertyChange"
+        ErrorControl="Normal"
+        Name="RpiLanPropertyChange"
+        Start="Auto"
+        SvcHostGroupName="WPTCBNoNetwork"
+        Type="Win32ShareProcess"
+		IsTCB="Yes"
+        >
+      <FailureActions ResetPeriod="86400">
+        <Action
+            Delay="0"
+            Type="None"
+            />
+      </FailureActions>
+      <ServiceDll
+          ServiceMain="ServiceMain"
+          Source="$(_RELEASEDIR)\RpiLanPropertyChange.dll"
+          UnloadOnStop="true"
+          />
+    </Service>
   </Components>
 </Package>

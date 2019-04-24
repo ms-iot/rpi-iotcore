@@ -1,7 +1,14 @@
 //
-//  Copyright (c) Microsoft Corporation. All rights reserved.
+// Copyright (c) Microsoft Corporation.  All rights reserved.
 //
-// dllmain.cpp : Defines the entry point for the DLL application.
+// Module Name:
+//
+//     RpiLanPropertyChange.cpp
+//
+// Abstract:
+//
+//     This file defines the exported functions for the DLL application.
+//
 
 #include "stdafx.h"
 

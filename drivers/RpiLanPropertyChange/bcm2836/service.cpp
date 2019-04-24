@@ -1,7 +1,14 @@
 //
-//  Copyright (c) Microsoft Corporation. All rights reserved.
+// Copyright (c) Microsoft Corporation. All rights reserved.
 //
-
+// Module Name:
+//
+//     service.cpp
+//
+// Abstract:
+//
+//     This file defines the service interfaces. 
+//
 #include "stdafx.h"
 #include "Service.h"
 #include <cstdint>
@@ -145,23 +152,10 @@ DWORD Service::ServiceHandler(DWORD opcode, DWORD /*eventType*/, _In_ void* /*pE
     break;
 
     case SERVICE_CONTROL_SESSIONCHANGE:
-    {
-        // We currently do not have any workload that is affected by user logon/logoff
-        // consider: load swap database files
-    }
-    break;
-
     case SERVICE_CONTROL_DEVICEEVENT:
-    {
-        // We currently do not have any workload that is affected by plug n play events
-        // consider: Oasis devices events (would allow a faster statup from callers perspective)
-    }
-    break;
-
     case SERVICE_CONTROL_POWEREVENT:
     {
-        // We currently do not have any workload that is affected by power events
-        // consider: timers or offline tasks
+        // We currently do not need to process these sevice control code.
     }
     break;
 

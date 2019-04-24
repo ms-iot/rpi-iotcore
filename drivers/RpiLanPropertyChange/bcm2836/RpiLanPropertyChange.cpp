@@ -1,4 +1,13 @@
-// RpiLanPropertyChange.cpp : Defines the exported functions for the DLL application.
+//
+// Copyright (c) Microsoft Corporation.  All rights reserved.
+//
+// Module Name:
+//
+//     RpiLanPropertyChange.cpp
+//
+// Abstract:
+//
+//     This file defines the device handle interfaces. 
 //
 
 #include "stdafx.h"
@@ -181,6 +190,7 @@ CONFIGRET LanDevice::FindDeviceInstance()
     ULONG PropertySize;
     DWORD Index = 0;
     WCHAR DescLAN7800[] = L"LAN7800 USB 3.0 to Ethernet 10/100/1000 Adapter";
+    WCHAR DescLAN951x[] = L"LAN9512/LAN9514 USB 2.0 to Ethernet 10/100 Adapter";
 
     cr = CM_Get_Device_ID_List_Size(&DeviceListLength,
         NULL,
@@ -209,6 +219,7 @@ CONFIGRET LanDevice::FindDeviceInstance()
         goto Exit;
     }
 
+    // Iterates all devices looking for NDIS devices we want
     for (CurrentDevice = DeviceList;
         *CurrentDevice;
         CurrentDevice += wcslen(CurrentDevice) + 1)
@@ -243,7 +254,17 @@ CONFIGRET LanDevice::FindDeviceInstance()
             continue;
         }
 
+        // Match device descriptor one by one
+        // As there is only 1 NDIS ethernet with the name in one device, there will be no conflict or problem 
+        // to exit iteration when finding a match
+        // There are 2 devices need to be checked, if more devices to be checked, better to change to a list
         if (_wcsicmp(DescLAN7800, DeviceDesc) == 0)
+        {
+            m_Devinst = Devinst;
+            break;
+        }
+
+        if (_wcsicmp(DescLAN951x, DeviceDesc) == 0)
         {
             m_Devinst = Devinst;
             break;
