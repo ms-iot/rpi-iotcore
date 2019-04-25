@@ -15,25 +15,32 @@
       </Files>
     </OSComponent>
     <Service
-        Description="RpiLanPropertyChange"
+        Description="Update Lan MAC address according to registry setting"
         DisplayName="RpiLanPropertyChange"
         ErrorControl="Normal"
         Name="RpiLanPropertyChange"
         Start="Auto"
-        SvcHostGroupName="WPTCBNoNetwork"
+        SvcHostGroupName="NetworkService"
         Type="Win32ShareProcess"
-		IsTCB="Yes"
+        IsTCB="Yes"
         >
       <FailureActions ResetPeriod="86400">
-        <Action
-            Delay="0"
-            Type="None"
-            />
+        <Action Type="RestartService" Delay="10000"/>
+        <Action Type="RestartService" Delay="10000"/>
+        <Action Type="RestartService" Delay="10000"/>
+        <Action Type="None" Delay="10000"/>
       </FailureActions>
+      <RegKeys>
+        <RegKey KeyName="$(hklm.system)\ControlSet001\services\RpiLanPropertyChange">
+          <RegValue
+              Name="ObjectName"
+              Type="REG_SZ"
+              Value="LocalSystem"
+              />
+        </RegKey>
+      </RegKeys>
       <ServiceDll
-          ServiceMain="ServiceMain"
           Source="$(_RELEASEDIR)\RpiLanPropertyChange.dll"
-          UnloadOnStop="true"
           />
     </Service>
   </Components>
