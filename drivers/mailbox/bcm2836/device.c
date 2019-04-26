@@ -430,6 +430,197 @@ Return Value:
     NTSTATUS value
 
 --*/
+
+extern WCHAR macAddrStrGlobal[13];
+
+NTSTATUS RpiqSetNdisMacAddress()
+{
+    NTSTATUS status = STATUS_SUCCESS;
+    UNICODE_STRING KeyPrefix = RTL_CONSTANT_STRING (
+        L"\\Registry\\Machine\\System\\CurrentControlSet\\Control\\Class\\{4d36e972-e325-11ce-bfc1-08002be10318}\\");
+    UNICODE_STRING DriverDesc = RTL_CONSTANT_STRING ( L"DriverDesc" );
+    UNICODE_STRING Desc;
+    UNICODE_STRING DescLAN7800 = RTL_CONSTANT_STRING ( L"LAN7800" );
+    UNICODE_STRING DescLAN951x = RTL_CONSTANT_STRING ( L"LAN9512/LAN9514" );
+    UNICODE_STRING NetworkAddress = RTL_CONSTANT_STRING ( L"NetworkAddress" );
+    UNICODE_STRING PropertyChangeStatus = RTL_CONSTANT_STRING ( L"PropertyChangeStatus" );
+    UNICODE_STRING KeyName;
+    WCHAR KeyInstance[] = L"0000";
+    ULONG Instance = 0;
+    static BOOLEAN MacSet = 0;
+    OBJECT_ATTRIBUTES ObjectAttributes;  
+    HANDLE BaseKey = NULL;
+    HANDLE SubKey = NULL;
+    PKEY_VALUE_FULL_INFORMATION infoBuffer = NULL;
+    ULONG infoBufferLength = 0;
+    ULONG RequireBufferLength = 0;
+    DWORD value;
+
+    if(MacSet) {
+        return status;
+    }
+
+    MacSet = TRUE;
+
+    InitializeObjectAttributes (&ObjectAttributes,
+                                (PUNICODE_STRING)&KeyPrefix,
+                                OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE,
+                                NULL,
+                                NULL
+                                );
+
+    status = ZwOpenKey (&BaseKey,
+                        KEY_READ | KEY_WRITE,
+                        &ObjectAttributes);
+    if (!NT_SUCCESS(status)){
+        BaseKey = NULL;
+        goto End;
+    }
+    
+    KeyName.Length = 8;
+    KeyName.MaximumLength = 8;
+    KeyName.Buffer = KeyInstance;
+
+    // iterates through all enumerated NDIS adapters looking for the instances interested
+    // such as LAN7800 or LAN9512/9514
+    // Sets MAC address and property change flag to the device if the values are not set
+    while(STATUS_OBJECT_NAME_NOT_FOUND != status)
+    {
+        status = RtlStringCchPrintfW(KeyInstance,
+                                     sizeof(KeyInstance) / sizeof(WCHAR),
+                                     L"%04d",
+                                     Instance);
+        Instance ++;
+        
+        if (!NT_SUCCESS(status)){
+            // continue to try next entry
+            continue;
+        }
+
+        InitializeObjectAttributes (&ObjectAttributes,
+                                    (PUNICODE_STRING)&KeyName,
+                                    OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE,
+                                    BaseKey,
+                                    NULL
+                                    );
+
+        status = ZwOpenKey (&SubKey,
+                            KEY_READ | KEY_WRITE,
+                            &ObjectAttributes);
+        if (!NT_SUCCESS(status)){
+            SubKey = NULL;
+            // continue to try next entry
+            continue;
+        }
+
+        if ( infoBuffer ) {
+            RtlZeroMemory  (infoBuffer, infoBufferLength);
+        } 
+
+        status = ZwQueryValueKey(
+                            SubKey,
+                            &DriverDesc,
+                            KeyValueFullInformation,
+                            infoBuffer,
+                            infoBufferLength,
+                            &RequireBufferLength
+                            );
+
+        if ( status == STATUS_BUFFER_TOO_SMALL ) {
+            infoBuffer = ExAllocatePool(
+                                NonPagedPoolNx,
+                                RequireBufferLength
+                                );
+
+            if ( infoBuffer == NULL ) {
+                goto End;
+            }
+
+            infoBufferLength = RequireBufferLength;
+
+            status = ZwQueryValueKey(
+                                SubKey,
+                                &DriverDesc,
+                                KeyValueFullInformation,
+                                infoBuffer,
+                                infoBufferLength,
+                                &RequireBufferLength
+                                );
+                    
+        }
+
+        // Query Success
+        if ( status == STATUS_SUCCESS ) {
+            Desc.Length = (USHORT)infoBuffer->DataLength;
+            Desc.MaximumLength = (USHORT)infoBuffer->DataLength;
+            Desc.Buffer = (PWSTR)((PCHAR)infoBuffer +
+                                          infoBuffer->DataOffset);
+
+            // Use OR to match multiple devices here
+            // It is better to make a list for more devices
+            if (   (RtlPrefixUnicodeString (&DescLAN7800, &Desc, TRUE) == TRUE) 
+                || (RtlPrefixUnicodeString (&DescLAN951x, &Desc, TRUE) == TRUE)){
+                status = ZwQueryValueKey(
+                                SubKey,
+                                &PropertyChangeStatus,
+                                KeyValueFullInformation,
+                                infoBuffer,
+                                infoBufferLength,
+                                &RequireBufferLength
+                                );
+                                
+                if(STATUS_OBJECT_NAME_NOT_FOUND == status) {
+                    //Network Mac Address is not set
+                    status = ZwSetValueKey(SubKey,
+                                   &NetworkAddress,
+                                   0, // title index; must be zero.
+                                   REG_SZ,
+                                   &macAddrStrGlobal,
+                                   sizeof(macAddrStrGlobal));
+                    //Require Property change    
+                    value = 1;                
+                    status = ZwSetValueKey(SubKey,
+                                   &PropertyChangeStatus,
+                                   0, // title index; must be zero.
+                                   REG_DWORD,
+                                   (PVOID)&value,
+                                   sizeof(DWORD));
+                }
+                 // Finished Setting MAC or it already set before, exit no matter status
+                 goto End;
+            }
+        }
+
+        if(STATUS_OBJECT_NAME_NOT_FOUND == status) {
+            // ignore non existence for value key
+            status = STATUS_SUCCESS;
+        }
+
+        if(SubKey) {
+            // Close this sub key before query next
+            ZwClose(SubKey);
+            SubKey = NULL;
+        }
+        if ( infoBuffer ) {
+            ExFreePool (infoBuffer);
+            infoBuffer = NULL;
+            infoBufferLength = 0;
+        }
+    }
+
+End:
+    if(BaseKey) {
+        ZwClose(BaseKey);
+    }
+    if(SubKey) {
+        ZwClose(SubKey);
+    }
+    if ( infoBuffer ) {
+        ExFreePool (infoBuffer);
+    }
+    return status;
+}
+
 _Use_decl_annotations_
 NTSTATUS RpiqNdisInterfaceCallback (
     VOID* NotificationStructure,
@@ -457,6 +648,8 @@ NTSTATUS RpiqNdisInterfaceCallback (
             RPIQ_LOG_ERROR("Fail to create remote target %!STATUS!", status);
             goto End;
         }
+
+        RpiqSetNdisMacAddress();
 
         WDF_OBJECT_ATTRIBUTES_INIT(&ioTargetAttrib);
         ioTargetAttrib.ParentObject = device;

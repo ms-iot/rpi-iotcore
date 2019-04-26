@@ -102,6 +102,9 @@ Return Value:
     NTSTATUS value
 
 --*/
+
+WCHAR macAddrStrGlobal[13] = { 0 };
+
 _Use_decl_annotations_
 NTSTATUS RpiSetDeviceMacAddress (
     DEVICE_CONTEXT* DeviceContextPtr
@@ -112,7 +115,6 @@ NTSTATUS RpiSetDeviceMacAddress (
     PHYSICAL_ADDRESS LowestAcceptableAddress = { 0 };
     PHYSICAL_ADDRESS BoundaryAddress = { 0 };
     PHYSICAL_ADDRESS addrProperty;
-    WCHAR macAddrStr[13] = { 0 };
     MAILBOX_GET_MAC_ADDRESS* macAddrProperty;
     LARGE_INTEGER timeOut = { 0 };
     ULONG retries;
@@ -175,15 +177,12 @@ NTSTATUS RpiSetDeviceMacAddress (
         goto End;
     }
 
-    // The next step is to update the network device to point to this mac 
-    // address. This is done in package xml so if a new board revision happens
-    // to be released a separate package can be generated to match the board
-    // network chip if it has changed rather than changing the driver
-    // L"\\Registry\\Machine\\System\\ControlSet001\\Enum\\USB\\
-    // VID_0424&PID_EC00\\5&3753427a&0&1");
+    // The next step is to save this mac address into global.
+    // When got a notification of NDIS interface ready, this mac address will 
+    // be write into registry.
     status = RtlStringCchPrintfW(
-        macAddrStr,
-        ARRAYSIZE(macAddrStr),
+        macAddrStrGlobal,
+        ARRAYSIZE(macAddrStrGlobal),
         L"%02X%02X%02X%02X%02X%02X",
         macAddrProperty->MACAddress[0],
         macAddrProperty->MACAddress[1],
@@ -193,26 +192,12 @@ NTSTATUS RpiSetDeviceMacAddress (
         macAddrProperty->MACAddress[5]);
     if (!NT_SUCCESS(status)) {
         RPIQ_LOG_ERROR(
-            "Failed to print MAC address %!STATUS!",
+            "Failed to save MAC address global %!STATUS!",
             status);
         goto End;
     }
 
-    RPIQ_LOG_INFORMATION("Init MAC addres %S", macAddrStr);
-
-    status = RtlWriteRegistryValue(
-        RTL_REGISTRY_CONTROL,
-        L"\\Class\\{4d36e972-e325-11ce-bfc1-08002be10318}\\0001",
-        L"NetworkAddress",
-        REG_SZ,
-        &macAddrStr,
-        sizeof(macAddrStr));
-    if (!NT_SUCCESS(status)) {
-        RPIQ_LOG_ERROR(
-            "Failed to set MAC value at NetworkAddress registry %!STATUS!",
-            status);
-        goto End;
-    }
+	RPIQ_LOG_INFORMATION("Save MAC addres %S in global", macAddrStrGlobal);
 
 End:
     if (macAddrProperty){

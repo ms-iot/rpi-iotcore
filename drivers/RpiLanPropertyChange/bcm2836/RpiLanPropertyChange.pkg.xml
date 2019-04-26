@@ -1,0 +1,47 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<!-- TODO: Make sure to set the Package attributes -->
+<Package xmlns="urn:Microsoft.WindowsPhone/PackageSchema.v8.00"
+  Owner="$(OEMNAME)"
+  OwnerType="OEM"
+  Platform="$(BSPARCH)"
+  Component="RPi"
+  SubComponent="RpiLanPropertyChange"
+  ReleaseType="Production" >
+  
+  <Components>
+    <OSComponent>
+      <Files>
+        <File Source="$(_RELEASEDIR)RpiLanPropertyChange.dll" DestinationDir="$(runtime.system32)" />
+      </Files>
+    </OSComponent>
+    <Service
+        Description="Update Lan MAC address according to registry setting"
+        DisplayName="RpiLanPropertyChange"
+        ErrorControl="Normal"
+        Name="RpiLanPropertyChange"
+        Start="Auto"
+        SvcHostGroupName="NetworkService"
+        Type="Win32ShareProcess"
+        IsTCB="Yes"
+        >
+      <FailureActions ResetPeriod="86400">
+        <Action Type="RestartService" Delay="10000"/>
+        <Action Type="RestartService" Delay="10000"/>
+        <Action Type="RestartService" Delay="10000"/>
+        <Action Type="None" Delay="10000"/>
+      </FailureActions>
+      <RegKeys>
+        <RegKey KeyName="$(hklm.system)\ControlSet001\services\RpiLanPropertyChange">
+          <RegValue
+              Name="ObjectName"
+              Type="REG_SZ"
+              Value="LocalSystem"
+              />
+        </RegKey>
+      </RegKeys>
+      <ServiceDll
+          Source="$(_RELEASEDIR)\RpiLanPropertyChange.dll"
+          />
+    </Service>
+  </Components>
+</Package>
