@@ -25,7 +25,7 @@
     <ProjectGuid>{AC8330FD-8CB9-4210-9EE0-8B51E972860F}</ProjectGuid>
     <Keyword>Win32Proj</Keyword>
     <RootNamespace>$(MSBuildProjectName)</RootNamespace>
-    <WindowsTargetPlatformVersion>10.0.17134.0</WindowsTargetPlatformVersion>
+    <WindowsTargetPlatformVersion>10.0.17763.0</WindowsTargetPlatformVersion>
     <!-- @@BEGIN_DDKSPLIT -->
     <!-- Default values for <Configuration> and <Platform> will be inserted here by the conversion tool-->
     <!-- The project configurations list will be inserted by the conversion tool after this Globals group -->
