@@ -63,9 +63,11 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|arm'">
     <LinkIncremental>true</LinkIncremental>
     <CustomBuildBeforeTargets />
+    <PostBuildEventUseInBuild>false</PostBuildEventUseInBuild>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|arm'">
     <LinkIncremental>false</LinkIncremental>
+    <PostBuildEventUseInBuild>false</PostBuildEventUseInBuild>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|arm'">
     <ClCompile>
@@ -84,7 +86,8 @@
       <SetChecksum>true</SetChecksum>
     </Link>
     <PostBuildEvent>
-      <Command>set SIGN_OEM=1&amp;&amp;set&amp;&amp;"$(WDKContentRoot)\Tools\bin\i386\pkggen.exe" $(TargetName).pkg.xml /config:"$(WDKContentRoot)\Tools\bin\i386\pkggen.cfg.xml" /output:"$(OutDir)\$(TargetName) CBS\\" /version:1.0.0.0 /build:fre /cpu:ARM /variables:"SIGN_OEM=1;OEMNAME=Contoso;BSPARCH=ARM;_RELEASEDIR=$(OutDir);"</Command>
+      <Command>
+      </Command>
     </PostBuildEvent>
     <PreBuildEvent>
       <Command>
@@ -112,7 +115,8 @@
       <SetChecksum>true</SetChecksum>
     </Link>
     <PostBuildEvent>
-      <Command>set SIGN_OEM=1&amp;&amp;set&amp;&amp;"$(WDKContentRoot)\Tools\bin\i386\pkggen.exe" $(TargetName).pkg.xml /config:"$(WDKContentRoot)\Tools\bin\i386\pkggen.cfg.xml" /output:"$(OutDir)\$(TargetName) CBS\\" /version:1.0.0.0 /build:fre /cpu:ARM /variables:"OEMNAME=Contoso;BSPARCH=ARM;_RELEASEDIR=$(OutDir);"</Command>
+      <Command>
+      </Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
