@@ -1,0 +1,18 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<identity xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" name="BootFirmware" namespace="RPi" owner="$(OEMNAME)" legacyName="$(OEMNAME).RPi.BootFirmware" 
+    xmlns="urn:Microsoft.CompPlat/ManifestSchema.v1.00">
+    <onecorePackageInfo targetPartition="EFIESP" releaseType="Production" ownerType="OEM" />
+    <files>
+        <file destinationDir="$(runtime.bootDrive)" source="bootcode.bin" />
+        <file destinationDir="$(runtime.bootDrive)" source="config.txt" />
+        <file destinationDir="$(runtime.bootDrive)" source="fixup.dat" />
+        <file destinationDir="$(runtime.bootDrive)" source="fixup_cd.dat" />
+        <file destinationDir="$(runtime.bootDrive)" source="fixup_x.dat" />
+        <file destinationDir="$(runtime.bootDrive)" source="kernel.img" />
+        <file destinationDir="$(runtime.bootDrive)" source="LICENCE.broadcom" />
+        <file destinationDir="$(runtime.bootDrive)" source="start.elf" />
+        <file destinationDir="$(runtime.bootDrive)" source="start_cd.elf" />
+        <file destinationDir="$(runtime.bootDrive)" source="start_x.elf" />
+    </files>
+</identity>
