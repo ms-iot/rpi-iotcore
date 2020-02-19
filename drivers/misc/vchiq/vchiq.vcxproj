@@ -48,11 +48,11 @@
     <Import Project="$(SolutionDir)\..\bsp.props" />
   </ImportGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM'">
-    <RunCodeAnalysis>true</RunCodeAnalysis>
+    <RunCodeAnalysis>false</RunCodeAnalysis>
     <SignMode>Off</SignMode>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM'">
-    <RunCodeAnalysis>true</RunCodeAnalysis>
+    <RunCodeAnalysis>false</RunCodeAnalysis>
     <SignMode>Off</SignMode>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM'">
@@ -63,7 +63,7 @@
       <WppAddAlternateNameToMessageGUID>vchiq</WppAddAlternateNameToMessageGUID>
       <WppScanConfigurationData>trace.h</WppScanConfigurationData>
       <WppRecorderEnabled>true</WppRecorderEnabled>
-      <EnablePREfast>true</EnablePREfast>
+      <EnablePREfast>false</EnablePREfast>
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM'">
@@ -74,10 +74,9 @@
       <WppAddAlternateNameToMessageGUID>vchiq</WppAddAlternateNameToMessageGUID>
       <WppScanConfigurationData>trace.h</WppScanConfigurationData>
       <WppRecorderEnabled>true</WppRecorderEnabled>
-      <EnablePREfast>true</EnablePREfast>
+      <EnablePREfast>false</EnablePREfast>
     </ClCompile>
   </ItemDefinitionGroup>
-
   <ItemGroup>
     <ClCompile Include="@(ClSourceFiles)" Exclude="@(ClCompile)" />
     <ResourceCompile Include="@(RcSourceFiles)" Exclude="@(ResourceCompile)" />
