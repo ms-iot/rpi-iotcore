@@ -23,10 +23,9 @@ if [%1] == [/?] goto Usage
 if [%1] == [-?] goto Usage
 if [%1] == [] goto Usage
 if [%2] == [] (
-    if defined BSPSRC_DIR ( set TDIR=%BSPSRC_DIR%\RPi2\Packages\bspdrivers\
-    ) else ( goto Usage )
+    goto Usage
 ) else (
-    set TDIR=%2\
+    set TDIR=%2\RPi
 )
 
 pushd
@@ -48,18 +47,14 @@ if not exist %OUTPUT_DIR%\%BINTYPE% (
     echo %BINTYPE% directory not found. Do %BINTYPE% build
     goto usage
 )
+REM Copy the bspfiles
+xcopy /E /I %REPO_SOURCE_ROOT%\bspfiles\*.* %TDIR% >nul
+set DRVDIR=%TDIR%\Packages\RPi.Drivers
 
 REM Export the built binaries
-copy %OUTPUT_DIR%\%BINTYPE%\*.inf %TDIR% > nul
-copy %OUTPUT_DIR%\%BINTYPE%\*.sys %TDIR% > nul
-copy %OUTPUT_DIR%\%BINTYPE%\*.dll %TDIR% > nul
-
-REM Export the pkgxml files
-for /f "delims=" %%i in ('dir /s /b %REPO_SOURCE_ROOT%\drivers\*.pkg.xml') do (
-    copy %%i %TDIR% > nul
-)
-copy %REPO_SOURCE_ROOT%\boards\bcm2836\pkgs\SV.PlatExtensions.pkg.xml %TDIR% > nul
-copy %REPO_SOURCE_ROOT%\boards\bcm2836\pkgs\build.txt %TDIR%\build.cmd > nul
+copy %OUTPUT_DIR%\%BINTYPE%\*.inf %DRVDIR% > nul
+copy %OUTPUT_DIR%\%BINTYPE%\*.sys %DRVDIR% > nul
+copy %OUTPUT_DIR%\%BINTYPE%\*.dll %DRVDIR% > nul
 
 popd
 exit /b
