@@ -8,7 +8,7 @@
     <PackageFile Path="%PKGBLD_DIR%" Name="%OEM_NAME%.Device.SystemInformation.cab"/>
     <!-- UEFI for the silicon packaged in Bootfirmware -->
     <!--PackageFile Path="%MSPKG_DIR%" Name="RASPBERRYPI.RPi2.BootFirmware.cab"/-->
-	<PackageFile Path="%PKGBLD_DIR%" Name="%OEM_NAME%.RPi.BootFirmware.cab"/>
+    <PackageFile Path="%BSPPKG_DIR%" Name="%OEM_NAME%.RPi.BootFirmware.cab"/>
     <!-- Drivers required for boot/reading partitions for UpdateOS -->
     <PackageFile Path="%BSPPKG_DIR%" Name="SV.PlatExtensions.UpdateOS.cab"/>
     <!-- MBR BCD Settings : Include IOT_EFIESP_BCD_MBR -->
@@ -20,7 +20,7 @@
     <PackageFile Path="%MSPKG_DIR%" Name="RASPBERRYPI.RPi.LAN9500N650F.cab"/>
     <PackageFile Path="%BSPPKG_DIR%" Name="%OEM_NAME%.RPi.rpiq.cab"/>
     <!-- Device specific customisations if any -->
-    <PackageFile Path="%PKGBLD_DIR%" Name="%OEM_NAME%.RPi.Customization.cab" />
+    <PackageFile Path="%BSPPKG_DIR%" Name="%OEM_NAME%.RPi.Customization.cab" />
   </BasePackages>
   <DeviceLayoutPackages>
     <!-- MBR 4GB layout  -->
@@ -111,6 +111,11 @@
       <PackageFile Path="%MSPKG_DIR%" Name="RASPBERRYPI.RPi.BtwSerialH5Bus.cab">
         <FeatureIDs>
           <FeatureID>RPI_BTWSERIALH5BUS_DRIVER</FeatureID>
+          <FeatureID>RPI3_DRIVERS</FeatureID>
+        </FeatureIDs>
+      </PackageFile>
+      <PackageFile Path="%BSPPKG_DIR%" Name="%OEM_NAME%.RPi.RpiLanPropertyChange.cab">
+        <FeatureIDs>
           <FeatureID>RPI3_DRIVERS</FeatureID>
         </FeatureIDs>
       </PackageFile>

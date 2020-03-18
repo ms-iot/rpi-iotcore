@@ -1,0 +1,43 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<identity xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    name="RpiLanPropertyChange"
+    namespace="RPi"
+    owner="$(OEMNAME)"
+    legacyName="$(OEMNAME).RPi.RpiLanPropertyChange" xmlns="urn:Microsoft.CompPlat/ManifestSchema.v1.00">
+    <onecorePackageInfo
+        targetPartition="MainOS"
+        releaseType="Production"
+        ownerType="OEM" />
+    <files>
+        <file
+            destinationDir="$(runtime.system32)"
+            source=".\RpiLanPropertyChange.dll" />
+    </files>
+    <service
+        description="Update Lan MAC address according to registry setting"
+        displayName="RpiLanPropertyChange"
+        errorControl="normal"
+        name="rpiLanPropertyChange"
+        start="auto"
+        imagePath="%SystemRoot%\System32\RpiLanPropertyChange.dll"
+        type="win32ShareProcess"
+        objectName="LocalSystem">
+        <failureActions
+            resetPeriod="86400">
+            <actions>
+                <action
+                    type="restartService"
+                    delay="10000" />
+                <action
+                    type="restartService"
+                    delay="10000" />
+                <action
+                    type="restartService"
+                    delay="10000" />
+                <action
+                    type="none"
+                    delay="10000" />
+            </actions>
+        </failureActions>
+    </service>
+</identity>
