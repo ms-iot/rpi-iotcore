@@ -22,11 +22,14 @@ param(
 
 $RootDir = "$PSScriptRoot\..\"
 #$RootDir = Resolve-Path -Path $RootDir
+$buildconfig = "Release"
+#Override if IsDebug switch defined.
 if($IsDebug){
-    $bindir = $RootDir + "build\bcm2836\ARM\Debug\"
-} else {
-    $bindir = $RootDir + "build\bcm2836\ARM\Release\"
+    $buildconfig = "Debug"
 }
+$bindir = $RootDir + "build\bcm2836\ARM\$buildconfig\"
+$OutputFile = "RPi_BSP_$buildconfig.zip"
+
 if (!(Test-Path $bindir -PathType Container)){
     Write-Host "Error: $bindir not found." -ForegroundColor Red
     return
@@ -41,9 +44,6 @@ if (!(Test-Path "$OutputDir\RPi")) {
 Copy-Item -Path "$RootDir\bspfiles\*" -Destination "$OutputDir\RPi\" -Recurse -Force | Out-Null
 Copy-Item -Path "$bindir\*" -Destination "$OutputDir\RPi\Packages\RPi.Drivers\" -Include "*.sys","*.dll","*.inf" -Force | Out-Null
 
-$curtime = Get-Date -Format "yyMMdd-HHmm"
-$frags = $curtime.Split("-")
-$OutputFile = "RPi_BSP_$($frags[0]).$($frags[1]).zip"
 Write-Host "Output File: $OutputFile"
 
 Compress-Archive -Path "$OutputDir\RPi\" -CompressionLevel "Fastest" -DestinationPath "$OutputDir\$OutputFile"
