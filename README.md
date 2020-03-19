@@ -44,4 +44,6 @@ We provide a `binexport.ps1` script to scrape the BSP components together into a
     .\binexport.ps1 C:\Release -IsDebug # for debug binaries
     ```
 4. The script will generate a zip file **RPi_BSP_xx.zip** that can be imported into the IoT-ADK-Addonkit shell using [Import-IoTBSP](https://github.com/ms-iot/iot-adk-addonkit/blob/master/Tools/IoTCoreImaging/Docs/Import-IoTBSP.md).
-
+    ```powershell
+    Import-IoTBSP RPi C:\Temp\RPi_BSP_xx.zip
+    ```
