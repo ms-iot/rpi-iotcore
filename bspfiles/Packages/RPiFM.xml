@@ -24,15 +24,15 @@
   </BasePackages>
   <DeviceLayoutPackages>
     <!-- MBR 4GB layout  -->
-    <PackageFile SOC="RPi2" Path="%PKGBLD_DIR%" Name="%OEM_NAME%.DeviceLayout.MBR4GB.cab"/>
+    <PackageFile SOC="RPi" Path="%PKGBLD_DIR%" Name="%OEM_NAME%.DeviceLayout.MBR4GB.cab"/>
     <!-- MBR 8GB layout - select this by specifying the SOC field in the OEMInput xml file -->
-    <PackageFile SOC="RPi2-R" Path="%PKGBLD_DIR%" Name="%OEM_NAME%.DeviceLayout.MBR8GB-R.cab"/>
+    <PackageFile SOC="RPi-R" Path="%PKGBLD_DIR%" Name="%OEM_NAME%.DeviceLayout.MBR8GB-R.cab"/>
   </DeviceLayoutPackages>
   <OEMDevicePlatformPackages>
     <!-- MBR 4GB layout  -->
-    <PackageFile Device="RPi2" Path="%PKGBLD_DIR%" Name="%OEM_NAME%.DeviceLayout.MBR4GB.cab"/>
+    <PackageFile Device="RPi" Path="%PKGBLD_DIR%" Name="%OEM_NAME%.DeviceLayout.MBR4GB.cab"/>
     <!-- MBR 8GB layout - select this by specifying the SOC field in the OEMInput xml file -->
-    <PackageFile Device="RPi2-R" Path="%PKGBLD_DIR%" Name="%OEM_NAME%.DeviceLayout.MBR8GB-R.cab"/>
+    <PackageFile Device="RPi-R" Path="%PKGBLD_DIR%" Name="%OEM_NAME%.DeviceLayout.MBR8GB-R.cab"/>
   </OEMDevicePlatformPackages>
   
   <Features>

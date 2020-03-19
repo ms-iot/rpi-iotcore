@@ -3,12 +3,12 @@
   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
   xmlns:xsd="http://www.w3.org/2001/XMLSchema"
   xmlns="http://schemas.microsoft.com/embedded/2004/10/ImageUpdate">
-  <Description>Contoso Windows 10 IoT Core Test FFU with RPi2 BSP</Description>
-  <SOC>RPi2-R</SOC>
-  <!-- For no recovery support, use SOC: RPi2 -->
+  <Description>Contoso Windows 10 IoT Core Test FFU with RPi BSP</Description>
+  <SOC>RPi-R</SOC>
+  <!-- For no recovery support, use SOC: RPi -->
   <SV>RASPBERRY PI</SV>
-  <Device>RPi2-R</Device>
-  <!-- For no recovery support, use Device: RPi2 -->
+  <Device>RPi-R</Device>
+  <!-- For no recovery support, use Device: RPi -->
   <ReleaseType>Test</ReleaseType>
   <BuildType>fre</BuildType>
   <SupportedLanguages>
@@ -29,7 +29,7 @@
   </Resolutions>
   <AdditionalFMs>
     <!-- Including BSP feature manifest -->
-    <AdditionalFM>%BLD_DIR%\MergedFMs\RPi2FM.xml</AdditionalFM>
+    <AdditionalFM>%BLD_DIR%\MergedFMs\RPiFM.xml</AdditionalFM>
     <!-- Including OEM feature manifest -->
     <AdditionalFM>%BLD_DIR%\MergedFMs\OEMCommonFM.xml</AdditionalFM>
     <AdditionalFM>%BLD_DIR%\MergedFMs\OEMFM.xml</AdditionalFM>

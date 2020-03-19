@@ -2,7 +2,7 @@
 <FMCollectionManifest xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns="http://schemas.microsoft.com/embedded/2004/10/ImageUpdate" Product="IoTUAP" >
   <IsBuildFeatureEnabled>true</IsBuildFeatureEnabled>
   <FMs>
-    <FM ID="RPi2" Path="$(FMDirectory)\RPi2FM.xml" ReleaseType="Production" OwnerName="OEM_NAME" OwnerType="OEM" CPUType="ARM" Critical="true"/>
+    <FM ID="RPi" Path="$(FMDirectory)\RPiFM.xml" ReleaseType="Production" OwnerName="OEM_NAME" OwnerType="OEM" CPUType="ARM" Critical="true"/>
  </FMs>
 
   <SupportedResolutions>

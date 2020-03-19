@@ -45,7 +45,9 @@ Copy-Item -Path "$RootDir\bspfiles\*" -Destination "$OutputDir\RPi\" -Recurse -F
 Copy-Item -Path "$bindir\*" -Destination "$OutputDir\RPi\Packages\RPi.Drivers\" -Include "*.sys","*.dll","*.inf" -Force | Out-Null
 
 Write-Host "Output File: $OutputFile"
-
+if (Test-Path "$OutputDir\$OutputFile" -PathType Leaf){
+    Remove-Item "$OutputDir\$OutputFile" -Force | Out-Null
+}
 Compress-Archive -Path "$OutputDir\RPi\" -CompressionLevel "Fastest" -DestinationPath "$OutputDir\$OutputFile"
 Remove-Item "$OutputDir\RPi\" -Recurse -Force | Out-Null
 
