@@ -1,3 +1,8 @@
+We are announcing the transfer of custodianship of the Raspberry Pi BSP for Windows 10 IoT Core to the Raspberry Pi Foundation. By moving this repository to community administration, we hope to foster the continued interest and innovation in Raspberry Pi with Windows. 
+ 
+The new home for Raspberry Pi BSP for Windows 10 IoT Core will be at 
+https://github.com/raspberrypi/windows-drivers 
+___
 Raspberry Pi Board Support Package for Windows 10 IoT Core
 ==============
 
