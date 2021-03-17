@@ -20,7 +20,7 @@ Abstract:
 #include <rpiwav.h>
 
 #include "simple.h"
-#include "minipairs.h"
+#include "rpiwav/minipairs.h"
 
 
 typedef void (*fnPcDriverUnload) (PDRIVER_OBJECT);

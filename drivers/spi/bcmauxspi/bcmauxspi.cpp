@@ -19,6 +19,9 @@
 #include "bcmauxspi-hw.h"
 #include "bcmauxspi.h"
 
+// Ignore usage of the macro - based offsetof pattern in constant expressions is non - standard
+#pragma warning(disable:4644)
+
 namespace { // static
 
     WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(AUXSPI_DEVICE, GetDeviceContext);
